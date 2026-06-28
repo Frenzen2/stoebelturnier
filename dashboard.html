@@ -324,7 +324,7 @@
     max-height: 110px;
     max-width: 380px;
     object-fit: contain;
-    filter: brightness(0.9) contrast(1.1);
+    filter: brightness(0) invert(1);  /* weiß auf dunklem Hintergrund */
   }
 
   .sponsor-slide .sponsor-name {
@@ -435,11 +435,10 @@ const FIREBASE_CONFIG = {
 // ── Sponsors – Bilder in denselben Ordner wie dashboard.html legen ──
 // Format: { name, logo } – logo = Dateiname (z.B. 'sponsor1.png') oder null für Text
 const SPONSORS = [
-  { name: 'Raiffeisen', logo: https://www.raiffeisen.at/ooe/timelkam-lenzing-puchkirchen/de/config/header-config/_jcr_content/logo.svg/raiffeisen%20timelkam-lenzing-puchkirchen_logo_pos_RGB.svg },
-  { name: 'Sponsor 2', logo: null },
-  { name: 'Sponsor 3', logo: null },
-  { name: 'Sponsor 4', logo: null },
-  { name: 'Sponsor 5', logo: null },
+  { name: 'Raiffeisen Timelkam-Lenzing-Puchkirchen', logo: 'https://www.raiffeisen.at/ooe/timelkam-lenzing-puchkirchen/de/config/header-config/_jcr_content/logo.svg/raiffeisen%20timelkam-lenzing-puchkirchen_logo_pos_RGB.svg' },
+  // Weitere Sponsoren hier einfügen:
+  // { name: 'Fliesen Gaborek', logo: 'gaborek.png' },
+  // { name: 'Atos Schiemer', logo: 'logo-atos.gif' },  // nur Text
 ];
 
 // ── State ──
@@ -458,22 +457,30 @@ updateClock();
 
 // ── Firebase ──
 async function init() {
-  const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-  const { getDatabase, ref, onValue } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
+  try {
+    const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const { getDatabase, ref, onValue } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
 
-  const app = initializeApp(FIREBASE_CONFIG);
-  const db = getDatabase(app);
+    const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+    const db = getDatabase(app);
 
-  onValue(ref(db, '/tournament'), snap => {
-    const d = snap.val() || {};
-    state.teams = d.teams || {};
-    state.rounds = d.rounds || {};
-    state.currentRound = d.currentRound || 0;
-    state.settings = d.settings || {};
-    document.getElementById('status-dot').style.background = '#27ae60';
-    document.getElementById('status-text').textContent = 'Live';
-    renderAll();
-  });
+    onValue(ref(db, '/tournament'), snap => {
+      const d = snap.val() || {};
+      state.teams = d.teams || {};
+      state.rounds = d.rounds || {};
+      state.currentRound = d.currentRound || 0;
+      state.settings = d.settings || {};
+      document.getElementById('status-dot').style.background = '#27ae60';
+      document.getElementById('status-text').textContent = 'Live';
+      renderAll();
+    }, err => {
+      document.getElementById('status-dot').style.background = '#e74c3c';
+      document.getElementById('status-text').textContent = 'Fehler: ' + err.message;
+    });
+  } catch(e) {
+    document.getElementById('status-dot').style.background = '#e74c3c';
+    document.getElementById('status-text').textContent = 'Init-Fehler: ' + e.message;
+  }
 }
 
 // ── Standings calc ──
@@ -601,8 +608,6 @@ function toggleStandings() {
 document.addEventListener('keydown', e => { if (e.key === 't' || e.key === 'T') toggleStandings(); });
 // URL param: ?tabelle=1 startet mit Tabelle
 if (new URLSearchParams(location.search).get('tabelle') === '1') toggleStandings();
-// Expose globally for admin remote control via URL
-window.toggleStandings = toggleStandings;
 
 function renderAll() { renderPairings(); renderStandings(); }
 
@@ -637,16 +642,20 @@ function initSponsors() {
 init();
 initSponsors();
 
-// ── Auto-scale to screen ──
+// expose toggleStandings globally
+window.toggleStandings = toggleStandings;
+
+</script>
+<script>
+// ── Auto-scale to screen (outside module) ──
 function scaleToScreen() {
   const scaleX = window.innerWidth  / 3840;
   const scaleY = window.innerHeight / 2160;
   const scale  = Math.min(scaleX, scaleY);
   document.body.style.transform = `scale(${scale})`;
-  // Center if letterboxed
+  document.body.style.transformOrigin = '0 0';
   const offsetX = (window.innerWidth  - 3840 * scale) / 2;
   const offsetY = (window.innerHeight - 2160 * scale) / 2;
-  document.body.style.transformOrigin = '0 0';
   document.body.style.marginLeft = offsetX + 'px';
   document.body.style.marginTop  = offsetY + 'px';
   document.documentElement.style.background = '#000';
