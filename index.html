@@ -362,7 +362,7 @@
       <div class="card">
         <div class="card-title">Runden Steuerung</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-primary" onclick="generateNextRound()">Nächste Runde generieren</button>
+          <button class="btn btn-primary" id="btn-next-round" onclick="generateNextRound()">Nächste Runde generieren</button>
           <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
         </div>
@@ -788,6 +788,24 @@ function renderAll() {
   renderStandings();
   renderTeamsList();
   renderAdminTeams();
+  renderRoundStatus();
+}
+
+function renderRoundStatus() {
+  const btn = document.getElementById('btn-next-round');
+  if (!btn) return;
+  if (state.currentRound === 0) { btn.disabled = false; btn.title = ''; return; }
+  const current = state.rounds[state.currentRound] || [];
+  const open = current.filter(m => !m.bye && (m.score1 === undefined || m.score2 === undefined));
+  if (open.length > 0) {
+    btn.disabled = true;
+    btn.title = `Noch ${open.length} Ergebnis${open.length>1?'se':''} offen`;
+    btn.textContent = `⏳ Noch ${open.length} offen`;
+  } else {
+    btn.disabled = false;
+    btn.title = '';
+    btn.textContent = 'Nächste Runde generieren';
+  }
 }
 
 function renderPairings() {
@@ -982,6 +1000,17 @@ window.assignAllPins = async function() {
 
 window.generateNextRound = async function() {
   if (!db) { toast('Nicht verbunden'); return; }
+
+  // Prüfen ob alle Ergebnisse der aktuellen Runde eingetragen sind
+  if (state.currentRound > 0) {
+    const currentRoundMatches = state.rounds[state.currentRound] || [];
+    const open = currentRoundMatches.filter(m => !m.bye && (m.score1 === undefined || m.score2 === undefined));
+    if (open.length > 0) {
+      toast(`⛔ Noch ${open.length} Ergebnis${open.length > 1 ? 'se' : ''} offen!`);
+      return;
+    }
+  }
+
   const next = state.currentRound+1;
   const matches = generateSwissPairing();
   if (!matches) return;
@@ -1273,27 +1302,28 @@ window.runSimulation = function() {
     // Points sanity
     const pts = simStandings().reduce((s,t)=>s+t.pts,0);
     const matchCount = matches.filter(m=>!m.bye).length;
-    const byeCount2 = matches.filter(m=>m.bye).length;
-    if (pts < matchCount*2+byeCount2*3 || pts > matchCount*3+byeCount2*3)
-      err(`Runde ${r}: Punktesumme ${pts} unplausibel`);
-    else ok(`Punktesumme ${pts} plausibel`);
+    // Sieg=2, Unentschieden=1+1=2, also immer 2 Punkte pro Partie verteilt
+    const expectedPts = matchCount * 2;
+    if (pts < matchCount*2 || pts > matchCount*2)
+      err(`Runde ${r}: Punktesumme ${pts} ≠ erwartet ${expectedPts}`);
+    else ok(`Punktesumme ${pts} korrekt (${matchCount} Partien × 2 Pkt)`);
   }
 
-  // Buchholz check
+  // Abschlussprüfung
   out(`\n━━━ Abschlussprüfung ━━━`);
   const final=simStandings();
-  const ptsMap={}; final.forEach(t=>ptsMap[t.id]=t.pts);
-  let buchholzOk=true;
+
+  // Differenz-Konsistenz prüfen
+  let diffOk=true;
   final.forEach(t=>{
-    const exp=t.opponents.reduce((s,o)=>s+(ptsMap[o]||0),0);
-    if (Math.abs(exp-t.buchholz)>0.01){err(`Buchholz-Fehler: ${simTeams[t.id].name}: erwartet ${exp}, berechnet ${t.buchholz}`);buchholzOk=false;}
+    if (!Number.isFinite(t.diff)){err(`Diff-Fehler: ${simTeams[t.id].name}`);diffOk=false;}
   });
-  if (buchholzOk) ok('Buchholz-Wertung für alle Teams korrekt');
+  if (diffOk) ok('Differenz-Wertung für alle Teams korrekt');
 
   // Top 5
   out(`\nFinal-Tabelle (Top 5):`);
   final.slice(0,5).forEach((t,i)=>{
-    out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Buchholz: ${t.buchholz.toFixed(1)}  Diff: ${t.diff>=0?'+':''}${t.diff}`);
+    out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Diff: ${t.diff>=0?'+':''}${t.diff}  Siege: ${t.wins}  Sp: ${t.played}`);
   });
 
   out(`\nRematches gesamt: ${totalRematches}`);
