@@ -287,21 +287,17 @@
   <!-- PAARUNGEN -->
   <div id="sec-pairings" class="section active">
     <div class="status-bar"><div class="dot"></div><span id="status-text">Verbinde...</span></div>
+    <div id="round-nav" style="display:none;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
+      <button class="btn btn-ghost btn-sm" onclick="navRound(-1)">◀ Zurück</button>
+      <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
+      <button class="btn btn-ghost btn-sm" onclick="navRound(+1)">Vor ▶</button>
+    </div>
     <div id="pairings-list"><div class="empty-state"><div class="icon">🎯</div>Keine Paarungen vorhanden</div></div>
   </div>
 
   <!-- TABELLE -->
   <div id="sec-standings" class="section">
-    <div class="card" style="padding:0;overflow:hidden">
-      <table class="standings-table">
-        <thead><tr>
-          <th style="width:28px"></th><th>Team</th>
-          <th class="num">Pkt</th><th class="num">Diff</th>
-          <th class="num">Sp</th><th class="num">S/U/N</th>
-        </tr></thead>
-        <tbody id="standings-body"><tr><td colspan="6" class="empty-state">Noch keine Ergebnisse</td></tr></tbody>
-      </table>
-    </div>
+    <div id="standings-body"></div>
   </div>
 
   <!-- TEAMS -->
@@ -465,6 +461,7 @@ let session = {
 let currentMatchId = null;
 let currentRoundNum = null;
 let pinBuffer = '';
+let viewRound = null; // null = aktuell, sonst Rundennummer
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PIN Overlay
@@ -793,9 +790,19 @@ function generateSwissPairing() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Render
 // ─────────────────────────────────────────────────────────────────────────────
+window.navRound = function(dir) {
+  const cur = viewRound ?? state.currentRound;
+  const next = cur + dir;
+  if (next < 1 || next > state.currentRound) return;
+  viewRound = next === state.currentRound ? null : next;
+  renderPairings();
+};
+
 function renderAll() {
   document.getElementById('round-badge').textContent = `Runde ${state.currentRound||'–'}`;
   document.getElementById('main-title').textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
+  // Reset viewRound if currentRound changed
+  if (viewRound && viewRound > state.currentRound) viewRound = null;
   renderPairings();
   renderStandings();
   renderTeamsList();
@@ -822,14 +829,27 @@ function renderRoundStatus() {
 
 function renderPairings() {
   const el = document.getElementById('pairings-list');
-  const round = state.rounds[state.currentRound];
+  const navEl = document.getElementById('round-nav');
+  const navLabel = document.getElementById('round-nav-label');
+  const displayRound = viewRound ?? state.currentRound;
+  const round = state.rounds[displayRound];
+  const isHistoric = viewRound !== null && viewRound < state.currentRound;
+
+  // Show nav for admin
+  if (navEl) {
+    navEl.style.display = (session.isAdmin && state.currentRound > 1) ? 'flex' : 'none';
+    if (navLabel) navLabel.textContent = isHistoric
+      ? `◀ Runde ${displayRound} von ${state.currentRound} (Historie)`
+      : `Runde ${displayRound} – Aktuell`;
+  }
+
   if (!round||!round.length) {
     el.innerHTML = '<div class="empty-state"><div class="icon">🎯</div>Noch keine Paarungen</div>'; return;
   }
 
   // Separate my match from the rest
-  const myMatch = session.teamId ? round.find(m => !m.bye && (m.team1===session.teamId||m.team2===session.teamId)) : null;
-  const myBye   = session.teamId ? round.find(m => m.bye && m.team1===session.teamId) : null;
+  const myMatch = (session.teamId && !isHistoric) ? round.find(m => !m.bye && (m.team1===session.teamId||m.team2===session.teamId)) : null;
+  const myBye   = (session.teamId && !isHistoric) ? round.find(m => m.bye && m.team1===session.teamId) : null;
 
   let html = '';
 
@@ -883,7 +903,7 @@ function renderPairings() {
   html += round.map(m => {
     if (m.bye) return `<div class="bye-row">🔄 <strong>${tn(m.team1)}</strong> – Freirunde</div>`;
     const isMine = session.teamId && (m.team1===session.teamId||m.team2===session.teamId);
-    const canEdit = isMine || session.isAdmin;
+    const canEdit = (isMine || session.isAdmin) && (!isHistoric || session.isAdmin);
     const hasResult = m.score1!==undefined && m.score2!==undefined;
     let tag1='',tag2='';
     if (hasResult) {
@@ -934,43 +954,44 @@ function calcZones(data) {
 function renderStandings() {
   const body = document.getElementById('standings-body');
   const data = calcStandings();
-  if (!data.length) { body.innerHTML='<tr><td colspan="6" class="empty-state">Noch keine Ergebnisse</td></tr>'; return; }
+  if (!data.length) {
+    body.innerHTML = '<div class="empty-state"><div class="icon">📊</div>Noch keine Ergebnisse</div>';
+    return;
+  }
 
   const zones = calcZones(data);
-  let lastZone = null;
+  const ZONE = {
+    top:    { icon:'🏆', label:'Kann gewinnen',  bg:'rgba(240,192,64,0.08)', border:'rgba(240,192,64,0.35)', color:'#f0c040' },
+    mid:    { icon:'🟢', label:'Mittelfeld',      bg:'rgba(39,174,96,0.06)',  border:'rgba(39,174,96,0.25)',  color:'#27ae60' },
+    bottom: { icon:'🍍', label:'Goldene Ananas', bg:'rgba(212,43,43,0.08)', border:'rgba(212,43,43,0.3)',   color:'#d42b2b' },
+  };
 
-  body.innerHTML = data.map((t,i) => {
-    const zone = zones[i];
-    const mine = t.id === session.teamId;
+  // Group by zone
+  const groups = { top:[], mid:[], bottom:[] };
+  data.forEach((t,i) => groups[zones[i]].push(t));
 
-    // Zone separator row
-    let separator = '';
-    if (zone !== lastZone) {
-      lastZone = zone;
-      const zoneInfo = {
-        top:    { icon:'🏆', label:'Kann gewinnen',    bg:'rgba(240,192,64,0.08)',  border:'rgba(240,192,64,0.3)',  color:'#f0c040' },
-        mid:    { icon:'🟢', label:'Mittelfeld',        bg:'rgba(39,174,96,0.06)',   border:'rgba(39,174,96,0.25)',  color:'#27ae60' },
-        bottom: { icon:'🍍', label:'Goldene Ananas',   bg:'rgba(212,43,43,0.08)',   border:'rgba(212,43,43,0.3)',   color:'#d42b2b' },
-      }[zone];
-      separator = `<tr>
-        <td colspan="6" style="padding:.5rem .6rem .3rem;background:${zoneInfo.bg};border-top:2px solid ${zoneInfo.border};border-bottom:1px solid ${zoneInfo.border}">
-          <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${zoneInfo.color}">${zoneInfo.icon} ${zoneInfo.label}</span>
-        </td>
-      </tr>`;
-    }
-
-    const diff = t.diff >= 0 ? `+${t.diff}` : `${t.diff}`;
-    const zoneBg = zone==='top' ? 'rgba(240,192,64,0.04)' : zone==='bottom' ? 'rgba(212,43,43,0.04)' : '';
-
-    return separator + `<tr class="${mine?'highlight':''}" style="background:${zoneBg}">
-      <td style="width:28px;text-align:center;font-size:1rem">${zone==='top'?'🏆':zone==='bottom'?'🍍':'  '}</td>
-      <td>${t.name}${mine?' 👈':''}</td>
-      <td class="num pts-cell">${t.pts}</td>
-      <td class="num" style="color:${t.diff>=0?'var(--green)':'var(--red)'}">${diff}</td>
-      <td class="num">${t.played||0}</td>
-      <td class="num"><span class="wl-w">${t.wins}</span>/<span class="wl-d">${t.draws}</span>/<span class="wl-l">${t.losses}</span></td>
-    </tr>`;
-  }).join('');
+  let html = '';
+  for (const zone of ['top','mid','bottom']) {
+    const items = groups[zone];
+    if (!items.length) continue;
+    const z = ZONE[zone];
+    html += `<div style="background:${z.bg};border:1.5px solid ${z.border};border-radius:10px;margin-bottom:.75rem;overflow:hidden">
+      <div style="padding:.5rem .9rem;border-bottom:1px solid ${z.border}">
+        <span style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${z.color}">${z.icon} ${z.label}</span>
+      </div>
+      ${items.map(t => {
+        const mine = t.id === session.teamId;
+        const diff = t.diff>=0?`+${t.diff}`:`${t.diff}`;
+        return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;border-bottom:1px solid rgba(255,255,255,0.04);${mine?'background:rgba(212,43,43,0.08)':''}">
+          <div style="flex:1;font-size:.88rem;font-weight:600">${t.name}${mine?' 👈':''}</div>
+          <div style="font-size:.95rem;font-weight:700;color:${z.color};min-width:36px;text-align:right">${t.pts}</div>
+          <div style="font-size:.75rem;color:${t.diff>=0?'var(--green)':'var(--red)'};min-width:40px;text-align:right">${diff}</div>
+          <div style="font-size:.72rem;color:var(--muted);min-width:70px;text-align:right">${t.wins}S ${t.draws}U ${t.losses}N</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+  body.innerHTML = html;
 }
 
 function renderTeamsList() {
@@ -1274,8 +1295,8 @@ window.resetTournament = async function() {
 };
 
 window.openModal = function(matchId, roundNum) {
-  currentMatchId=matchId; currentRoundNum=roundNum;
-  const m = state.rounds[roundNum]?.find(x=>x.id===matchId);
+  currentMatchId=matchId; currentRoundNum=roundNum ?? (viewRound ?? state.currentRound);
+  const m = state.rounds[currentRoundNum]?.find(x=>x.id===matchId);
   if (!m) return;
   document.getElementById('modal-t1').textContent=tn(m.team1);
   document.getElementById('modal-t2').textContent=tn(m.team2);
