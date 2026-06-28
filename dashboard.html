@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=3840, initial-scale=1.0">
+<title>Stöbelturnier 2026 – Beamer Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface2: #1e1e1e;
+    --border: #2a2a2a;
+    --accent: #d42b2b;
+    --accent2: #a81f1f;
+    --text: #f0f0f0;
+    --muted: #888;
+    --green: #27ae60;
+    --gold: #f0c040;
+    /* 4K base: 1px = ~0.26mm, scale everything up */
+    --scale: 1;
+  }
+
+  html, body {
+    width: 3840px;
+    height: 2160px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-rows: 160px 1fr 180px;
+    height: 2160px;
+    width: 3840px;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(90deg, #1a0000 0%, #1e0808 60%, #1a0000 100%);
+    border-bottom: 6px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 80px;
+    box-shadow: 0 4px 40px rgba(212,43,43,0.3);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+  }
+
+  .header-logo {
+    font-size: 5rem;
+    line-height: 1;
+  }
+
+  .header-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 5.5rem;
+    color: #fff;
+    letter-spacing: 6px;
+    text-shadow: 0 0 40px rgba(212,43,43,0.8);
+    line-height: 1;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 60px;
+  }
+
+  .round-info {
+    text-align: right;
+  }
+
+  .round-label {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 4px;
+  }
+
+  .round-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 7rem;
+    color: var(--accent);
+    line-height: 1;
+    text-shadow: 0 0 30px rgba(212,43,43,0.6);
+  }
+
+  .clock {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 5rem;
+    color: var(--text);
+    letter-spacing: 4px;
+    text-align: right;
+  }
+
+  /* ── Main content ── */
+  .content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* ── Paarungen panel ── */
+  .panel {
+    padding: 50px 60px;
+    border-right: 3px solid var(--border);
+    overflow: hidden;
+  }
+
+  .panel-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    color: var(--accent);
+    letter-spacing: 4px;
+    margin-bottom: 30px;
+    padding-bottom: 16px;
+    border-bottom: 3px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* ── Pairing rows ── */
+  .pairing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+
+  .pairing-item {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: border-color 0.3s;
+  }
+
+  .pairing-item.has-result {
+    border-color: #2a2a2a;
+  }
+
+  .pairing-item.open {
+    border-color: rgba(212,43,43,0.3);
+  }
+
+  .pairing-field {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pairing-teams {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .pairing-team-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.9rem;
+    line-height: 1.1;
+    letter-spacing: 1px;
+  }
+
+  .pairing-team-name.right { text-align: right; }
+
+  .pairing-score {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    color: var(--accent);
+    letter-spacing: 6px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .pairing-score.open-score {
+    font-size: 1.5rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+  }
+
+  .score-win { color: var(--green); }
+  .score-loss { color: var(--muted); }
+
+  /* ── Standings panel ── */
+  .standings-panel {
+    padding: 50px 60px;
+    overflow: hidden;
+  }
+
+  .standings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .standing-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 120px 160px 120px;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 28px;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 2px solid var(--border);
+  }
+
+  .standing-row.top1 { border-color: var(--gold); background: rgba(240,192,64,0.06); }
+  .standing-row.top2 { border-color: #b0b8c8; background: rgba(176,184,200,0.04); }
+  .standing-row.top3 { border-color: #c07a40; background: rgba(192,122,64,0.04); }
+
+  .standing-rank {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .standing-rank.r1 { color: var(--gold); text-shadow: 0 0 20px rgba(240,192,64,0.5); }
+  .standing-rank.r2 { color: #b0b8c8; }
+  .standing-rank.r3 { color: #c07a40; }
+
+  .standing-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .standing-pts {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.6rem;
+    color: var(--accent);
+    text-align: right;
+  }
+
+  .standing-diff {
+    font-size: 1.4rem;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .standing-record {
+    font-size: 1.1rem;
+    color: var(--muted);
+    text-align: right;
+    font-weight: 600;
+  }
+
+  /* ── Sponsor Banner ── */
+  .sponsor-bar {
+    background: #111;
+    border-top: 4px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 80px;
+    gap: 60px;
+    overflow: hidden;
+  }
+
+  .sponsor-label {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .sponsor-divider {
+    width: 3px;
+    height: 80px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .sponsor-track {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    height: 130px;
+  }
+
+  .sponsor-slides {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    gap: 100px;
+  }
+
+  .sponsor-slide {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 400px;
+    height: 120px;
+    flex-shrink: 0;
+  }
+
+  .sponsor-slide img {
+    max-height: 110px;
+    max-width: 380px;
+    object-fit: contain;
+    filter: brightness(0.9) contrast(1.1);
+  }
+
+  .sponsor-slide .sponsor-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    color: var(--text);
+    letter-spacing: 3px;
+    text-align: center;
+  }
+
+  /* ── Status dot ── */
+  .status-dot {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Bye row ── */
+  .bye-item {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: var(--muted);
+  }
+
+  .bye-item .bye-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.9rem;
+    color: var(--text);
+  }
+
+  /* ── Transition for content views ── */
+  .view { display: none; }
+  .view.active { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">🔥</div>
+      <div class="header-title" id="dash-title">Stöbelturnier 2026</div>
+    </div>
+    <div class="header-right">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="status-dot" id="status-dot"></div>
+        <span style="font-size:1.2rem;color:var(--muted);letter-spacing:2px" id="status-text">Verbinde...</span>
+      </div>
+      <div class="round-info">
+        <div class="round-label">Runde</div>
+        <div class="round-num" id="dash-round">–</div>
+      </div>
+      <div class="clock" id="clock">00:00</div>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="content">
+    <!-- LEFT: Paarungen -->
+    <div class="panel">
+      <div class="panel-title">
+        🎯 Aktuelle Paarungen
+        <span style="font-size:1.4rem;color:var(--muted);font-family:Inter;font-weight:600;letter-spacing:1px" id="open-count"></span>
+      </div>
+      <div class="pairing-grid" id="pairing-grid">
+        <div style="color:var(--muted);font-size:2rem;padding:40px">Lade Paarungen...</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Tabelle -->
+    <div class="standings-panel">
+      <div class="panel-title">🏆 Aktuelle Tabelle</div>
+      <div class="standings-grid" id="standings-grid">
+        <div style="color:var(--muted);font-size:2rem;padding:40px">Lade Tabelle...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPONSOR BANNER -->
+  <div class="sponsor-bar">
+    <div class="sponsor-label">Unsere Sponsoren</div>
+    <div class="sponsor-divider"></div>
+    <div class="sponsor-track">
+      <div class="sponsor-slides" id="sponsor-slides"></div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+// ── Firebase Config (same as main app) ──
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBukGl8KprWShSKyIuK6l4rfHM8kabKbwk",
+  authDomain: "ffpstoebel.firebaseapp.com",
+  databaseURL: "https://ffpstoebel-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "ffpstoebel",
+  appId: "1:899454609586:web:40465b0c61489f51cfc1ab"
+};
+
+// ── Sponsors – Bilder in denselben Ordner wie dashboard.html legen ──
+// Format: { name, logo } – logo = Dateiname (z.B. 'sponsor1.png') oder null für Text
+const SPONSORS = [
+  { name: 'Sponsor 1', logo: null },
+  { name: 'Sponsor 2', logo: null },
+  { name: 'Sponsor 3', logo: null },
+  { name: 'Sponsor 4', logo: null },
+  { name: 'Sponsor 5', logo: null },
+];
+
+// ── State ──
+let state = { teams:{}, rounds:{}, currentRound:0, settings:{} };
+let sponsorIdx = 0;
+
+// ── Clock ──
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('clock').textContent = h + ':' + m;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Firebase ──
+async function init() {
+  const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+  const { getDatabase, ref, onValue } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
+
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db = getDatabase(app);
+
+  onValue(ref(db, '/tournament'), snap => {
+    const d = snap.val() || {};
+    state.teams = d.teams || {};
+    state.rounds = d.rounds || {};
+    state.currentRound = d.currentRound || 0;
+    state.settings = d.settings || {};
+    document.getElementById('status-dot').style.background = '#27ae60';
+    document.getElementById('status-text').textContent = 'Live';
+    renderAll();
+  });
+}
+
+// ── Standings calc ──
+function calcStandings() {
+  const ids = Object.keys(state.teams);
+  if (!ids.length) return [];
+  const s = {};
+  ids.forEach(id => s[id] = { pts:0, wins:0, draws:0, losses:0, diff:0, played:0 });
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) { if (s[m.team1]) s[m.team1].played+=1; return; }
+      if (m.score1===undefined||!s[m.team1]||!s[m.team2]) return;
+      s[m.team1].played+=1; s[m.team2].played+=1;
+      s[m.team1].diff+=m.score1-m.score2; s[m.team2].diff+=m.score2-m.score1;
+      if (m.score1>m.score2){ s[m.team1].pts+=2; s[m.team1].wins+=1; s[m.team2].losses+=1; }
+      else if (m.score2>m.score1){ s[m.team2].pts+=2; s[m.team2].wins+=1; s[m.team1].losses+=1; }
+      else { s[m.team1].pts+=1; s[m.team2].pts+=1; s[m.team1].draws+=1; s[m.team2].draws+=1; }
+    });
+  });
+  return ids.map(id=>({id, name:state.teams[id]?.name||id, ...s[id]}))
+            .sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.wins-a.wins||a.name.localeCompare(b.name));
+}
+
+function tn(id) { return state.teams[id]?.name || id; }
+
+// ── Render pairings ──
+function renderPairings() {
+  const grid = document.getElementById('pairing-grid');
+  const round = state.rounds[state.currentRound];
+  document.getElementById('dash-round').textContent = state.currentRound || '–';
+  document.getElementById('dash-title').textContent = '🔥 ' + (state.settings?.title || 'Stöbelturnier 2026');
+
+  if (!round || !round.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:2.5rem;padding:60px;grid-column:1/-1">Noch keine Paarungen</div>';
+    document.getElementById('open-count').textContent = '';
+    return;
+  }
+
+  const openCount = round.filter(m => !m.bye && m.score1 === undefined).length;
+  document.getElementById('open-count').textContent = openCount > 0 ? `· ${openCount} offen` : '· Alle eingetragen ✓';
+
+  grid.innerHTML = round.map(m => {
+    if (m.bye) return `
+      <div class="bye-item">
+        <span style="font-size:2rem">🔄</span>
+        <span class="bye-name">${tn(m.team1)}</span>
+        <span style="font-size:1.3rem;color:var(--muted)">Freirunde</span>
+      </div>`;
+
+    const hasResult = m.score1 !== undefined;
+    const fieldStr = m.field ? `📍 Feld ${m.field}` : '';
+
+    if (hasResult) {
+      const s1class = m.score1 > m.score2 ? 'score-win' : m.score1 < m.score2 ? 'score-loss' : '';
+      const s2class = m.score2 > m.score1 ? 'score-win' : m.score2 < m.score1 ? 'score-loss' : '';
+      return `
+        <div class="pairing-item has-result">
+          <div class="pairing-field">${fieldStr}</div>
+          <div class="pairing-teams">
+            <div class="pairing-team-name">${tn(m.team1)}</div>
+            <div class="pairing-score">
+              <span class="${s1class}">${m.score1}</span>
+              <span style="color:var(--border)"> : </span>
+              <span class="${s2class}">${m.score2}</span>
+            </div>
+            <div class="pairing-team-name right">${tn(m.team2)}</div>
+          </div>
+        </div>`;
+    } else {
+      return `
+        <div class="pairing-item open">
+          <div class="pairing-field">${fieldStr}</div>
+          <div class="pairing-teams">
+            <div class="pairing-team-name">${tn(m.team1)}</div>
+            <div class="pairing-score open-score">VS</div>
+            <div class="pairing-team-name right">${tn(m.team2)}</div>
+          </div>
+        </div>`;
+    }
+  }).join('');
+}
+
+// ── Render standings ──
+function renderStandings() {
+  const grid = document.getElementById('standings-grid');
+  const data = calcStandings();
+  if (!data.length) { grid.innerHTML = '<div style="color:var(--muted);font-size:2rem;padding:40px">Noch keine Ergebnisse</div>'; return; }
+
+  // Show top 12 to fit screen
+  grid.innerHTML = data.slice(0,12).map((t,i) => {
+    const rankClass = i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const rowClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
+    const diff = t.diff >= 0 ? `+${t.diff}` : `${t.diff}`;
+    const diffColor = t.diff >= 0 ? 'var(--green)' : 'var(--accent)';
+    return `
+      <div class="standing-row ${rowClass}">
+        <div class="standing-rank ${rankClass}">${i+1}</div>
+        <div class="standing-name">${t.name}</div>
+        <div class="standing-pts">${t.pts}</div>
+        <div class="standing-diff" style="color:${diffColor}">${diff}</div>
+        <div class="standing-record">${t.wins}S ${t.draws}U ${t.losses}N</div>
+      </div>`;
+  }).join('');
+}
+
+function renderAll() { renderPairings(); renderStandings(); }
+
+// ── Sponsors ──
+function initSponsors() {
+  const slides = document.getElementById('sponsor-slides');
+  if (!SPONSORS.length) { slides.innerHTML = '<div class="sponsor-slide"><div class="sponsor-name">—</div></div>'; return; }
+
+  // Build enough copies to fill the track
+  const copies = Math.ceil(3840 / (400 + 100)) + 2;
+  const items = [];
+  for (let i = 0; i < copies; i++) {
+    const s = SPONSORS[i % SPONSORS.length];
+    if (s.logo) {
+      items.push(`<div class="sponsor-slide"><img src="${s.logo}" alt="${s.name}" onerror="this.parentNode.innerHTML='<div class=\\"sponsor-name\\">${s.name}</div>'"></div>`);
+    } else {
+      items.push(`<div class="sponsor-slide"><div class="sponsor-name">${s.name}</div></div>`);
+    }
+  }
+  slides.innerHTML = items.join('');
+
+  // Rotate every 10 seconds
+  let offset = 0;
+  const slideWidth = 500; // px per sponsor slot
+  setInterval(() => {
+    offset += slideWidth;
+    if (offset >= SPONSORS.length * slideWidth) offset = 0;
+    slides.style.transform = `translateX(-${offset}px)`;
+  }, 10000);
+}
+
+init();
+initSponsors();
+</script>
+</body>
+</html>
