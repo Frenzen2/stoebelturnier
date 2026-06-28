@@ -736,29 +736,14 @@ function generateSwissPairing() {
     const { pairs, leftover } = pairAdjacent(ids, false);
     pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
 
-    if (leftover.length > 0) { carry = leftover.shift(); }
-    // weitere Leftovers in Restliste
-  }
-  if (carry !== null) {
-    // carry in letzte Paarung einfügen falls möglich, sonst Restliste
-    const restIds = carry ? [carry] : [];
-    const extra = tryPairAll(restIds.length%2===0 ? restIds : [], false);
-    if (extra) extra.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-    else if (carry) {
-      // hänge an letzte Paarung dran via swap – letzte Paarung aufbrechen
-      const last = finalPairs.pop();
-      if (last) {
-        const [la,lb] = last;
-        pairedGlobal.delete(la); pairedGlobal.delete(lb);
-        const restTry = tryPairAll([la,lb,carry], false) || tryPairAll([la,lb,carry], true);
-        if (restTry) restTry.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-        else { finalPairs.push(last); pairedGlobal.add(la); pairedGlobal.add(lb); }
-      }
-    }
+    // carry exactly ONE into next bracket
+    if (leftover.length > 0) { carry = leftover[0]; }
   }
 
-  // ── Rest-Teams (falls noch ungeparrt) ──
+  // ── Rest-Teams: alle noch ungeparten + finaler carry ──
   const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
+  if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
+
   if (rest.length > 0) {
     const restPairs = tryPairAll(rest, false) || tryPairAll(rest, true);
     if (!restPairs) { toast('⚠️ Pairing unvollständig – zu wenig Teams für diese Runde?'); return null; }
@@ -1238,20 +1223,29 @@ window.runSimulation = function() {
       return bt(0)?res:null;
     }
 
-    const finalPairs=[]; const pg=new Set(); let carry=null;
+    const finalPairs=[]; const pg=new Set();
+    // Pass 1: bracket-adjacent pairing, carry ONE unpaired into next bracket
+    let carry=null;
     for(const pts of bpts){
       let ids=sh((brackets.get(pts)||[]).filter(id=>!pg.has(id)).sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999)));
       if(carry!==null){ids=[carry,...ids];carry=null;}
       if(!ids.length)continue;
       const {pairs,leftover}=pairAdj(ids,false);
       pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
-      if(leftover.length>0)carry=leftover.shift();
+      // carry exactly ONE into next bracket, rest go to global rest pool
+      if(leftover.length>0){ carry=leftover[0]; }
     }
+    // Pass 2: collect ALL unpaired (including final carry) into rest
     const rest=eligibleIds.filter(id=>!pg.has(id));
-    if(carry)rest.push(carry);
+    if(carry && !pg.has(carry) && !rest.includes(carry)) rest.push(carry);
     if(rest.length>0){
+      // try without rematch first, then with
       const rp=tryAll(rest,false)||tryAll(rest,true);
-      if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
+      if(rp) rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
+      else {
+        // last resort: pair sequentially
+        for(let i=0;i<rest.length-1;i+=2) finalPairs.push([rest[i],rest[i+1]]);
+      }
     }
 
     // count rematches
@@ -1300,13 +1294,12 @@ window.runSimulation = function() {
     });
 
     // Points sanity
-    const pts = simStandings().reduce((s,t)=>s+t.pts,0);
+    // Punkte dieser Runde (nicht kumulativ) - jede Partie vergibt genau 2 Punkte (Sieg 2:0 oder Unentsch. 1:1)
     const matchCount = matches.filter(m=>!m.bye).length;
-    // Sieg=2, Unentschieden=1+1=2, also immer 2 Punkte pro Partie verteilt
-    const expectedPts = matchCount * 2;
-    if (pts < matchCount*2 || pts > matchCount*2)
-      err(`Runde ${r}: Punktesumme ${pts} ≠ erwartet ${expectedPts}`);
-    else ok(`Punktesumme ${pts} korrekt (${matchCount} Partien × 2 Pkt)`);
+    const roundPts = simRounds[r].filter(m=>!m.bye).reduce((s,m)=>s+(m.score1>m.score2?2:m.score2>m.score1?2:2),0);
+    if (roundPts !== matchCount*2)
+      err(`Runde ${r}: Rundenpunkte ${roundPts} ≠ erwartet ${matchCount*2}`);
+    else ok(`Runde ${r}: ${matchCount} Partien, ${roundPts} Pkt vergeben ✓`);
   }
 
   // Abschlussprüfung
