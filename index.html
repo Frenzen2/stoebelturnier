@@ -363,10 +363,29 @@
         <div class="card-title">Runden Steuerung</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
           <button class="btn btn-primary" id="btn-next-round" onclick="generateNextRound()">Nächste Runde generieren</button>
+          <button class="btn btn-ghost" onclick="diagnosePairing()">🔍 Pairing prüfen</button>
           <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
         </div>
-        <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 3/1/0 · Buchholz-Tiebreaker</p>
+        <div id="diagnose-output" style="display:none;margin-top:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto"></div>
+        <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 2/1/0 · Diff-Tiebreaker</p>
+        <div id="manual-pairing-area" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.9rem">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.6rem">⚡ Manuelle Notfall-Paarung</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:.5rem;align-items:center;margin-bottom:.5rem">
+            <select id="manual-t1" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <span style="color:var(--muted);font-weight:700;padding:0 .25rem">VS</span>
+            <select id="manual-t2" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <button class="btn btn-danger btn-sm" onclick="addManualPairing()">+ Hinzufügen</button>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <select id="manual-bye" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif;flex:1"></select>
+            <button class="btn btn-ghost btn-sm" onclick="addManualBye()">+ Freirunde</button>
+          </div>
+          <p style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Nur verwenden wenn der Algorithmus versagt. Rematches werden nicht geprüft.</p>
+        </div>
+        <div style="margin-top:.6rem">
+          <button class="btn btn-ghost btn-sm" onclick="toggleManualPairing()">🔧 Manuelle Paarung (Notfall)</button>
+        </div>
       </div>
 
       <!-- Simulation -->
@@ -1009,6 +1028,187 @@ window.generateNextRound = async function() {
   });
   await fbUpdate('/tournament', { [`rounds/${next}`]: roundData, currentRound: next });
   toast(`Runde ${next} generiert`);
+};
+
+// ── Pairing Diagnose ──
+window.diagnosePairing = function() {
+  const out = document.getElementById('diagnose-output');
+  out.style.display = 'block';
+  const lines = [];
+  const log  = msg => lines.push(msg);
+  const ok   = msg => lines.push('✅ ' + msg);
+  const warn = msg => lines.push('⚠️  ' + msg);
+  const err  = msg => lines.push('❌ ' + msg);
+
+  const standings = calcStandings();
+  if (standings.length < 2) { out.textContent = '❌ Zu wenig Teams'; return; }
+
+  log('━━━ Pairing-Diagnose für Runde ' + (state.currentRound+1) + ' ━━━\n');
+
+  // Build played set
+  const played = new Set();
+  const byeHistory = new Map();
+  Object.entries(state.rounds).forEach(([rn, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) byeHistory.set(m.team1, (byeHistory.get(m.team1)||0)+1);
+      else { played.add([m.team1,m.team2].sort().join('_')); }
+    });
+  });
+  const hasPlayed = (a,b) => played.has([a,b].sort().join('_'));
+
+  // Bye candidate
+  let eligible = standings.map(t=>t.id);
+  if (eligible.length % 2 !== 0) {
+    const wf = [...eligible].reverse();
+    const byeCandidate = wf.find(id=>!byeHistory.has(id))
+      ?? wf.find(id=>byeHistory.get(id) < Math.max(...[...byeHistory.values()]))
+      ?? wf[0];
+    log('🔄 Freirunde geht an: ' + (state.teams[byeCandidate]?.name || byeCandidate));
+    if ((byeHistory.get(byeCandidate)||0) > 0)
+      warn('Dieses Team hatte bereits ' + byeHistory.get(byeCandidate) + 'x Freirunde');
+    eligible = eligible.filter(id => id !== byeCandidate);
+  }
+
+  // Bracket analysis
+  const ptOf = new Map(standings.map(t=>[t.id,t.pts]));
+  const brackets = new Map();
+  eligible.forEach(id => {
+    const p = ptOf.get(id)||0;
+    if (!brackets.has(p)) brackets.set(p,[]);
+    brackets.get(p).push(id);
+  });
+  const bracketPts = [...brackets.keys()].sort((a,b)=>b-a);
+
+  log('\n── Punkte-Brackets ──');
+  let totalProblems = 0;
+
+  bracketPts.forEach(pts => {
+    const ids = brackets.get(pts);
+    log(`\nBracket ${pts} Pkt  (${ids.length} Teams):`);
+
+    // Check all pairs within bracket
+    const conflicts = [];
+    for (let i=0;i<ids.length;i++) {
+      for (let j=i+1;j<ids.length;j++) {
+        if (hasPlayed(ids[i],ids[j])) {
+          conflicts.push([ids[i],ids[j]]);
+        }
+      }
+    }
+
+    // Can the bracket be paired without rematches?
+    // Simple check: build adjacency, find if perfect matching exists
+    const n = ids.length;
+    const canPair = new Array(n).fill(null).map(()=>new Array(n).fill(false));
+    let possibleEdges = 0;
+    for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) {
+      if (!hasPlayed(ids[i],ids[j])) { canPair[i][j]=canPair[j][i]=true; possibleEdges++; }
+    }
+
+    const totalPossible = (n*(n-1))/2;
+    const conflictPct = Math.round(conflicts.length/totalPossible*100);
+
+    ids.forEach(id => {
+      const name = state.teams[id]?.name || id;
+      const opponents = ids.filter(o=>o!==id && !hasPlayed(id,o));
+      const alreadyPlayed = ids.filter(o=>o!==id && hasPlayed(id,o));
+      if (opponents.length === 0) {
+        err(`  ${name}: KEINE freien Gegner im Bracket!`);
+        totalProblems++;
+      } else if (opponents.length === 1) {
+        warn(`  ${name}: nur noch 1 freier Gegner → ${state.teams[opponents[0]]?.name}`);
+        totalProblems++;
+      } else {
+        ok(`  ${name}: ${opponents.length} freie Gegner`);
+      }
+      if (alreadyPlayed.length > 0) {
+        log(`       bereits gespielt gegen: ${alreadyPlayed.map(o=>state.teams[o]?.name).join(', ')}`);
+      }
+    });
+
+    if (conflicts.length === 0) ok(`Bracket komplett konfliktfrei (${n} Teams)`);
+    else if (conflicts.length < totalPossible*0.5) warn(`${conflicts.length}/${totalPossible} Paarungen bereits gespielt – Carry-Down wahrscheinlich`);
+    else err(`${conflicts.length}/${totalPossible} Paarungen gespielt (${conflictPct}%) – Bracket fast erschöpft!`);
+  });
+
+  // Overall verdict
+  log('\n━━━ Fazit ━━━');
+  if (totalProblems === 0) {
+    ok('Pairing sollte problemlos funktionieren');
+  } else {
+    err(totalProblems + ' Team(s) mit kritischen Konflikten!');
+    log('\n💡 Lösung wie letztes Jahr:');
+    log('   1. Notiere welche Teams betroffen sind (oben markiert mit ❌)');
+    log('   2. Ändere deren Punktestand temporär um ±1');
+    log('   3. Generiere die Runde');
+    log('   4. Korrigiere die Punkte danach wieder');
+    log('   → ODER: Nutze "Manuelle Notfall-Paarung" direkt unten');
+  }
+
+  out.textContent = lines.join('\n');
+  out.scrollTop = 0;
+};
+
+// ── Manual Pairing (emergency) ──
+window.toggleManualPairing = function() {
+  const area = document.getElementById('manual-pairing-area');
+  const visible = area.style.display !== 'none';
+  area.style.display = visible ? 'none' : 'block';
+  if (!visible) populateManualSelects();
+};
+
+function populateManualSelects() {
+  const round = state.rounds[state.currentRound] || [];
+  const alreadyPaired = new Set();
+  round.forEach(m => { alreadyPaired.add(m.team1); if (!m.bye) alreadyPaired.add(m.team2); });
+
+  const unpaired = Object.entries(state.teams)
+    .filter(([id]) => !alreadyPaired.has(id))
+    .sort((a,b) => a[1].name.localeCompare(b[1].name));
+
+  const allTeams = Object.entries(state.teams)
+    .sort((a,b) => a[1].name.localeCompare(b[1].name));
+
+  ['manual-t1','manual-t2'].forEach(sid => {
+    const sel = document.getElementById(sid);
+    sel.innerHTML = unpaired.map(([id,t]) => `<option value="${id}">${t.name}</option>`).join('');
+  });
+
+  const byeSel = document.getElementById('manual-bye');
+  byeSel.innerHTML = unpaired.map(([id,t]) => `<option value="${id}">${t.name}</option>`).join('');
+}
+
+window.addManualPairing = async function() {
+  if (!db) return;
+  const t1 = document.getElementById('manual-t1').value;
+  const t2 = document.getElementById('manual-t2').value;
+  if (!t1 || !t2 || t1 === t2) { toast('Bitte zwei verschiedene Teams wählen'); return; }
+  const round = state.currentRound;
+  const existing = [...(state.rounds[round] || [])];
+  // check not already in round
+  const inRound = existing.some(m => m.team1===t1||m.team2===t1||m.team1===t2||m.team2===t2);
+  if (inRound) { toast('Ein Team ist bereits in dieser Runde eingeplant'); return; }
+  const id = `r${round}m${existing.length}`;
+  existing.push({ id, team1:t1, team2:t2 });
+  await fbSet(`/tournament/rounds/${round}`, existing);
+  toast(`Paarung hinzugefügt`);
+  populateManualSelects();
+};
+
+window.addManualBye = async function() {
+  if (!db) return;
+  const t1 = document.getElementById('manual-bye').value;
+  if (!t1) return;
+  const round = state.currentRound;
+  const existing = [...(state.rounds[round] || [])];
+  const inRound = existing.some(m => m.team1===t1||m.team2===t1);
+  if (inRound) { toast('Team ist bereits in dieser Runde eingeplant'); return; }
+  const id = `r${round}m${existing.length}`;
+  existing.push({ id, team1:t1, bye:true });
+  await fbSet(`/tournament/rounds/${round}`, existing);
+  toast(`Freirunde für ${state.teams[t1]?.name} hinzugefügt`);
+  populateManualSelects();
 };
 
 window.deleteCurrentRound = async function() {
