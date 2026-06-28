@@ -174,34 +174,35 @@
 
   /* ── My-match hero banner ── */
   .my-match-banner {
-    background: linear-gradient(135deg, rgba(232,160,32,.13) 0%, rgba(232,160,32,.05) 100%);
-    border: 1.5px solid var(--accent);
-    border-radius: 10px;
-    padding: 1rem 1.1rem 0.8rem;
-    margin-bottom: 1rem;
+    background: linear-gradient(135deg, rgba(232,160,32,.16) 0%, rgba(232,160,32,.06) 100%);
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    padding: 1.4rem 1.4rem 1.1rem;
+    margin-bottom: 1.1rem;
   }
   .my-match-banner .banner-label {
-    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 1.5px; color: var(--accent); margin-bottom: 0.5rem;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--accent); margin-bottom: 0.75rem;
   }
   .my-match-banner .banner-vs {
     display: grid; grid-template-columns: 1fr auto 1fr;
-    align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;
+    align-items: center; gap: 0.75rem; margin-bottom: 1rem;
   }
   .my-match-banner .banner-team {
-    font-size: 1.05rem; font-weight: 700; line-height: 1.2;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.9rem; font-weight: 400; line-height: 1.1; letter-spacing: 1px;
   }
   .my-match-banner .banner-team.right { text-align: right; }
   .my-match-banner .banner-vs-dot {
-    font-size: 0.75rem; font-weight: 700; color: var(--muted);
-    background: var(--surface2); padding: 3px 8px; border-radius: 4px;
-    letter-spacing: 1px;
+    font-size: 0.8rem; font-weight: 700; color: var(--muted);
+    background: var(--surface2); padding: 5px 10px; border-radius: 5px;
+    letter-spacing: 1px; white-space: nowrap;
   }
   .field-chip {
-    display: inline-flex; align-items: center; gap: 0.4rem;
+    display: inline-flex; align-items: center; gap: 0.5rem;
     background: var(--accent); color: #000;
-    font-size: 0.82rem; font-weight: 700;
-    padding: 0.35rem 0.8rem; border-radius: 6px;
+    font-size: 1rem; font-weight: 700;
+    padding: 0.5rem 1.1rem; border-radius: 8px;
     letter-spacing: 0.3px;
   }
   .field-chip-ghost {
@@ -355,6 +356,20 @@
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
         </div>
         <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 3/1/0 · Buchholz-Tiebreaker</p>
+      </div>
+
+      <!-- Simulation -->
+      <div class="card">
+        <div class="card-title">🧪 Pairing-Simulation & Test</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
+          <div><label class="label">Teams</label><input type="number" id="sim-teams" value="40" min="4" max="60" style="width:70px"></div>
+          <div><label class="label">Runden</label><input type="number" id="sim-rounds" value="6" min="2" max="10" style="width:70px"></div>
+          <button class="btn btn-primary" onclick="runSimulation()">▶ Simulation starten</button>
+        </div>
+        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft lokal im Browser – schreibt nichts in Firebase. Prüft Rematches, Freirunden und Buchholz.</p>
+        <div id="sim-output" style="display:none">
+          <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -670,9 +685,9 @@ function renderPairings() {
       const oppScore = isT1 ? myMatch.score2 : myMatch.score1;
       const tag = myScore>oppScore?'win':myScore<oppScore?'loss':'draw';
       const tagLabel = myScore>oppScore?'SIEG':myScore<oppScore?'NIEDERLAGE':'UNENTSCHIEDEN';
-      resultHtml = `<div style="display:flex;align-items:center;gap:.6rem;margin-top:.6rem">
-        <span style="font-size:1.4rem;font-weight:700;letter-spacing:3px">${myMatch.score1} : ${myMatch.score2}</span>
-        <span class="result-tag ${tag}">${tagLabel}</span>
+      resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
+        <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myMatch.score1} : ${myMatch.score2}</span>
+        <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${state.currentRound})">✏ Ändern</button>
       </div>`;
     } else {
@@ -958,6 +973,157 @@ window.printPins = function() {
   </table></body></html>`;
   const w=window.open('','_blank');
   w.document.write(html); w.document.close();
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulation & Robustness Test
+// ─────────────────────────────────────────────────────────────────────────────
+window.runSimulation = function() {
+  const numTeams  = parseInt(document.getElementById('sim-teams').value)  || 40;
+  const numRounds = parseInt(document.getElementById('sim-rounds').value) || 6;
+  const log = []; let errors = 0; let warnings = 0;
+  const out  = msg => log.push(msg);
+  const ok   = msg => log.push('✅ ' + msg);
+  const warn = msg => { log.push('⚠️  ' + msg); warnings++; };
+  const err  = msg => { log.push('❌ ' + msg); errors++; };
+
+  out(`━━━ Simulation: ${numTeams} Teams, ${numRounds} Runden ━━━\n`);
+
+  // Build local teams
+  const simTeams = {};
+  for (let i = 1; i <= numTeams; i++) simTeams[`t${i}`] = { name: `Team ${String(i).padStart(2,'0')}` };
+  const simRounds = {};
+
+  function simStandings() {
+    const ids = Object.keys(simTeams);
+    const s = {};
+    ids.forEach(id => s[id] = { pts:0, wins:0, draws:0, losses:0, diff:0, opponents:[] });
+    Object.values(simRounds).forEach(round => {
+      if (!Array.isArray(round)) return;
+      round.forEach(m => {
+        if (m.bye) { if (s[m.team1]) { s[m.team1].pts+=3; s[m.team1].wins+=1; } return; }
+        if (m.score1===undefined||!s[m.team1]||!s[m.team2]) return;
+        s[m.team1].opponents.push(m.team2); s[m.team2].opponents.push(m.team1);
+        s[m.team1].diff+=m.score1-m.score2; s[m.team2].diff+=m.score2-m.score1;
+        if (m.score1>m.score2){ s[m.team1].pts+=3; s[m.team1].wins+=1; s[m.team2].losses+=1; }
+        else if (m.score2>m.score1){ s[m.team2].pts+=3; s[m.team2].wins+=1; s[m.team1].losses+=1; }
+        else { s[m.team1].pts+=1; s[m.team2].pts+=1; s[m.team1].draws+=1; s[m.team2].draws+=1; }
+      });
+    });
+    ids.forEach(id => { s[id].buchholz = s[id].opponents.reduce((sum,o)=>sum+(s[o]?.pts||0),0); });
+    return ids.map(id=>({id,...s[id]})).sort((a,b)=>b.pts-a.pts||b.buchholz-a.buchholz||b.diff-a.diff);
+  }
+
+  function simPairing() {
+    const ids = simStandings().map(t=>t.id);
+    const played = new Set();
+    Object.values(simRounds).forEach(round => {
+      if (!Array.isArray(round)) return;
+      round.forEach(m => { if (!m.bye){ played.add(m.team1+'_'+m.team2); played.add(m.team2+'_'+m.team1); } });
+    });
+    const hadBye = new Set();
+    Object.values(simRounds).forEach(round => {
+      if (!Array.isArray(round)) return;
+      round.forEach(m => { if (m.bye) hadBye.add(m.team1); });
+    });
+    let list=[...ids]; let byeTeam=null; let rematchCount=0;
+    if (list.length%2!==0) {
+      for (let i=list.length-1;i>=0;i--) { if (!hadBye.has(list[i])){byeTeam=list.splice(i,1)[0];break;} }
+      if (!byeTeam) byeTeam=list.pop();
+    }
+    const paired=new Set(); const matches=[];
+    for (let i=0;i<list.length;i++) {
+      if (paired.has(list[i])) continue;
+      let found=false;
+      for (let j=i+1;j<list.length;j++) {
+        if (paired.has(list[j])) continue;
+        if (!played.has(list[i]+'_'+list[j])) { matches.push({team1:list[i],team2:list[j]}); paired.add(list[i]); paired.add(list[j]); found=true; break; }
+      }
+      if (!found) {
+        for (let j=i+1;j<list.length;j++) {
+          if (!paired.has(list[j])) { matches.push({team1:list[i],team2:list[j]}); paired.add(list[i]); paired.add(list[j]); rematchCount++; break; }
+        }
+      }
+    }
+    if (byeTeam) matches.push({team1:byeTeam,bye:true});
+    return {matches, rematchCount};
+  }
+
+  const byeCount={}; let totalRematches=0;
+
+  for (let r=1;r<=numRounds;r++) {
+    out(`\n── Runde ${r} ──`);
+    const {matches, rematchCount} = simPairing();
+    totalRematches += rematchCount;
+    if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
+
+    // Every team appears exactly once?
+    const seen=new Set(); let dupes=0;
+    matches.forEach(m => {
+      if (seen.has(m.team1)){ err(`${simTeams[m.team1].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team1);
+      if (!m.bye){ if (seen.has(m.team2)){ err(`${simTeams[m.team2].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team2); }
+    });
+    const missing=Object.keys(simTeams).filter(id=>!seen.has(id));
+    if (missing.length>0) err(`${missing.length} Teams fehlen in Runde ${r}`);
+    if (dupes===0&&missing.length===0) ok(`Alle ${numTeams} Teams korrekt zugeteilt`);
+
+    // Bye
+    const byeM=matches.find(m=>m.bye);
+    if (numTeams%2!==0) {
+      if (!byeM) err(`Keine Freirunde obwohl ungerade Teamzahl!`);
+      else {
+        byeCount[byeM.team1]=(byeCount[byeM.team1]||0)+1;
+        if (byeCount[byeM.team1]>1) warn(`${simTeams[byeM.team1].name} hat ${byeCount[byeM.team1]}x Freirunde`);
+        else ok(`Freirunde: ${simTeams[byeM.team1].name}`);
+      }
+    }
+
+    // Simulate results
+    simRounds[r] = matches.map((m,i)=>{
+      const base={id:`r${r}m${i}`,...m};
+      if (!m.bye){ base.score1=Math.floor(Math.random()*20); base.score2=Math.floor(Math.random()*20); }
+      return base;
+    });
+
+    // Points sanity
+    const pts = simStandings().reduce((s,t)=>s+t.pts,0);
+    const matchCount = matches.filter(m=>!m.bye).length;
+    const byeCount2 = matches.filter(m=>m.bye).length;
+    if (pts < matchCount*2+byeCount2*3 || pts > matchCount*3+byeCount2*3)
+      err(`Runde ${r}: Punktesumme ${pts} unplausibel`);
+    else ok(`Punktesumme ${pts} plausibel`);
+  }
+
+  // Buchholz check
+  out(`\n━━━ Abschlussprüfung ━━━`);
+  const final=simStandings();
+  const ptsMap={}; final.forEach(t=>ptsMap[t.id]=t.pts);
+  let buchholzOk=true;
+  final.forEach(t=>{
+    const exp=t.opponents.reduce((s,o)=>s+(ptsMap[o]||0),0);
+    if (Math.abs(exp-t.buchholz)>0.01){err(`Buchholz-Fehler: ${simTeams[t.id].name}: erwartet ${exp}, berechnet ${t.buchholz}`);buchholzOk=false;}
+  });
+  if (buchholzOk) ok('Buchholz-Wertung für alle Teams korrekt');
+
+  // Top 5
+  out(`\nFinal-Tabelle (Top 5):`);
+  final.slice(0,5).forEach((t,i)=>{
+    out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Buchholz: ${t.buchholz.toFixed(1)}  Diff: ${t.diff>=0?'+':''}${t.diff}`);
+  });
+
+  out(`\nRematches gesamt: ${totalRematches}`);
+  if (totalRematches===0) ok('Keine Rematches!');
+  else if (totalRematches<=numRounds) ok(`${totalRematches} Rematch(es) – akzeptabel`);
+  else warn(`${totalRematches} Rematches – zu viele?`);
+
+  out(`\n━━━ Ergebnis: ${errors} Fehler · ${warnings} Warnungen ━━━`);
+  if (errors===0&&warnings===0) out('🏆 Alles perfekt!');
+  else if (errors===0) out('👍 Keine kritischen Fehler');
+  else out('🔴 Kritische Fehler – bitte melden!');
+
+  document.getElementById('sim-log').textContent=log.join('\n');
+  document.getElementById('sim-output').style.display='block';
+  document.getElementById('sim-log').scrollTop=9999;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
