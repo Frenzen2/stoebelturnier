@@ -462,6 +462,7 @@ let currentMatchId = null;
 let currentRoundNum = null;
 let pinBuffer = '';
 let viewRound = null; // null = aktuell, sonst Rundennummer
+let displayRound = null; // aktuell angezeigte Runde (wird in renderPairings gesetzt)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PIN Overlay
@@ -831,7 +832,7 @@ function renderPairings() {
   const el = document.getElementById('pairings-list');
   const navEl = document.getElementById('round-nav');
   const navLabel = document.getElementById('round-nav-label');
-  const displayRound = viewRound ?? state.currentRound;
+  displayRound = viewRound ?? state.currentRound;
   const round = state.rounds[displayRound];
   const isHistoric = viewRound !== null && viewRound < state.currentRound;
 
@@ -871,11 +872,11 @@ function renderPairings() {
       resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
         <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myMatch.score1} : ${myMatch.score2}</span>
         <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${state.currentRound})">✏ Ändern</button>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>
       </div>`;
     } else {
       resultHtml = `<div style="margin-top:.6rem">
-        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('${myMatch.id}',${state.currentRound})">+ Ergebnis eintragen</button>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('${myMatch.id}',${displayRound})">+ Ergebnis eintragen</button>
       </div>`;
     }
     html += `<div class="my-match-banner">
@@ -924,9 +925,9 @@ function renderPairings() {
       <div class="pairing-result">
         ${hasResult
           ? `<span style="font-size:1.05rem;font-weight:700;letter-spacing:2px">${m.score1} : ${m.score2}</span>
-             ${canEdit?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${m.id}',${state.currentRound})">✏</button>`:''}`
+             ${canEdit?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${m.id}',${displayRound})">✏</button>`:''}`
           : canEdit
-            ? `<button class="btn btn-primary btn-sm" onclick="openModal('${m.id}',${state.currentRound})">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto">OFFEN</span>`
+            ? `<button class="btn btn-primary btn-sm" onclick="openModal('${m.id}',${displayRound})">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto">OFFEN</span>`
             : `<span class="result-tag open" style="font-size:.78rem;padding:4px 10px;background:rgba(212,43,43,0.12);color:var(--accent);border:1px solid rgba(212,43,43,0.25)">● OFFEN</span>`}
       </div>
     </div>`;
@@ -1295,7 +1296,7 @@ window.resetTournament = async function() {
 };
 
 window.openModal = function(matchId, roundNum) {
-  currentMatchId=matchId; currentRoundNum=roundNum ?? (viewRound ?? state.currentRound);
+  currentMatchId=matchId; currentRoundNum=roundNum ?? displayRound ?? state.currentRound;
   const m = state.rounds[currentRoundNum]?.find(x=>x.id===matchId);
   if (!m) return;
   document.getElementById('modal-t1').textContent=tn(m.team1);
