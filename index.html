@@ -186,6 +186,34 @@
   .empty-state { text-align: center; color: var(--muted); padding: 2.2rem 1rem; font-size: 0.88rem; }
   .empty-state .icon { font-size: 2.2rem; margin-bottom: 0.4rem; }
 
+  /* ── Collapsible sections ── */
+  .collapsible-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; padding: .1rem 0;
+  }
+  .collapsible-header:hover .collapse-arrow { color: var(--text); }
+  .collapse-arrow { color: var(--muted); font-size: .9rem; transition: transform .2s; }
+  .collapse-arrow.open { transform: rotate(180deg); }
+  .collapsible-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; max-height: 0; opacity: 0; }
+  .collapsible-body.open { max-height: 1000px; opacity: 1; }
+
+  /* ── Round progress bar ── */
+  .progress-bar-wrap { background: var(--border); border-radius: 4px; height: 6px; margin-top: .4rem; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .4s ease; }
+
+  /* ── Inline save confirm ── */
+  .save-confirm { display:none; font-size:.75rem; font-weight:700; color:var(--green); padding:.2rem .5rem; }
+  .save-confirm.show { display:inline; }
+
+  /* ── Quick round button in pairings ── */
+  .quick-round-bar {
+    display: none;
+    align-items: center; justify-content: space-between;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: .6rem .9rem; margin-bottom: .75rem; gap: .75rem;
+  }
+  .quick-round-bar.visible { display: flex; }
+
   /* ── My-match hero banner ── */
   .my-match-banner {
     background: linear-gradient(135deg, rgba(212,43,43,.18) 0%, rgba(212,43,43,.06) 100%);
@@ -297,6 +325,14 @@
       <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
       <button class="btn btn-ghost btn-sm" onclick="navRound(+1)">Vor ▶</button>
     </div>
+    <div class="quick-round-bar" id="quick-round-bar">
+      <div>
+        <div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Rundenfortschritt</div>
+        <div id="quick-progress-text" style="font-size:.85rem;font-weight:600;margin-top:.15rem"></div>
+        <div class="progress-bar-wrap" style="width:180px"><div class="progress-bar-fill" id="quick-progress-bar" style="width:0%"></div></div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="quick-next-btn" onclick="generateNextRound()">Nächste Runde</button>
+    </div>
     <div id="pairings-list"><div class="empty-state"><div class="icon">🎯</div>Keine Paarungen vorhanden</div></div>
   </div>
 
@@ -345,19 +381,25 @@
 
       <!-- Teams + PINs -->
       <div class="card">
-        <div class="card-title">Teams &amp; PINs</div>
-        <div class="form-row">
-          <div class="inline-row">
-            <input type="text" id="new-team-name" placeholder="Teamname..." style="flex:1">
-            <button class="btn btn-primary" onclick="addTeam()">+ Hinzufügen</button>
+        <div class="collapsible-header" onclick="toggleCollapse('teams-panel')">
+          <div class="card-title" style="margin-bottom:0">Teams &amp; PINs <span id="teams-count-badge" style="font-size:.7rem;color:var(--muted);font-family:Inter;font-weight:500;text-transform:none;letter-spacing:0"></span></div>
+          <span class="collapse-arrow open" id="arrow-teams-panel">▼</span>
+        </div>
+        <div class="collapsible-body open" id="teams-panel">
+          <div style="height:.75rem"></div>
+          <div class="form-row">
+            <div class="inline-row">
+              <input type="text" id="new-team-name" placeholder="Teamname..." style="flex:1">
+              <button class="btn btn-primary" onclick="addTeam()">+ Hinzufügen</button>
+            </div>
           </div>
+          <div class="form-row" style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="openImportModal()">📋 Mehrere einfügen</button>
+            <button class="btn btn-ghost btn-sm" onclick="assignAllPins()">🔑 Alle PINs vergeben</button>
+            <button class="btn btn-ghost btn-sm" onclick="printPins()">🖨 PIN-Liste drucken</button>
+          </div>
+          <div id="admin-teams-list"></div>
         </div>
-        <div class="form-row" style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="openImportModal()">📋 Mehrere einfügen</button>
-          <button class="btn btn-ghost btn-sm" onclick="assignAllPins()">🔑 Alle PINs vergeben</button>
-          <button class="btn btn-ghost btn-sm" onclick="printPins()">🖨 PIN-Liste drucken</button>
-        </div>
-        <div id="admin-teams-list"></div>
       </div>
 
       <!-- Runden -->
@@ -817,13 +859,14 @@ window.navRound = function(dir) {
 function renderAll() {
   document.getElementById('round-badge').textContent = `Runde ${state.currentRound||'–'}`;
   document.getElementById('main-title').textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
-  // Reset viewRound if currentRound changed
   if (viewRound && viewRound > state.currentRound) viewRound = null;
   renderPairings();
   renderStandings();
   renderTeamsList();
   renderAdminTeams();
   renderRoundStatus();
+  updateQuickBar();
+  updateTeamsBadge();
 }
 
 function renderRoundStatus() {
@@ -1333,7 +1376,8 @@ window.submitResult = async function() {
   if (idx<0) return;
   round[idx]={...round[idx],score1:s1,score2:s2};
   await fbSet(`/tournament/rounds/${currentRoundNum}`,round);
-  closeModal(); toast('Ergebnis gespeichert');
+  closeModal();
+  toast('✅ Ergebnis gespeichert');
 };
 
 window.saveFirebaseConfig = async function() {
@@ -1368,7 +1412,14 @@ window.unlockAdmin = function() {
     const cfg=loadConfig();
     if (cfg) { document.getElementById('fb-apikey').value=cfg.apiKey||''; document.getElementById('fb-projectid').value=cfg.projectId||''; document.getElementById('fb-appid').value=cfg.appId||''; document.getElementById('fb-dburl').value=cfg.dbUrl||''; }
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
+    if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
+    // Firebase config collapsed by default (already configured)
+    const fbBody = document.getElementById('fb-config');
+    const fbArrow = document.getElementById('arrow-fb-config');
+    if (fbBody) { fbBody.classList.remove('open'); }
+    if (fbArrow) { fbArrow.classList.remove('open'); }
     renderAdminTeams();
+    updateTeamsBadge();
   } else { toast('Falsches Passwort'); }
 };
 
@@ -1406,6 +1457,54 @@ window.printPins = function() {
   const w=window.open('','_blank');
   w.document.write(html); w.document.close();
 };
+
+// ── Collapsible sections ──
+window.toggleCollapse = function(id) {
+  const body = document.getElementById(id);
+  const arrow = document.getElementById('arrow-' + id);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  if (arrow) arrow.classList.toggle('open', !isOpen);
+};
+
+// ── Quick round bar update ──
+function updateQuickBar() {
+  const bar = document.getElementById('quick-round-bar');
+  const progressText = document.getElementById('quick-progress-text');
+  const progressFill = document.getElementById('quick-progress-bar');
+  const nextBtn = document.getElementById('quick-next-btn');
+  if (!bar) return;
+
+  // Only show for admin
+  if (!session.isAdmin) { bar.classList.remove('visible'); return; }
+
+  const round = state.rounds[state.currentRound] || [];
+  if (!round.length) { bar.classList.remove('visible'); return; }
+
+  const total = round.filter(m => !m.bye).length;
+  const done  = round.filter(m => !m.bye && m.score1 !== undefined).length;
+  const pct   = total > 0 ? Math.round(done/total*100) : 0;
+
+  bar.classList.add('visible');
+  progressText.textContent = `${done} / ${total} Ergebnisse`;
+  progressFill.style.width = pct + '%';
+  progressFill.style.background = done === total ? 'var(--green)' : 'var(--accent)';
+
+  if (nextBtn) {
+    nextBtn.disabled = done < total;
+    nextBtn.textContent = done === total ? '✓ Nächste Runde' : `⏳ ${total-done} offen`;
+  }
+}
+
+// ── Update teams count badge ──
+function updateTeamsBadge() {
+  const badge = document.getElementById('teams-count-badge');
+  if (badge) {
+    const n = Object.keys(state.teams).length;
+    badge.textContent = n > 0 ? `(${n} Teams)` : '';
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Simulation & Robustness Test
