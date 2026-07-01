@@ -2,8 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<meta name="apple-mobile-web-app-title" content="🔥 FF Pichl">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-<title>Stöbelturnier 2025</title>
+<title>🔥 FF Pichl</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -706,11 +709,16 @@ function calcStandings() {
 // Swiss Pairing
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-// Swiss Pairing – Bracket-Adjacent mit Backtracking (portiert aus Google Apps Script)
+// Swiss Pairing – Hybrid: Bracket (Runden 1-4) → Buchholz-gewichtet (ab Runde 5)
 // ─────────────────────────────────────────────────────────────────────────────
+const HYBRID_SWITCH_ROUND = 5; // ab dieser Runde Buchholz-Modus
+
 function generateSwissPairing() {
   const standings = calcStandings();
   if (standings.length < 2) { toast('Mindestens 2 Teams benötigt'); return null; }
+
+  const nextRound = state.currentRound + 1;
+  const useBuchholz = nextRound >= HYBRID_SWITCH_ROUND;
 
   // ── Hilfsfunktionen ──
   const keyPair = (a,b) => [a,b].sort().join('_');
@@ -720,77 +728,34 @@ function generateSwissPairing() {
     return a;
   };
 
-  // ── Rematch-Historie aufbauen ──
+  // ── Rematch-Historie ──
   const playedSet = new Set();
-  const byeHistory = new Map(); // teamId -> letzte Bye-Runde
+  const byeHistory = new Map();
   Object.entries(state.rounds).forEach(([rNum, round]) => {
     if (!Array.isArray(round)) return;
     round.forEach(m => {
-      if (m.bye) {
-        const prev = byeHistory.get(m.team1) || 0;
-        byeHistory.set(m.team1, Math.max(prev, parseInt(rNum)));
-      } else {
-        playedSet.add(keyPair(m.team1, m.team2));
-      }
+      if (m.bye) { byeHistory.set(m.team1, Math.max(byeHistory.get(m.team1)||0, parseInt(rNum))); }
+      else { playedSet.add(keyPair(m.team1, m.team2)); }
     });
   });
   const hasPlayed = (a,b) => playedSet.has(keyPair(a,b));
 
-  // ── Rang-Map ──
-  const rankOf = new Map();
-  standings.forEach((t,i) => rankOf.set(t.id, i));
-
-  // ── BYE-Vergabe: schlechtestes Team ohne (oder mit ältestem) Bye ──
+  // ── BYE-Vergabe ──
   let eligibleIds = standings.map(t => t.id);
   let byeTeam = null;
   if (eligibleIds.length % 2 !== 0) {
-    const lastRound = state.currentRound; // noch nicht erhöht
     const worstFirst = [...eligibleIds].reverse();
-    // 1. noch kein Bye
-    byeTeam = worstFirst.find(id => !byeHistory.has(id)) ?? null;
-    // 2. kein Bye in letzter Runde
-    if (!byeTeam) byeTeam = worstFirst.find(id => byeHistory.get(id) !== lastRound) ?? null;
-    // 3. Fallback: einfach schlechtestes
-    if (!byeTeam) byeTeam = worstFirst[0];
+    byeTeam = worstFirst.find(id => !byeHistory.has(id))
+           ?? worstFirst.find(id => byeHistory.get(id) !== state.currentRound)
+           ?? worstFirst[0];
     eligibleIds = eligibleIds.filter(id => id !== byeTeam);
   }
 
-  // ── Punkte-Brackets aufbauen ──
-  const ptOf = new Map(standings.map(t => [t.id, t.pts]));
-  const brackets = new Map();
-  eligibleIds.forEach(id => {
-    const pts = ptOf.get(id) ?? 0;
-    if (!brackets.has(pts)) brackets.set(pts, []);
-    brackets.get(pts).push(id);
-  });
-  const bracketPts = [...brackets.keys()].sort((a,b) => b-a);
-
-  // ── Adjacent Pairing mit lokalem Swap (Fenstergröße 4) ──
-  function pairAdjacent(ids, allowRematch) {
-    const ordered = ids.slice().sort((a,b) => (rankOf.get(a)??999) - (rankOf.get(b)??999));
-    const pairs = []; const leftover = [];
-    let i = 0;
-    while (i < ordered.length) {
-      if (i === ordered.length - 1) { leftover.push(ordered[i]); break; }
-      const a = ordered[i], b = ordered[i+1];
-      if (allowRematch || !hasPlayed(a,b)) { pairs.push([a,b]); i+=2; continue; }
-      // lokaler Swap mit 4er-Fenster
-      if (i+3 < ordered.length) {
-        const c = ordered[i+2], d = ordered[i+3];
-        if ((!hasPlayed(a,c)||allowRematch) && (!hasPlayed(b,d)||allowRematch)) { pairs.push([a,c],[b,d]); i+=4; continue; }
-        if ((!hasPlayed(a,d)||allowRematch) && (!hasPlayed(b,c)||allowRematch)) { pairs.push([a,d],[b,c]); i+=4; continue; }
-      }
-      leftover.push(a); i++;
-    }
-    return { pairs, leftover };
-  }
-
-  // ── Backtracking für Rest-Teams ──
+  // ── Backtracking ──
   function tryPairAll(ids, allowRematch) {
-    if (ids.length === 0) return [];
+    if (!ids.length) return [];
     if (ids.length % 2 !== 0) return null;
     const paired = new Array(ids.length).fill(false);
-    // sortiere nach wenigsten möglichen Gegnern (schwierigste zuerst)
     const candCount = ids.map((a,i) => ids.filter((b,j) => i!==j && (allowRematch||!hasPlayed(a,b))).length);
     const order = ids.map((_,i)=>i).sort((a,b)=>candCount[a]-candCount[b]);
     const res = [];
@@ -810,35 +775,80 @@ function generateSwissPairing() {
     return bt(0) ? res : null;
   }
 
-  // ── Bracket-Durchlauf mit Carry-Down ──
-  const finalPairs = [];
-  const pairedGlobal = new Set();
-  let carry = null;
-
-  for (const pts of bracketPts) {
-    let ids = shuffle(
-      (brackets.get(pts) || [])
-        .filter(id => !pairedGlobal.has(id))
-        .sort((a,b) => (rankOf.get(a)??999)-(rankOf.get(b)??999))
-    );
-    if (carry !== null) { ids = [carry, ...ids]; carry = null; }
-    if (ids.length === 0) continue;
-
-    const { pairs, leftover } = pairAdjacent(ids, false);
-    pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-
-    // carry exactly ONE into next bracket
-    if (leftover.length > 0) { carry = leftover[0]; }
+  // ── Adjacent Pairing mit lokalem Swap ──
+  function pairAdjacent(ids, rankOf, allowRematch) {
+    const ordered = ids.slice().sort((a,b) => (rankOf.get(a)??999)-(rankOf.get(b)??999));
+    const pairs = []; const leftover = [];
+    let i = 0;
+    while (i < ordered.length) {
+      if (i === ordered.length-1) { leftover.push(ordered[i]); break; }
+      const a = ordered[i], b = ordered[i+1];
+      if (allowRematch || !hasPlayed(a,b)) { pairs.push([a,b]); i+=2; continue; }
+      if (i+3 < ordered.length) {
+        const c = ordered[i+2], d = ordered[i+3];
+        if ((!hasPlayed(a,c)||allowRematch)&&(!hasPlayed(b,d)||allowRematch)){ pairs.push([a,c],[b,d]); i+=4; continue; }
+        if ((!hasPlayed(a,d)||allowRematch)&&(!hasPlayed(b,c)||allowRematch)){ pairs.push([a,d],[b,c]); i+=4; continue; }
+      }
+      leftover.push(a); i++;
+    }
+    return { pairs, leftover };
   }
 
-  // ── Rest-Teams: alle noch ungeparten + finaler carry ──
-  const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
-  if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
+  const finalPairs = [];
+  const pairedGlobal = new Set();
 
-  if (rest.length > 0) {
-    const restPairs = tryPairAll(rest, false) || tryPairAll(rest, true);
-    if (!restPairs) { toast('⚠️ Pairing unvollständig – zu wenig Teams für diese Runde?'); return null; }
-    restPairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+  if (useBuchholz) {
+    // ══ MODUS B: Buchholz-gewichtetes Ranking (ab Runde 5) ══
+    // Score = Punkte*10 + Buchholz*1 → kontinuierliches Ranking statt harte Brackets
+    const maxPts = Math.max(...standings.map(t=>t.pts), 1);
+    const maxBH  = Math.max(...standings.map(t=>t.buchholz), 1);
+    const scoreOf = new Map(standings.map(t => [
+      t.id,
+      (t.pts / maxPts) * 100 + (t.buchholz / maxBH) * 10  // Punkte dominieren, BH feinjustiert
+    ]));
+    const buchRankOf = new Map(
+      [...eligibleIds].sort((a,b) => (scoreOf.get(b)||0)-(scoreOf.get(a)||0))
+                      .map((id,i) => [id,i])
+    );
+
+    const { pairs, leftover } = pairAdjacent(eligibleIds, buchRankOf, false);
+    pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+
+    const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
+    leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
+    if (rest.length > 0) {
+      const rp = tryPairAll(rest, false) || tryPairAll(rest, true);
+      if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+    }
+
+  } else {
+    // ══ MODUS A: Klassisches Bracket-Pairing (Runden 1-4) ══
+    const ptOf = new Map(standings.map(t => [t.id, t.pts]));
+    const rankOf = new Map(standings.map((t,i) => [t.id, i]));
+    const brackets = new Map();
+    eligibleIds.forEach(id => {
+      const pts = ptOf.get(id)??0;
+      if (!brackets.has(pts)) brackets.set(pts,[]);
+      brackets.get(pts).push(id);
+    });
+    const bracketPts = [...brackets.keys()].sort((a,b)=>b-a);
+    let carry = null;
+
+    for (const pts of bracketPts) {
+      let ids = shuffle((brackets.get(pts)||[]).filter(id=>!pairedGlobal.has(id)).sort((a,b)=>(rankOf.get(a)??999)-(rankOf.get(b)??999)));
+      if (carry!==null) { ids=[carry,...ids]; carry=null; }
+      if (!ids.length) continue;
+      const { pairs, leftover } = pairAdjacent(ids, rankOf, false);
+      pairs.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+      if (leftover.length>0) carry=leftover[0];
+    }
+
+    const rest = eligibleIds.filter(id=>!pairedGlobal.has(id));
+    if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
+    if (rest.length>0) {
+      const rp = tryPairAll(rest,false)||tryPairAll(rest,true);
+      if (rp) rp.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+    }
   }
 
   // ── Vollständigkeitsprüfung ──
@@ -848,7 +858,6 @@ function generateSwissPairing() {
     return null;
   }
 
-  // ── Ergebnis zusammenbauen ──
   const matches = finalPairs.map(([a,b]) => ({ team1:a, team2:b }));
   if (byeTeam) matches.push({ team1:byeTeam, bye:true });
   return matches;
@@ -1555,8 +1564,9 @@ window.runSimulation = function() {
     return ids.map(id=>({id,...s[id]})).sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins);
   }
 
-  function simPairing() {
+  function simPairing(roundNum) {
     const standings = simStandings();
+    const useBuchholz = roundNum >= HYBRID_SWITCH_ROUND;
     const kp = (a,b) => [a,b].sort().join('_');
     const sh = arr => { const a=arr.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
     const playedSet = new Set();
@@ -1569,23 +1579,16 @@ window.runSimulation = function() {
       });
     });
     const hp = (a,b) => playedSet.has(kp(a,b));
-    const rankOf = new Map(standings.map((t,i)=>[t.id,i]));
-    const ptOf   = new Map(standings.map(t=>[t.id,t.pts]));
 
     let eligibleIds = standings.map(t=>t.id);
     let byeTeam = null;
     if (eligibleIds.length%2!==0) {
       const wf=[...eligibleIds].reverse();
-      byeTeam = wf.find(id=>!byeHist.has(id)) ?? wf.find(id=>byeHist.get(id)!==Object.keys(simRounds).length) ?? wf[0];
+      byeTeam = wf.find(id=>!byeHist.has(id)) ?? wf.find(id=>byeHist.get(id)!==roundNum-1) ?? wf[0];
       eligibleIds = eligibleIds.filter(id=>id!==byeTeam);
     }
 
-    // brackets
-    const brackets = new Map();
-    eligibleIds.forEach(id=>{ const p=ptOf.get(id)||0; if(!brackets.has(p))brackets.set(p,[]); brackets.get(p).push(id); });
-    const bpts = [...brackets.keys()].sort((a,b)=>b-a);
-
-    function pairAdj(ids, allowRem) {
+    function pairAdj(ids, rankOf, allowRem) {
       const ord=ids.slice().sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999));
       const pairs=[]; const lo=[]; let i=0;
       while(i<ord.length){
@@ -1618,34 +1621,39 @@ window.runSimulation = function() {
     }
 
     const finalPairs=[]; const pg=new Set();
-    // Pass 1: bracket-adjacent pairing, carry ONE unpaired into next bracket
-    let carry=null;
-    for(const pts of bpts){
-      let ids=sh((brackets.get(pts)||[]).filter(id=>!pg.has(id)).sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999)));
-      if(carry!==null){ids=[carry,...ids];carry=null;}
-      if(!ids.length)continue;
-      const {pairs,leftover}=pairAdj(ids,false);
+
+    if (useBuchholz) {
+      const maxPts=Math.max(...standings.map(t=>t.pts),1);
+      const maxBH=Math.max(...standings.map(t=>t.buchholz),1);
+      const scoreOf=new Map(standings.map(t=>[t.id,(t.pts/maxPts)*100+(t.buchholz/maxBH)*10]));
+      const bRank=new Map([...eligibleIds].sort((a,b)=>(scoreOf.get(b)||0)-(scoreOf.get(a)||0)).map((id,i)=>[id,i]));
+      const {pairs,leftover}=pairAdj(eligibleIds,bRank,false);
       pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
-      // carry exactly ONE into next bracket, rest go to global rest pool
-      if(leftover.length>0){ carry=leftover[0]; }
-    }
-    // Pass 2: collect ALL unpaired (including final carry) into rest
-    const rest=eligibleIds.filter(id=>!pg.has(id));
-    if(carry && !pg.has(carry) && !rest.includes(carry)) rest.push(carry);
-    if(rest.length>0){
-      // try without rematch first, then with
-      const rp=tryAll(rest,false)||tryAll(rest,true);
-      if(rp) rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
-      else {
-        // last resort: pair sequentially
-        for(let i=0;i<rest.length-1;i+=2) finalPairs.push([rest[i],rest[i+1]]);
+      const rest=eligibleIds.filter(id=>!pg.has(id));
+      leftover.forEach(id=>{if(!rest.includes(id))rest.push(id);});
+      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
+    } else {
+      const ptOf=new Map(standings.map(t=>[t.id,t.pts]));
+      const rankOf=new Map(standings.map((t,i)=>[t.id,i]));
+      const brackets=new Map();
+      eligibleIds.forEach(id=>{const p=ptOf.get(id)||0;if(!brackets.has(p))brackets.set(p,[]);brackets.get(p).push(id);});
+      const bpts=[...brackets.keys()].sort((a,b)=>b-a);
+      let carry=null;
+      for(const pts of bpts){
+        let ids=sh((brackets.get(pts)||[]).filter(id=>!pg.has(id)).sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999)));
+        if(carry!==null){ids=[carry,...ids];carry=null;}
+        if(!ids.length)continue;
+        const {pairs,leftover}=pairAdj(ids,rankOf,false);
+        pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
+        if(leftover.length>0)carry=leftover[0];
       }
+      const rest=eligibleIds.filter(id=>!pg.has(id));
+      if(carry&&!pg.has(carry)&&!rest.includes(carry))rest.push(carry);
+      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
     }
 
-    // count rematches
     let rematchCount=0;
-    finalPairs.forEach(([a,b])=>{ if(hp(a,b))rematchCount++; });
-
+    finalPairs.forEach(([a,b])=>{if(hp(a,b))rematchCount++;});
     const matches=finalPairs.map(([a,b])=>({team1:a,team2:b}));
     if(byeTeam)matches.push({team1:byeTeam,bye:true});
     return {matches, rematchCount};
@@ -1654,8 +1662,9 @@ window.runSimulation = function() {
   const byeCount={}; let totalRematches=0;
 
   for (let r=1;r<=numRounds;r++) {
-    out(`\n── Runde ${r} ──`);
-    const {matches, rematchCount} = simPairing();
+    const mode = r >= HYBRID_SWITCH_ROUND ? '📊 Buchholz' : '🏆 Bracket';
+    out(`\n── Runde ${r} [${mode}] ──`);
+    const {matches, rematchCount} = simPairing(r);
     totalRematches += rematchCount;
     if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
 
