@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Wood grain background -->
+    <linearGradient id="wood_bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c8a870"/>
+      <stop offset="30%" stop-color="#b89458"/>
+      <stop offset="60%" stop-color="#c8a870"/>
+      <stop offset="100%" stop-color="#a07840"/>
+    </linearGradient>
+    <!-- Stöbel wood -->
+    <linearGradient id="stoebelCol" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4a6030" opacity="0.7"/>
+      <stop offset="100%" stop-color="#2a3818" opacity="0.7"/>
+    </linearGradient>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="rgba(0,0,0,0.35)"/>
+    </filter>
+    <filter id="soft">
+      <feGaussianBlur stdDeviation="1.5"/>
+    </filter>
+  </defs>
+
+  <!-- Wood background -->
+  <rect width="512" height="512" rx="88" ry="88" fill="url(#wood_bg)"/>
+
+  <!-- Wood grain lines -->
+  <g opacity="0.18" stroke="#7a5828" stroke-width="1.5" fill="none">
+    <path d="M 0,60 Q 256,45 512,62"/>
+    <path d="M 0,95 Q 256,82 512,97"/>
+    <path d="M 0,135 Q 256,120 512,138"/>
+    <path d="M 0,175 Q 256,162 512,178"/>
+    <path d="M 0,215 Q 256,200 512,218"/>
+    <path d="M 0,255 Q 256,242 512,258"/>
+    <path d="M 0,295 Q 256,282 512,298"/>
+    <path d="M 0,335 Q 256,322 512,338"/>
+    <path d="M 0,375 Q 256,362 512,378"/>
+    <path d="M 0,415 Q 256,402 512,418"/>
+    <path d="M 0,455 Q 256,442 512,458"/>
+  </g>
+
+  <!-- Rounded rect overlay for slight depth -->
+  <rect width="512" height="512" rx="88" ry="88"
+        fill="none" stroke="rgba(100,70,20,0.3)" stroke-width="8"/>
+
+  <!-- Crossed Stöbel watermark (like the flyer) -->
+  <g opacity="0.22" fill="url(#stoebelCol)" filter="url(#soft)">
+    <!-- Stöbel 1: top-left to bottom-right -->
+    <g transform="translate(256,256) rotate(40)">
+      <rect x="-11" y="-170" width="22" height="340" rx="11"/>
+      <polygon points="-11,-170 11,-170 5,-215 -5,-215"/>
+      <ellipse cx="0" cy="-215" rx="5" ry="4"/>
+    </g>
+    <!-- Stöbel 2: top-right to bottom-left -->
+    <g transform="translate(256,256) rotate(-40)">
+      <rect x="-11" y="-170" width="22" height="340" rx="11"/>
+      <polygon points="-11,-170 11,-170 5,-215 -5,-215"/>
+      <ellipse cx="0" cy="-215" rx="5" ry="4"/>
+    </g>
+    <!-- Circle around cross -->
+    <circle cx="256" cy="256" r="155" fill="none" stroke="url(#stoebelCol)"
+            stroke-width="18" opacity="1"/>
+  </g>
+
+  <!-- FF PICHL – dark, bold, like the flyer style -->
+  <text x="256" y="310" font-family="'Arial Black', Arial, sans-serif"
+        font-size="110" font-weight="900" fill="#2a1a08"
+        text-anchor="middle" letter-spacing="-3" filter="url(#sh)">FF PICHL</text>
+
+  <!-- STÖBELTURNIER arc top -->
+  <path id="arc" d="M 80,270 A 180,180 0 0,1 432,270" fill="none"/>
+  <text font-family="Arial, sans-serif" font-size="34" font-weight="700"
+        fill="#2a1a08" letter-spacing="8" opacity="0.75">
+    <textPath href="#arc" startOffset="50%" text-anchor="middle">STÖBELTURNIER</textPath>
+  </text>
+
+  <!-- Bottom: www.ffpichl.at style -->
+  <text x="256" y="420" font-family="Arial, sans-serif"
+        font-size="28" font-weight="600" fill="#4a6030"
+        text-anchor="middle" letter-spacing="1" opacity="0.85">www.ffpichl.at</text>
+
+  <!-- Bottom thin line -->
+  <rect x="60" y="430" width="392" height="2" fill="rgba(42,26,8,0.2)" rx="1"/>
+
+  <!-- Year -->
+  <text x="256" y="468" font-family="Arial, sans-serif"
+        font-size="26" font-weight="700" fill="#2a1a08"
+        text-anchor="middle" letter-spacing="6" opacity="0.5">2026</text>
+
+</svg>
