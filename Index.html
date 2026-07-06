@@ -275,7 +275,7 @@
 <!-- PIN Login -->
 <div id="pin-overlay" class="open">
   <div class="pin-box">
-    <h2><img src="stöbel.png" alt="" style="height:40px;width:auto;vertical-align:middle;margin-right:8px;object-fit:contain"> Stöbelturnier</h2>
+    <h2>🔥 Stöbelturnier</h2>
     <p id="pin-overlay-msg">Bitte PIN deines Teams eingeben</p>
     <div class="pin-display">
       <div class="pin-digit" id="pd0">·</div>
@@ -312,7 +312,7 @@
 </div>
 
 <header>
-  <h1 id="main-title"><img src="stöbel.png" alt="" style="height:28px;width:auto;vertical-align:middle;margin-right:8px;object-fit:contain"> Stöbelturnier</h1>
+  <h1 id="main-title">🔥 Stöbelturnier</h1>
   <div class="header-right">
     <span id="round-badge">Runde –</span>
     <span id="team-badge" onclick="showPinOverlay()" title="Team wechseln">👤 Gast</span>
@@ -878,7 +878,7 @@ window.navRound = function(dir) {
 
 function renderAll() {
   document.getElementById('round-badge').textContent = `Runde ${state.currentRound||'–'}`;
-  document.getElementById('main-title').innerHTML = '<img src="stöbel.png" alt="" style="height:28px;width:auto;vertical-align:middle;margin-right:8px;object-fit:contain"> ' + (state.settings?.title||'Stöbelturnier');
+  document.getElementById('main-title').textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
   if (viewRound && viewRound > state.currentRound) viewRound = null;
   renderPairings();
   renderStandings();
