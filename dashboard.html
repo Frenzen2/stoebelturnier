@@ -396,6 +396,43 @@
   /* ── Transition for content views ── */
   .view { display: none; }
   .view.active { display: flex; flex-direction: column; }
+
+  /* ── Standings overlay – fullscreen, outside scaled layout ── */
+  .standings-overlay {
+    display: none; position: fixed; inset: 0; background: #f2ede6;
+    z-index: 9999; flex-direction: column; transform: none !important;
+    width: 100vw; height: 100vh;
+  }
+  .standings-overlay.visible { display: flex; }
+  .standings-header {
+    background: linear-gradient(90deg, #8f0f10 0%, #c0181a 50%, #8f0f10 100%);
+    padding: 0 4vw; height: 10vh; display: flex; align-items: center;
+    justify-content: space-between; flex-shrink: 0;
+  }
+  .standings-header-title { font-family:'Bebas Neue',sans-serif; font-size:4.5vh; color:#fff; letter-spacing:0.4vw; }
+  .standings-header-sub   { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:rgba(255,255,255,0.7); letter-spacing:0.3vw; }
+  .standings-body {
+    flex:1; display:grid; grid-template-columns:1fr 1fr;
+    overflow:hidden; padding:2vh 3vw; gap:2vw;
+  }
+  .standings-col { display:flex; flex-direction:column; gap:0.8vh; overflow:hidden; }
+  .rank-row {
+    display:grid; grid-template-columns:5vw 1fr 8vw 7vw 10vw;
+    align-items:center; gap:1vw; padding:0.7vh 2vw;
+    background:#fff; border-radius:0.6vw; border-left:0.5vw solid #ddd;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08); flex-shrink:0;
+  }
+  .rank-row.zone-top    { border-left-color:#b8860b; background:#fffdf0; }
+  .rank-row.zone-mid    { border-left-color:#1a7a3c; background:#f0fff4; }
+  .rank-row.zone-bottom { border-left-color:#c0181a; background:#fff0f0; }
+  .rank-num { font-family:'Bebas Neue',sans-serif; font-size:3vh; color:#bbb; text-align:center; line-height:1; }
+  .rank-num.r1 { color:#b8860b; font-size:3.6vh; }
+  .rank-num.r2 { color:#888;    font-size:3.3vh; }
+  .rank-num.r3 { color:#a06828; font-size:3.1vh; }
+  .rank-name { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:#1a1a1a; letter-spacing:0.05vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1; }
+  .rank-pts  { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:#c0181a; text-align:right; line-height:1; }
+  .rank-diff { font-family:'Bebas Neue',sans-serif; font-size:2vh; text-align:right; line-height:1; }
+  .rank-record { font-size:1.5vh; font-weight:700; color:#888; text-align:right; }
 </style>
 </head>
 <body>
@@ -434,17 +471,7 @@
     </div>
   </div>
 
-  <!-- TABELLE OVERLAY – fullscreen ranklist -->
-  <div class="standings-overlay" id="standings-overlay">
-    <div class="standings-header">
-      <div class="standings-header-title">🏆 Aktuelle Tabelle</div>
-      <div class="standings-header-sub">Runde <span id="overlay-round">–</span> · Stöbelturnier 2026</div>
-    </div>
-    <div class="standings-body">
-      <div class="standings-col" id="standings-col-left"></div>
-      <div class="standings-col" id="standings-col-right"></div>
-    </div>
-  </div>
+
 
   <!-- SPONSOR BANNER -->
   <div class="sponsor-bar">
