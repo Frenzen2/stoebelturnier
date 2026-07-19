@@ -93,30 +93,30 @@ header {
 #standings-overlay.visible { display:flex; }
 .so-header {
   background:linear-gradient(90deg,#8f0f10,#c0181a 50%,#8f0f10);
-  height:10vh; display:flex; align-items:center; justify-content:space-between;
-  padding:0 4vw; flex-shrink:0;
+  height:100px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 60px; flex-shrink:0;
 }
-.so-title { font-family:'Bebas Neue',sans-serif; font-size:4.5vh; color:#fff; letter-spacing:0.4vw; }
-.so-sub   { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:rgba(255,255,255,0.7); letter-spacing:0.3vw; }
-.so-body  { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:2vw; padding:2vh 3vw; overflow:hidden; }
-.so-col   { display:flex; flex-direction:column; gap:0.8vh; overflow:hidden; }
+.so-title { font-family:'Bebas Neue',sans-serif; font-size:3.5rem; color:#fff; letter-spacing:4px; }
+.so-sub   { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:rgba(255,255,255,0.7); letter-spacing:3px; }
+.so-body  { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:30px; padding:20px 50px; overflow:hidden; min-height:0; }
+.so-col   { display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0; }
 .so-row {
-  display:grid; grid-template-columns:5vw 1fr 8vw 7vw 10vw;
-  align-items:center; gap:1vw; padding:0.7vh 2vw;
-  background:#fff; border-radius:0.6vw; border-left:0.5vw solid #ddd;
+  display:grid; grid-template-columns:70px 1fr 100px 90px 130px;
+  align-items:center; gap:14px; padding:10px 28px;
+  background:#fff; border-radius:8px; border-left:6px solid #ddd;
   box-shadow:0 1px 4px rgba(0,0,0,0.08); flex-shrink:0;
 }
 .so-row.zt { border-left-color:#b8860b; background:#fffdf0; }
 .so-row.zm { border-left-color:#1a7a3c; background:#f0fff4; }
 .so-row.zb { border-left-color:#c0181a; background:#fff0f0; }
-.so-rank { font-family:'Bebas Neue',sans-serif; font-size:3vh; color:#bbb; text-align:center; line-height:1; }
-.so-rank.r1 { color:#b8860b; font-size:3.8vh; }
-.so-rank.r2 { color:#888;    font-size:3.4vh; }
-.so-rank.r3 { color:#a06828; font-size:3.2vh; }
-.so-name { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1; }
-.so-pts  { font-family:'Bebas Neue',sans-serif; font-size:2.8vh; color:#c0181a; text-align:right; line-height:1; }
-.so-diff { font-family:'Bebas Neue',sans-serif; font-size:2vh;   text-align:right; line-height:1; }
-.so-rec  { font-size:1.5vh; font-weight:700; color:#888; text-align:right; }
+.so-rank { font-family:'Bebas Neue',sans-serif; font-size:2.4rem; color:#bbb; text-align:center; line-height:1; }
+.so-rank.r1 { color:#b8860b; font-size:3rem; }
+.so-rank.r2 { color:#888;    font-size:2.7rem; }
+.so-rank.r3 { color:#a06828; font-size:2.5rem; }
+.so-name { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:#1a1a1a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1; }
+.so-pts  { font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:#c0181a; text-align:right; line-height:1; }
+.so-diff { font-family:'Bebas Neue',sans-serif; font-size:1.6rem; text-align:right; line-height:1; }
+.so-rec  { font-size:1.1rem; font-weight:700; color:#888; text-align:right; }
 </style>
 </head>
 <body>
@@ -350,12 +350,14 @@ function toggleStandings() {
   const invScale = 1 / bodyScale;
   const ml = parseFloat(document.body.style.marginLeft) || 0;
   const mt = parseFloat(document.body.style.marginTop)  || 0;
-  ov.style.transform       = `scale(${invScale})`;
+  // Position at real screen origin, counter-scale, use screen dimensions
   ov.style.transformOrigin = '0 0';
-  ov.style.left            = `${-ml * invScale}px`;
-  ov.style.top             = `${-mt * invScale}px`;
-  ov.style.width           = `${window.innerWidth  * invScale}px`;
-  ov.style.height          = `${window.innerHeight * invScale}px`;
+  ov.style.transform       = `scale(${invScale})`;
+  ov.style.left            = `${(-ml) * invScale}px`;
+  ov.style.top             = `${(-mt) * invScale}px`;
+  // Width/height in scaled px = real screen size / bodyScale * invScale = real screen size
+  ov.style.width           = `${window.innerWidth / bodyScale}px`;
+  ov.style.height          = `${window.innerHeight / bodyScale}px`;
 }
 document.addEventListener('keydown', e => { if (e.key==='t'||e.key==='T') toggleStandings(); });
 if (new URLSearchParams(location.search).get('tabelle')==='1') toggleStandings();
@@ -406,12 +408,12 @@ function scaleToScreen() {
   const ov=document.getElementById('standings-overlay');
   if(ov && ov.classList.contains('visible')) {
     const inv=1/s;
-    ov.style.transform=`scale(${inv})`;
     ov.style.transformOrigin='0 0';
+    ov.style.transform=`scale(${inv})`;
     ov.style.left=`${-ox*inv}px`;
     ov.style.top=`${-oy*inv}px`;
-    ov.style.width=`${window.innerWidth*inv}px`;
-    ov.style.height=`${window.innerHeight*inv}px`;
+    ov.style.width=`${window.innerWidth/s}px`;
+    ov.style.height=`${window.innerHeight/s}px`;
   }
 }
 scaleToScreen();
