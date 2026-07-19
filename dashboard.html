@@ -58,18 +58,18 @@ header {
 .pc.open  { border-color:#c0181a; border-width:3px; }
 .pc.done  { border-color:#bbb; background:#f5f5f5; opacity:0.6; }
 .pc-field {
-  font-family:'Bebas Neue',sans-serif; font-size:2rem; color:#c0181a;
-  letter-spacing:3px; line-height:1; padding-bottom:5px;
-  border-bottom:2px solid #ddd; margin-bottom:3px;
+  font-family:'Bebas Neue',sans-serif; font-size:4rem; color:#c0181a;
+  letter-spacing:3px; line-height:1; padding-bottom:4px;
+  border-bottom:2px solid #ddd; margin-bottom:2px;
 }
-.pc-team-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 0; }
+.pc-team-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:1px 0; }
 .pc-team-row:first-of-type { border-bottom:1px solid #eee; }
-.pc-team { font-family:'Bebas Neue',sans-serif; font-size:3.2rem; line-height:1.0; letter-spacing:0.5px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.pc-score { font-family:'Bebas Neue',sans-serif; font-size:3.8rem; line-height:1; min-width:80px; text-align:right; flex-shrink:0; }
+.pc-team { font-family:'Bebas Neue',sans-serif; font-size:3.8rem; line-height:1.0; letter-spacing:0.5px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pc-score { font-family:'Bebas Neue',sans-serif; font-size:4rem; line-height:1; min-width:90px; text-align:right; flex-shrink:0; }
 .pc-score.win  { color:#1a7a3c; }
 .pc-score.loss { color:#aaa; }
-.pc-score.open-s { color:#ccc; font-size:2rem; }
-.pc-bye { display:flex; align-items:center; justify-content:center; color:#999; font-family:'Bebas Neue',sans-serif; font-size:2.5rem; }
+.pc-score.open-s { color:#ccc; font-size:2.2rem; }
+.pc-bye { display:flex; align-items:center; justify-content:center; color:#999; font-family:'Bebas Neue',sans-serif; font-size:3rem; }
 
 /* ── Sponsors ── */
 .sponsor-bar {
@@ -86,10 +86,9 @@ header {
 
 /* ── Standings overlay – TRUE FULLSCREEN, outside scaled body ── */
 #standings-overlay {
-  display:none; position:fixed; inset:0; z-index:99999;
+  display:none; position:fixed; top:0; left:0; z-index:99999;
   background:#f2ede6; flex-direction:column;
-  width:100vw; height:100vh;
-  transform:none !important;
+  /* size and counter-scale set by JS */
 }
 #standings-overlay.visible { display:flex; }
 .so-header {
@@ -344,7 +343,19 @@ function renderAll() { renderPairings(); renderStandings(); }
 let showStandings = false;
 function toggleStandings() {
   showStandings = !showStandings;
-  document.getElementById('standings-overlay').classList.toggle('visible', showStandings);
+  const ov = document.getElementById('standings-overlay');
+  ov.classList.toggle('visible', showStandings);
+  // Counter-scale: undo body transform so overlay fills real screen
+  const bodyScale = parseFloat(document.body.style.transform.replace('scale(','').replace(')','')) || 1;
+  const invScale = 1 / bodyScale;
+  const ml = parseFloat(document.body.style.marginLeft) || 0;
+  const mt = parseFloat(document.body.style.marginTop)  || 0;
+  ov.style.transform       = `scale(${invScale})`;
+  ov.style.transformOrigin = '0 0';
+  ov.style.left            = `${-ml * invScale}px`;
+  ov.style.top             = `${-mt * invScale}px`;
+  ov.style.width           = `${window.innerWidth  * invScale}px`;
+  ov.style.height          = `${window.innerHeight * invScale}px`;
 }
 document.addEventListener('keydown', e => { if (e.key==='t'||e.key==='T') toggleStandings(); });
 if (new URLSearchParams(location.search).get('tabelle')==='1') toggleStandings();
@@ -391,6 +402,17 @@ function scaleToScreen() {
   document.body.style.marginLeft=ox+'px';
   document.body.style.marginTop=oy+'px';
   document.documentElement.style.background='#888';
+  // Re-apply counter-scale to overlay if visible
+  const ov=document.getElementById('standings-overlay');
+  if(ov && ov.classList.contains('visible')) {
+    const inv=1/s;
+    ov.style.transform=`scale(${inv})`;
+    ov.style.transformOrigin='0 0';
+    ov.style.left=`${-ox*inv}px`;
+    ov.style.top=`${-oy*inv}px`;
+    ov.style.width=`${window.innerWidth*inv}px`;
+    ov.style.height=`${window.innerHeight*inv}px`;
+  }
 }
 scaleToScreen();
 window.addEventListener('resize',scaleToScreen);
