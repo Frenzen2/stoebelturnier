@@ -700,18 +700,15 @@ function calcStandings() {
 // Swiss Pairing
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-// Swiss Pairing – Hybrid: Bracket (Runden 1-4) → Buchholz-gewichtet (ab Runde 5)
+// Swiss Pairing – Rematch-Minimierung primär, Buchholz/Bracket als Tiebreaker
 // ─────────────────────────────────────────────────────────────────────────────
-const HYBRID_SWITCH_ROUND = 5; // ab dieser Runde Buchholz-Modus
+const HYBRID_SWITCH_ROUND = 5;
 
 function generateSwissPairing() {
   const standings = calcStandings();
   if (standings.length < 2) { toast('Mindestens 2 Teams benötigt'); return null; }
 
   const nextRound = state.currentRound + 1;
-  const useBuchholz = nextRound >= HYBRID_SWITCH_ROUND;
-
-  // ── Hilfsfunktionen ──
   const keyPair = (a,b) => [a,b].sort().join('_');
   const shuffle = arr => {
     const a = arr.slice();
@@ -719,7 +716,7 @@ function generateSwissPairing() {
     return a;
   };
 
-  // ── Rematch-Historie ──
+  // ── Historie ──
   const playedSet = new Set();
   const byeHistory = new Map();
   Object.entries(state.rounds).forEach(([rNum, round]) => {
@@ -742,20 +739,53 @@ function generateSwissPairing() {
     eligibleIds = eligibleIds.filter(id => id !== byeTeam);
   }
 
-  // ── Backtracking ──
-  function tryPairAll(ids, allowRematch) {
-    if (!ids.length) return [];
+  // ── Qualitäts-Score für eine Paarung (niedriger = besser) ──
+  // Primär: war schon gespielt? (0 = nein, 1000 = ja)
+  // Sekundär: Punktedifferenz zwischen den Teams
+  const ptOf = new Map(standings.map(t => [t.id, t.pts]));
+  const bhOf = new Map(standings.map(t => [t.id, t.buchholz||0]));
+  const rankOf = new Map(standings.map((t,i) => [t.id, i]));
+
+  const pairQuality = (a, b) => {
+    const rematch = hasPlayed(a,b) ? 10000 : 0;
+    const ptDiff = Math.abs((ptOf.get(a)||0) - (ptOf.get(b)||0));
+    const rankDiff = Math.abs((rankOf.get(a)||0) - (rankOf.get(b)||0));
+    return rematch + ptDiff * 10 + rankDiff;
+  };
+
+  // ── Backtracking mit Rematch-Minimierung ──
+  // Sortiere nach wenigsten möglichen rematch-freien Gegnern (schwierigste zuerst)
+  function tryPairOptimal(ids) {
+    if (!ids.length) return { pairs: [], rematches: 0 };
     if (ids.length % 2 !== 0) return null;
+
+    // Erst ohne Rematches versuchen
+    const result = backtrack(ids, false);
+    if (result) return { pairs: result, rematches: 0 };
+
+    // Mit minimalem Rematch
+    const resultR = backtrack(ids, true);
+    if (resultR) {
+      const rematches = resultR.filter(([a,b]) => hasPlayed(a,b)).length;
+      return { pairs: resultR, rematches };
+    }
+    return null;
+  }
+
+  function backtrack(ids, allowRematch) {
     const paired = new Array(ids.length).fill(false);
-    const candCount = ids.map((a,i) => ids.filter((b,j) => i!==j && (allowRematch||!hasPlayed(a,b))).length);
-    const order = ids.map((_,i)=>i).sort((a,b)=>candCount[a]-candCount[b]);
+    // Sortiere: wer hat die wenigsten freien Gegner? → zuerst pairen
+    const freeCnt = ids.map((a,i) => ids.filter((b,j) => i!==j && !paired[j] && (allowRematch||!hasPlayed(a,b))).length);
+    const order = ids.map((_,i)=>i).sort((a,b)=>freeCnt[a]-freeCnt[b]);
     const res = [];
     function bt(k) {
-      while (k < order.length && paired[order[k]]) k++;
-      if (k >= order.length) return true;
-      const ia = order[k]; const a = ids[ia];
-      let cands = ids.map((_,j)=>j).filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
-      cands = shuffle(cands);
+      while (k<order.length && paired[order[k]]) k++;
+      if (k>=order.length) return true;
+      const ia=order[k]; const a=ids[ia];
+      // Kandidaten nach Paarungsqualität sortieren (beste zuerst)
+      let cands = ids.map((_,j)=>j)
+        .filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
+      cands.sort((j1,j2) => pairQuality(a,ids[j1]) - pairQuality(a,ids[j2]));
       for (const ib of cands) {
         paired[ia]=paired[ib]=true; res.push([a,ids[ib]]);
         if (bt(k+1)) return true;
@@ -766,737 +796,31 @@ function generateSwissPairing() {
     return bt(0) ? res : null;
   }
 
-  // ── Adjacent Pairing mit lokalem Swap ──
-  function pairAdjacent(ids, rankOf, allowRematch) {
-    const ordered = ids.slice().sort((a,b) => (rankOf.get(a)??999)-(rankOf.get(b)??999));
-    const pairs = []; const leftover = [];
-    let i = 0;
-    while (i < ordered.length) {
-      if (i === ordered.length-1) { leftover.push(ordered[i]); break; }
-      const a = ordered[i], b = ordered[i+1];
-      if (allowRematch || !hasPlayed(a,b)) { pairs.push([a,b]); i+=2; continue; }
-      if (i+3 < ordered.length) {
-        const c = ordered[i+2], d = ordered[i+3];
-        if ((!hasPlayed(a,c)||allowRematch)&&(!hasPlayed(b,d)||allowRematch)){ pairs.push([a,c],[b,d]); i+=4; continue; }
-        if ((!hasPlayed(a,d)||allowRematch)&&(!hasPlayed(b,c)||allowRematch)){ pairs.push([a,d],[b,c]); i+=4; continue; }
-      }
-      leftover.push(a); i++;
-    }
-    return { pairs, leftover };
-  }
-
-  const finalPairs = [];
-  const pairedGlobal = new Set();
-
+  // ── Haupt-Pairing: nach Qualitäts-Gruppen ──
+  // Buchholz ab Runde 5 stärker gewichten
+  const useBuchholz = nextRound >= HYBRID_SWITCH_ROUND;
+  let sortedIds;
   if (useBuchholz) {
-    // ══ MODUS B: Buchholz-gewichtetes Ranking (ab Runde 5) ══
-    // Score = Punkte*10 + Buchholz*1 → kontinuierliches Ranking statt harte Brackets
-    const maxPts = Math.max(...standings.map(t=>t.pts), 1);
-    const maxBH  = Math.max(...standings.map(t=>t.buchholz), 1);
-    const scoreOf = new Map(standings.map(t => [
-      t.id,
-      (t.pts / maxPts) * 100 + (t.buchholz / maxBH) * 10  // Punkte dominieren, BH feinjustiert
-    ]));
-    const buchRankOf = new Map(
-      [...eligibleIds].sort((a,b) => (scoreOf.get(b)||0)-(scoreOf.get(a)||0))
-                      .map((id,i) => [id,i])
-    );
-
-    const { pairs, leftover } = pairAdjacent(eligibleIds, buchRankOf, false);
-    pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-
-    const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
-    leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
-    if (rest.length > 0) {
-      const rp = tryPairAll(rest, false) || tryPairAll(rest, true);
-      if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-    }
-
-  } else {
-    // ══ MODUS A: Klassisches Bracket-Pairing (Runden 1-4) ══
-    const ptOf = new Map(standings.map(t => [t.id, t.pts]));
-    const rankOf = new Map(standings.map((t,i) => [t.id, i]));
-    const brackets = new Map();
-    eligibleIds.forEach(id => {
-      const pts = ptOf.get(id)??0;
-      if (!brackets.has(pts)) brackets.set(pts,[]);
-      brackets.get(pts).push(id);
+    const maxPt = Math.max(...eligibleIds.map(id=>ptOf.get(id)||0),1);
+    const maxBH = Math.max(...eligibleIds.map(id=>bhOf.get(id)||0),1);
+    sortedIds = [...eligibleIds].sort((a,b) => {
+      const sa = (ptOf.get(a)||0)/maxPt*100 + (bhOf.get(a)||0)/maxBH*10;
+      const sb = (ptOf.get(b)||0)/maxPt*100 + (bhOf.get(b)||0)/maxBH*10;
+      return sb-sa;
     });
-    const bracketPts = [...brackets.keys()].sort((a,b)=>b-a);
-    let carry = null;
-
-    for (const pts of bracketPts) {
-      let ids = shuffle((brackets.get(pts)||[]).filter(id=>!pairedGlobal.has(id)).sort((a,b)=>(rankOf.get(a)??999)-(rankOf.get(b)??999)));
-      if (carry!==null) { ids=[carry,...ids]; carry=null; }
-      if (!ids.length) continue;
-      const { pairs, leftover } = pairAdjacent(ids, rankOf, false);
-      pairs.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-      if (leftover.length>0) carry=leftover[0];
-    }
-
-    const rest = eligibleIds.filter(id=>!pairedGlobal.has(id));
-    if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
-    if (rest.length>0) {
-      const rp = tryPairAll(rest,false)||tryPairAll(rest,true);
-      if (rp) rp.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
-    }
+  } else {
+    sortedIds = [...eligibleIds].sort((a,b) => (rankOf.get(a)||999)-(rankOf.get(b)||999));
   }
 
-  // ── Vollständigkeitsprüfung ──
-  const missing = eligibleIds.filter(id => !pairedGlobal.has(id));
-  if (missing.length > 0) {
-    toast('❌ ' + missing.length + ' Teams konnten nicht zugeteilt werden');
-    return null;
-  }
+  // Versuche zuerst globales Backtracking (beste Qualität)
+  const result = tryPairOptimal(sortedIds);
+  if (!result) { toast('⚠️ Pairing nicht möglich'); return null; }
 
-  const matches = finalPairs.map(([a,b]) => ({ team1:a, team2:b }));
+  const matches = result.pairs.map(([a,b]) => ({ team1:a, team2:b }));
   if (byeTeam) matches.push({ team1:byeTeam, bye:true });
   return matches;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Render
-// ─────────────────────────────────────────────────────────────────────────────
-window.navRound = function(dir) {
-  const cur = viewRound ?? state.currentRound;
-  const next = cur + dir;
-  if (next < 1 || next > state.currentRound) return;
-  viewRound = next === state.currentRound ? null : next;
-  renderPairings();
-};
-
-function renderAll() {
-  document.getElementById('round-badge').textContent = `Runde ${state.currentRound||'–'}`;
-  document.getElementById('main-title').textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
-  if (viewRound && viewRound > state.currentRound) viewRound = null;
-  renderPairings();
-  renderStandings();
-  renderTeamsList();
-  renderAdminTeams();
-  renderRoundStatus();
-  updateQuickBar();
-  updateTeamsBadge();
-}
-
-function renderRoundStatus() {
-  const btn = document.getElementById('btn-next-round');
-  if (!btn) return;
-  if (state.currentRound === 0) { btn.disabled = false; btn.title = ''; return; }
-  const current = state.rounds[state.currentRound] || [];
-  const open = current.filter(m => !m.bye && (m.score1 === undefined || m.score2 === undefined));
-  if (open.length > 0) {
-    btn.disabled = true;
-    btn.title = `Noch ${open.length} Ergebnis${open.length>1?'se':''} offen`;
-    btn.textContent = `⏳ Noch ${open.length} offen`;
-  } else {
-    btn.disabled = false;
-    btn.title = '';
-    btn.textContent = 'Nächste Runde generieren';
-  }
-}
-
-function renderPairings() {
-  const el = document.getElementById('pairings-list');
-  const navEl = document.getElementById('round-nav');
-  const navLabel = document.getElementById('round-nav-label');
-  displayRound = viewRound ?? state.currentRound;
-  const round = state.rounds[displayRound];
-  const isHistoric = viewRound !== null && viewRound < state.currentRound;
-
-  // Show nav for admin
-  if (navEl) {
-    navEl.style.display = (session.isAdmin && state.currentRound > 1) ? 'flex' : 'none';
-    if (navLabel) navLabel.textContent = isHistoric
-      ? `◀ Runde ${displayRound} von ${state.currentRound} (Historie)`
-      : `Runde ${displayRound} – Aktuell`;
-  }
-
-  if (!round||!round.length) {
-    el.innerHTML = '<div class="empty-state"><div class="icon">🎯</div>Noch keine Paarungen</div>'; return;
-  }
-
-  // Separate my match from the rest
-  const myMatch = (session.teamId && !isHistoric) ? round.find(m => !m.bye && (m.team1===session.teamId||m.team2===session.teamId)) : null;
-  const myBye   = (session.teamId && !isHistoric) ? round.find(m => m.bye && m.team1===session.teamId) : null;
-
-  let html = '';
-
-  // ── Hero banner for logged-in team ──
-  if (myMatch) {
-    const isT1 = myMatch.team1 === session.teamId;
-    const myName = tn(session.teamId);
-    const oppName = tn(isT1 ? myMatch.team2 : myMatch.team1);
-    const hasResult = myMatch.score1 !== undefined;
-    const fieldHtml = myMatch.field
-      ? `<span class="field-chip">📍 Feld ${myMatch.field}</span>`
-      : '';
-    let resultHtml = '';
-    if (hasResult) {
-      const myScore  = isT1 ? myMatch.score1 : myMatch.score2;
-      const oppScore = isT1 ? myMatch.score2 : myMatch.score1;
-      const tag = myScore>oppScore?'win':myScore<oppScore?'loss':'draw';
-      const tagLabel = myScore>oppScore?'SIEG':myScore<oppScore?'NIEDERLAGE':'UNENTSCHIEDEN';
-      resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
-        <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myMatch.score1} : ${myMatch.score2}</span>
-        <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>
-      </div>`;
-    } else {
-      resultHtml = `<div style="margin-top:.6rem">
-        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('${myMatch.id}',${displayRound})">+ Ergebnis eintragen</button>
-      </div>`;
-    }
-    html += `<div class="my-match-banner">
-      <div class="banner-label">🏆 Deine Paarung – Runde ${state.currentRound}</div>
-      <div class="banner-vs">
-        <div class="banner-team">${myName}</div>
-        <div class="banner-vs-dot">VS</div>
-        <div class="banner-team right">${oppName}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-        ${fieldHtml}
-        ${!hasResult?'<span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px;background:rgba(122,127,154,0.15);color:var(--muted)">OFFEN</span>':''}
-      </div>
-      ${resultHtml}
-    </div>`;
-  } else if (myBye) {
-    html += `<div class="my-match-banner">
-      <div class="banner-label">Runde ${state.currentRound}</div>
-      <div style="font-size:1rem;font-weight:700;margin:.3rem 0">🔄 Freirunde – du hast automatisch gewonnen</div>
-    </div>`;
-  }
-
-  // ── All pairings list ──
-  html += `<div class="card-title" style="margin-bottom:.5rem;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)">Alle Paarungen</div>`;
-  html += round.map(m => {
-    if (m.bye) return `<div class="bye-row">🔄 <strong>${tn(m.team1)}</strong> – Freirunde</div>`;
-    const isMine = session.teamId && (m.team1===session.teamId||m.team2===session.teamId);
-    const canEdit = (isMine || session.isAdmin) && (!isHistoric || session.isAdmin);
-    const hasResult = m.score1!==undefined && m.score2!==undefined;
-    let tag1='',tag2='';
-    if (hasResult) {
-      if (m.score1>m.score2){ tag1='<span class="result-tag win">S</span>'; tag2='<span class="result-tag loss">N</span>'; }
-      else if (m.score2>m.score1){ tag2='<span class="result-tag win">S</span>'; tag1='<span class="result-tag loss">N</span>'; }
-      else { tag1=tag2='<span class="result-tag draw">U</span>'; }
-    }
-    const fieldHtml = m.field ? `<span class="field-chip-ghost">📍 Feld ${m.field}</span>` : '';
-    return `<div class="pairing-card${isMine?' mine':''}">
-      <div class="pairing-header">
-        <div><div class="pairing-team">${tn(m.team1)}</div>${tag1}</div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div class="vs-badge">VS</div>
-          ${fieldHtml}
-        </div>
-        <div style="text-align:right"><div class="pairing-team right">${tn(m.team2)}</div><div style="text-align:right">${tag2}</div></div>
-      </div>
-      <div class="pairing-result">
-        ${hasResult
-          ? `<span style="font-size:1.05rem;font-weight:700;letter-spacing:2px">${m.score1} : ${m.score2}</span>
-             ${canEdit?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${m.id}',${displayRound})">✏</button>`:''}`
-          : canEdit
-            ? `<button class="btn btn-primary btn-sm" onclick="openModal('${m.id}',${displayRound})">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto">OFFEN</span>`
-            : `<span class="result-tag open" style="font-size:.78rem;padding:4px 10px;background:rgba(212,43,43,0.12);color:var(--accent);border:1px solid rgba(212,43,43,0.25)">● OFFEN</span>`}
-      </div>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = html;
-}
-
-function calcZones(data) {
-  if (!data.length) return [];
-  const maxPts = data[0].pts;
-  const minPts = data[data.length-1].pts;
-  const totalPts = maxPts - minPts || 1;
-  // Dynamic: top zone = within 20% of point spread from leader
-  //          bottom zone = within 20% from last
-  const topThreshold    = maxPts - Math.max(2, Math.round(totalPts * 0.20));
-  const bottomThreshold = minPts + Math.max(2, Math.round(totalPts * 0.20));
-  return data.map(t => {
-    if (t.pts >= topThreshold)    return 'top';
-    if (t.pts <= bottomThreshold) return 'bottom';
-    return 'mid';
-  });
-}
-
-function renderStandings() {
-  const body = document.getElementById('standings-body');
-  const data = calcStandings();
-  if (!data.length) {
-    body.innerHTML = '<div class="empty-state"><div class="icon">📊</div>Noch keine Ergebnisse</div>';
-    return;
-  }
-
-  const zones = calcZones(data);
-  const ZONE = {
-    top:    { icon:'🏆', label:'Kann gewinnen',  bg:'rgba(240,192,64,0.08)', border:'rgba(240,192,64,0.35)', color:'#f0c040' },
-    mid:    { icon:'🟢', label:'Mittelfeld',      bg:'rgba(39,174,96,0.06)',  border:'rgba(39,174,96,0.25)',  color:'#27ae60' },
-    bottom: { icon:'🍍', label:'Goldene Ananas', bg:'rgba(212,43,43,0.08)', border:'rgba(212,43,43,0.3)',   color:'#d42b2b' },
-  };
-
-  // Group by zone
-  const groups = { top:[], mid:[], bottom:[] };
-  data.forEach((t,i) => groups[zones[i]].push(t));
-
-  let html = '';
-  for (const zone of ['top','mid','bottom']) {
-    const items = groups[zone];
-    if (!items.length) continue;
-    const z = ZONE[zone];
-    html += `<div style="background:${z.bg};border:1.5px solid ${z.border};border-radius:10px;margin-bottom:.75rem;overflow:hidden">
-      <div style="padding:.5rem .9rem;border-bottom:1px solid ${z.border}">
-        <span style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${z.color}">${z.icon} ${z.label}</span>
-      </div>
-      ${items.map(t => {
-        const mine = t.id === session.teamId;
-        const diff = t.diff>=0?`+${t.diff}`:`${t.diff}`;
-        return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;border-bottom:1px solid rgba(255,255,255,0.04);${mine?'background:rgba(212,43,43,0.08)':''}">
-          <div style="flex:1;font-size:.88rem;font-weight:600">${t.name}${mine?' 👈':''}</div>
-          <div style="font-size:.95rem;font-weight:700;color:${z.color};min-width:36px;text-align:right">${t.pts}</div>
-          <div style="font-size:.75rem;color:${t.diff>=0?'var(--green)':'var(--red)'};min-width:40px;text-align:right">${diff}</div>
-          <div style="font-size:.72rem;color:var(--muted);min-width:70px;text-align:right">${t.wins}S ${t.draws}U ${t.losses}N</div>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }
-  body.innerHTML = html;
-}
-
-function renderTeamsList() {
-  const el = document.getElementById('teams-list');
-  const teams = Object.entries(state.teams);
-  if (!teams.length) { el.innerHTML='<div class="empty-state"><div class="icon">👥</div>Keine Teams</div>'; return; }
-  el.innerHTML = teams.map(([id,t],i)=>
-    `<div class="team-row">
-      <div class="team-num">${i+1}</div>
-      <div class="team-name-text">${t.name}</div>
-    </div>`).join('');
-}
-
-function renderAdminTeams() {
-  const el = document.getElementById('admin-teams-list');
-  if (!el) return;
-  const teams = Object.entries(state.teams);
-  if (!teams.length) { el.innerHTML='<p style="color:var(--muted);font-size:.83rem;margin-top:.5rem">Noch keine Teams</p>'; return; }
-  el.innerHTML = `<div style="margin-top:.6rem">` + teams.map(([id,t],i)=>
-    `<div class="team-row">
-      <div class="team-num">${i+1}</div>
-      <div class="team-name-text">${t.name}</div>
-      <span class="pin-badge" title="PIN">${t.pin||'––'}</span>
-      <button class="btn btn-ghost btn-sm" onclick="editPin('${id}','${t.pin||''}')">✏</button>
-      <button class="btn btn-ghost btn-sm" onclick="deleteTeam('${id}')">✕</button>
-    </div>`).join('') + `</div>`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Actions
-// ─────────────────────────────────────────────────────────────────────────────
-window.addTeam = async function() {
-  const inp = document.getElementById('new-team-name');
-  const name = inp.value.trim();
-  if (!name||!db) return;
-  const pin = randomPin(Object.values(state.teams).map(t=>t.pin));
-  await fbPush('/tournament/teams', {name, pin});
-  inp.value=''; toast('Team hinzugefügt');
-};
-
-window.deleteTeam = async function(id) {
-  if (!confirm('Team wirklich löschen?')) return;
-  await fbRemove(`/tournament/teams/${id}`);
-  toast('Team gelöscht');
-};
-
-window.editPin = async function(id, currentPin) {
-  const pin = prompt(`Neuen 4-stelligen PIN für Team eingeben (aktuell: ${currentPin||'–'}):`, currentPin||'');
-  if (pin===null) return;
-  if (!/^\d{4}$/.test(pin)) { toast('PIN muss 4 Ziffern haben'); return; }
-  // Check uniqueness
-  const taken = Object.entries(state.teams).some(([tid,t])=>tid!==id&&t.pin===pin);
-  if (taken) { toast('Dieser PIN ist bereits vergeben'); return; }
-  await fbSet(`/tournament/teams/${id}/pin`, pin);
-  toast('PIN gesetzt');
-};
-
-window.assignAllPins = async function() {
-  if (!db) return;
-  const teams = Object.entries(state.teams);
-  const usedPins = [];
-  const updates = {};
-  for (const [id,t] of teams) {
-    if (!t.pin) {
-      const p = randomPin(usedPins);
-      usedPins.push(p);
-      updates[`/tournament/teams/${id}/pin`] = p;
-    } else {
-      usedPins.push(t.pin);
-    }
-  }
-  if (Object.keys(updates).length) {
-    await fbUpdate('/', updates);
-    toast('Alle PINs vergeben');
-  } else {
-    toast('Alle Teams haben bereits einen PIN');
-  }
-};
-
-window.generateNextRound = async function() {
-  if (!db) { toast('Nicht verbunden'); return; }
-
-  // Prüfen ob alle Ergebnisse der aktuellen Runde eingetragen sind
-  if (state.currentRound > 0) {
-    const currentRoundMatches = state.rounds[state.currentRound] || [];
-    const open = currentRoundMatches.filter(m => !m.bye && (m.score1 === undefined || m.score2 === undefined));
-    if (open.length > 0) {
-      toast(`⛔ Noch ${open.length} Ergebnis${open.length > 1 ? 'se' : ''} offen!`);
-      return;
-    }
-  }
-
-  const next = state.currentRound+1;
-  const matches = generateSwissPairing();
-  if (!matches) return;
-  const fieldCount = parseInt(state.settings?.fieldCount) || 6;
-  // Assign fields round-robin (only real matches, not byes)
-  let fieldIdx = 0;
-  const roundData = matches.map((m,i) => {
-    const base = {id:`r${next}m${i}`,...m};
-    if (!m.bye) { base.field = (fieldIdx % fieldCount) + 1; fieldIdx++; }
-    return base;
-  });
-  await fbUpdate('/tournament', { [`rounds/${next}`]: roundData, currentRound: next });
-  toast(`Runde ${next} generiert`);
-};
-
-// ── Pairing Diagnose ──
-window.diagnosePairing = function() {
-  const out = document.getElementById('diagnose-output');
-  out.style.display = 'block';
-  const lines = [];
-  const log  = msg => lines.push(msg);
-  const ok   = msg => lines.push('✅ ' + msg);
-  const warn = msg => lines.push('⚠️  ' + msg);
-  const err  = msg => lines.push('❌ ' + msg);
-
-  const standings = calcStandings();
-  if (standings.length < 2) { out.textContent = '❌ Zu wenig Teams'; return; }
-
-  log('━━━ Pairing-Diagnose für Runde ' + (state.currentRound+1) + ' ━━━\n');
-
-  // Build played set
-  const played = new Set();
-  const byeHistory = new Map();
-  Object.entries(state.rounds).forEach(([rn, round]) => {
-    if (!Array.isArray(round)) return;
-    round.forEach(m => {
-      if (m.bye) byeHistory.set(m.team1, (byeHistory.get(m.team1)||0)+1);
-      else { played.add([m.team1,m.team2].sort().join('_')); }
-    });
-  });
-  const hasPlayed = (a,b) => played.has([a,b].sort().join('_'));
-
-  // Bye candidate
-  let eligible = standings.map(t=>t.id);
-  if (eligible.length % 2 !== 0) {
-    const wf = [...eligible].reverse();
-    const byeCandidate = wf.find(id=>!byeHistory.has(id))
-      ?? wf.find(id=>byeHistory.get(id) < Math.max(...[...byeHistory.values()]))
-      ?? wf[0];
-    log('🔄 Freirunde geht an: ' + (state.teams[byeCandidate]?.name || byeCandidate));
-    if ((byeHistory.get(byeCandidate)||0) > 0)
-      warn('Dieses Team hatte bereits ' + byeHistory.get(byeCandidate) + 'x Freirunde');
-    eligible = eligible.filter(id => id !== byeCandidate);
-  }
-
-  // Bracket analysis
-  const ptOf = new Map(standings.map(t=>[t.id,t.pts]));
-  const brackets = new Map();
-  eligible.forEach(id => {
-    const p = ptOf.get(id)||0;
-    if (!brackets.has(p)) brackets.set(p,[]);
-    brackets.get(p).push(id);
-  });
-  const bracketPts = [...brackets.keys()].sort((a,b)=>b-a);
-
-  log('\n── Punkte-Brackets ──');
-  let totalProblems = 0;
-
-  bracketPts.forEach(pts => {
-    const ids = brackets.get(pts);
-    log(`\nBracket ${pts} Pkt  (${ids.length} Teams):`);
-
-    // Check all pairs within bracket
-    const conflicts = [];
-    for (let i=0;i<ids.length;i++) {
-      for (let j=i+1;j<ids.length;j++) {
-        if (hasPlayed(ids[i],ids[j])) {
-          conflicts.push([ids[i],ids[j]]);
-        }
-      }
-    }
-
-    // Can the bracket be paired without rematches?
-    // Simple check: build adjacency, find if perfect matching exists
-    const n = ids.length;
-    const canPair = new Array(n).fill(null).map(()=>new Array(n).fill(false));
-    let possibleEdges = 0;
-    for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) {
-      if (!hasPlayed(ids[i],ids[j])) { canPair[i][j]=canPair[j][i]=true; possibleEdges++; }
-    }
-
-    const totalPossible = (n*(n-1))/2;
-    const conflictPct = Math.round(conflicts.length/totalPossible*100);
-
-    ids.forEach(id => {
-      const name = state.teams[id]?.name || id;
-      const opponents = ids.filter(o=>o!==id && !hasPlayed(id,o));
-      const alreadyPlayed = ids.filter(o=>o!==id && hasPlayed(id,o));
-      if (opponents.length === 0) {
-        err(`  ${name}: KEINE freien Gegner im Bracket!`);
-        totalProblems++;
-      } else if (opponents.length === 1) {
-        warn(`  ${name}: nur noch 1 freier Gegner → ${state.teams[opponents[0]]?.name}`);
-        totalProblems++;
-      } else {
-        ok(`  ${name}: ${opponents.length} freie Gegner`);
-      }
-      if (alreadyPlayed.length > 0) {
-        log(`       bereits gespielt gegen: ${alreadyPlayed.map(o=>state.teams[o]?.name).join(', ')}`);
-      }
-    });
-
-    if (conflicts.length === 0) ok(`Bracket komplett konfliktfrei (${n} Teams)`);
-    else if (conflicts.length < totalPossible*0.5) warn(`${conflicts.length}/${totalPossible} Paarungen bereits gespielt – Carry-Down wahrscheinlich`);
-    else err(`${conflicts.length}/${totalPossible} Paarungen gespielt (${conflictPct}%) – Bracket fast erschöpft!`);
-  });
-
-  // Overall verdict
-  log('\n━━━ Fazit ━━━');
-  if (totalProblems === 0) {
-    ok('Pairing sollte problemlos funktionieren');
-  } else {
-    err(totalProblems + ' Team(s) mit kritischen Konflikten!');
-    log('\n💡 Lösung wie letztes Jahr:');
-    log('   1. Notiere welche Teams betroffen sind (oben markiert mit ❌)');
-    log('   2. Ändere deren Punktestand temporär um ±1');
-    log('   3. Generiere die Runde');
-    log('   4. Korrigiere die Punkte danach wieder');
-    log('   → ODER: Nutze "Manuelle Notfall-Paarung" direkt unten');
-  }
-
-  out.textContent = lines.join('\n');
-  out.scrollTop = 0;
-};
-
-// ── Manual Pairing (emergency) ──
-window.toggleManualPairing = function() {
-  const area = document.getElementById('manual-pairing-area');
-  const visible = area.style.display !== 'none';
-  area.style.display = visible ? 'none' : 'block';
-  if (!visible) populateManualSelects();
-};
-
-function populateManualSelects() {
-  const round = state.rounds[state.currentRound] || [];
-  const alreadyPaired = new Set();
-  round.forEach(m => { alreadyPaired.add(m.team1); if (!m.bye) alreadyPaired.add(m.team2); });
-
-  const unpaired = Object.entries(state.teams)
-    .filter(([id]) => !alreadyPaired.has(id))
-    .sort((a,b) => a[1].name.localeCompare(b[1].name));
-
-  const allTeams = Object.entries(state.teams)
-    .sort((a,b) => a[1].name.localeCompare(b[1].name));
-
-  ['manual-t1','manual-t2'].forEach(sid => {
-    const sel = document.getElementById(sid);
-    sel.innerHTML = unpaired.map(([id,t]) => `<option value="${id}">${t.name}</option>`).join('');
-  });
-
-  const byeSel = document.getElementById('manual-bye');
-  byeSel.innerHTML = unpaired.map(([id,t]) => `<option value="${id}">${t.name}</option>`).join('');
-}
-
-window.addManualPairing = async function() {
-  if (!db) return;
-  const t1 = document.getElementById('manual-t1').value;
-  const t2 = document.getElementById('manual-t2').value;
-  if (!t1 || !t2 || t1 === t2) { toast('Bitte zwei verschiedene Teams wählen'); return; }
-  const round = state.currentRound;
-  const existing = [...(state.rounds[round] || [])];
-  // check not already in round
-  const inRound = existing.some(m => m.team1===t1||m.team2===t1||m.team1===t2||m.team2===t2);
-  if (inRound) { toast('Ein Team ist bereits in dieser Runde eingeplant'); return; }
-  const id = `r${round}m${existing.length}`;
-  existing.push({ id, team1:t1, team2:t2 });
-  await fbSet(`/tournament/rounds/${round}`, existing);
-  toast(`Paarung hinzugefügt`);
-  populateManualSelects();
-};
-
-window.addManualBye = async function() {
-  if (!db) return;
-  const t1 = document.getElementById('manual-bye').value;
-  if (!t1) return;
-  const round = state.currentRound;
-  const existing = [...(state.rounds[round] || [])];
-  const inRound = existing.some(m => m.team1===t1||m.team2===t1);
-  if (inRound) { toast('Team ist bereits in dieser Runde eingeplant'); return; }
-  const id = `r${round}m${existing.length}`;
-  existing.push({ id, team1:t1, bye:true });
-  await fbSet(`/tournament/rounds/${round}`, existing);
-  toast(`Freirunde für ${state.teams[t1]?.name} hinzugefügt`);
-  populateManualSelects();
-};
-
-window.deleteCurrentRound = async function() {
-  if (!db||state.currentRound===0) return;
-  if (!confirm('Aktuelle Runde wirklich löschen?')) return;
-  await fbUpdate('/tournament', { [`rounds/${state.currentRound}`]:null, currentRound:state.currentRound-1 });
-  toast('Runde gelöscht');
-};
-
-window.resetTournament = async function() {
-  if (!confirm('Alle Daten löschen? Nicht rückgängig machbar!')) return;
-  if (!confirm('Wirklich? Teams und alle Runden werden gelöscht!')) return;
-  await fbSet('/tournament', { settings:state.settings, currentRound:0 });
-  toast('Turnier zurückgesetzt');
-};
-
-window.openModal = function(matchId, roundNum) {
-  currentMatchId=matchId; currentRoundNum=roundNum ?? displayRound ?? state.currentRound;
-  const m = state.rounds[currentRoundNum]?.find(x=>x.id===matchId);
-  if (!m) return;
-  document.getElementById('modal-t1').textContent=tn(m.team1);
-  document.getElementById('modal-t2').textContent=tn(m.team2);
-  document.getElementById('modal-s1').value=m.score1??'';
-  document.getElementById('modal-s2').value=m.score2??'';
-  document.getElementById('result-modal').classList.add('open');
-};
-
-window.closeModal = ()=>document.getElementById('result-modal').classList.remove('open');
-
-window.submitResult = async function() {
-  if (!db) return;
-  const s1=parseInt(document.getElementById('modal-s1').value);
-  const s2=parseInt(document.getElementById('modal-s2').value);
-  if (isNaN(s1)||isNaN(s2)) { toast('Beide Werte eingeben'); return; }
-  const round=[...state.rounds[currentRoundNum]];
-  const idx=round.findIndex(m=>m.id===currentMatchId);
-  if (idx<0) return;
-  round[idx]={...round[idx],score1:s1,score2:s2};
-  await fbSet(`/tournament/rounds/${currentRoundNum}`,round);
-  closeModal();
-  toast('✅ Ergebnis gespeichert');
-};
-
-
-
-window.saveSettings = async function() {
-  if (!db) return;
-  const pw=document.getElementById('cfg-password').value.trim();
-  const title=document.getElementById('cfg-title').value.trim();
-  const fields=parseInt(document.getElementById('cfg-fields').value)||15;
-  if (pw) { localStorage.setItem('stoebel_admin_pw',pw); await fbSet('/tournament/settings/password',pw); }
-  if (title) await fbSet('/tournament/settings/title',title);
-  await fbSet('/tournament/settings/fieldCount', fields);
-  toast('Gespeichert');
-};
-
-window.unlockAdmin = function() {
-  const pw=document.getElementById('admin-pw-input').value;
-  if (pw===loadAdminPw()||pw===(state.settings?.password||'admin')) {
-    document.getElementById('admin-lock-card').style.display='none';
-    document.getElementById('admin-panel').style.display='block';
-    if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
-    if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
-    // Firebase config collapsed by default (already configured)
-    renderAdminTeams();
-    updateTeamsBadge();
-  } else { toast('Falsches Passwort'); }
-};
-
-// Import
-window.openImportModal = ()=>document.getElementById('import-modal').classList.add('open');
-window.closeImportModal = ()=>document.getElementById('import-modal').classList.remove('open');
-window.confirmImport = async function() {
-  if (!db) return;
-  const names=document.getElementById('import-textarea').value.split('\n').map(n=>n.trim()).filter(Boolean);
-  if (!names.length) return;
-  const usedPins=Object.values(state.teams).map(t=>t.pin).filter(Boolean);
-  for (const name of names) { const pin=randomPin(usedPins); usedPins.push(pin); await fbPush('/tournament/teams',{name,pin}); }
-  closeImportModal(); document.getElementById('import-textarea').value='';
-  toast(`${names.length} Teams importiert`);
-};
-
-// PIN Print
-window.printPins = function() {
-  const teams = Object.values(state.teams);
-  if (!teams.length) { toast('Keine Teams'); return; }
-  const html = `<html><head><title>PINs</title><style>
-    body{font-family:Arial,sans-serif;padding:20px}
-    h1{font-size:18px;margin-bottom:16px}
-    table{border-collapse:collapse;width:100%}
-    td,th{border:1px solid #ccc;padding:8px 12px;font-size:13px}
-    th{background:#f0f0f0;font-weight:bold}
-    .pin{font-size:18px;font-weight:bold;letter-spacing:4px;font-family:monospace}
-    @media print{button{display:none}}
-  </style></head><body>
-  <h1>Stöbelturnier – Team PINs</h1>
-  <button onclick="window.print()" style="margin-bottom:16px;padding:6px 14px;cursor:pointer">🖨 Drucken</button>
-  <table><tr><th>#</th><th>Team</th><th>PIN</th></tr>
-  ${teams.map((t,i)=>`<tr><td>${i+1}</td><td>${t.name}</td><td class="pin">${t.pin||'–'}</td></tr>`).join('')}
-  </table></body></html>`;
-  const w=window.open('','_blank');
-  w.document.write(html); w.document.close();
-};
-
-// ── Collapsible sections ──
-window.toggleCollapse = function(id) {
-  const body = document.getElementById(id);
-  const arrow = document.getElementById('arrow-' + id);
-  if (!body) return;
-  const isOpen = body.classList.contains('open');
-  body.classList.toggle('open', !isOpen);
-  if (arrow) arrow.classList.toggle('open', !isOpen);
-};
-
-// ── Quick round bar update ──
-function updateQuickBar() {
-  const bar = document.getElementById('quick-round-bar');
-  const progressText = document.getElementById('quick-progress-text');
-  const progressFill = document.getElementById('quick-progress-bar');
-  const nextBtn = document.getElementById('quick-next-btn');
-  if (!bar) return;
-
-  // Only show for admin
-  if (!session.isAdmin) { bar.classList.remove('visible'); return; }
-
-  const round = state.rounds[state.currentRound] || [];
-  if (!round.length) { bar.classList.remove('visible'); return; }
-
-  const total = round.filter(m => !m.bye).length;
-  const done  = round.filter(m => !m.bye && m.score1 !== undefined).length;
-  const pct   = total > 0 ? Math.round(done/total*100) : 0;
-
-  bar.classList.add('visible');
-  progressText.textContent = `${done} / ${total} Ergebnisse`;
-  progressFill.style.width = pct + '%';
-  progressFill.style.background = done === total ? 'var(--green)' : 'var(--accent)';
-
-  if (nextBtn) {
-    nextBtn.disabled = done < total;
-    nextBtn.textContent = done === total ? '✓ Nächste Runde' : `⏳ ${total-done} offen`;
-  }
-}
-
-// ── Update teams count badge ──
-function updateTeamsBadge() {
-  const badge = document.getElementById('teams-count-badge');
-  if (badge) {
-    const n = Object.keys(state.teams).length;
-    badge.textContent = n > 0 ? `(${n} Teams)` : '';
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Simulation & Robustness Test
@@ -1749,4 +1073,162 @@ window.showSection = function(id, btn) {
 })();
 </script>
 </body>
-</html>
+</html>// ── Pairing Diagnose ──
+window.diagnosePairing = function() {
+  const out = document.getElementById('diagnose-output');
+  out.style.display = 'block';
+  const lines = [];
+  const log  = msg => lines.push(msg);
+  const ok   = msg => lines.push('✅ ' + msg);
+  const warn = msg => lines.push('⚠️  ' + msg);
+  const err  = msg => lines.push('❌ ' + msg);
+  const tip  = msg => lines.push('💡 ' + msg);
+
+  const standings = calcStandings();
+  if (standings.length < 2) { out.textContent = '❌ Zu wenig Teams'; return; }
+
+  const nextRound = state.currentRound + 1;
+  log(`━━━ Pairing-Diagnose für Runde ${nextRound} ━━━\n`);
+
+  const keyPair = (a,b) => [a,b].sort().join('_');
+  const played = new Set();
+  const byeHistory = new Map();
+  Object.entries(state.rounds).forEach(([rn, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) byeHistory.set(m.team1, (byeHistory.get(m.team1)||0)+1);
+      else played.add(keyPair(m.team1, m.team2));
+    });
+  });
+  const hp = (a,b) => played.has(keyPair(a,b));
+
+  let eligible = standings.map(t=>t.id);
+
+  // ── BYE ──
+  if (eligible.length % 2 !== 0) {
+    const wf = [...eligible].reverse();
+    const byeCandidate = wf.find(id=>!byeHistory.has(id))
+      ?? wf.find(id=>byeHistory.get(id) < Math.max(...[...byeHistory.values()]))
+      ?? wf[0];
+    const byeName = state.teams[byeCandidate]?.name;
+    const byeCount = byeHistory.get(byeCandidate)||0;
+    if (byeCount === 0) ok(`Freirunde → ${byeName} (erstes Mal)`);
+    else warn(`Freirunde → ${byeName} (bereits ${byeCount}x – keine andere Option)`);
+    eligible = eligible.filter(id => id !== byeCandidate);
+  }
+
+  // ── Rematch-Analyse ──
+  log(`\n── Rematch-Analyse (${eligible.length} Teams) ──`);
+
+  // Für jedes Team: wie viele freie Gegner hat es noch?
+  const freeOpponents = new Map();
+  eligible.forEach(id => {
+    const free = eligible.filter(o => o!==id && !hp(id,o));
+    freeOpponents.set(id, free);
+  });
+
+  // Kritische Teams (≤ 2 freie Gegner)
+  const critical = eligible.filter(id => freeOpponents.get(id).length <= 2);
+  const warning  = eligible.filter(id => freeOpponents.get(id).length === 3);
+
+  if (critical.length === 0 && warning.length === 0) {
+    ok('Alle Teams haben genügend freie Gegner – kein Rematch erwartet');
+  } else {
+    if (critical.length > 0) {
+      err(`${critical.length} Team(s) mit kritisch wenig freien Gegnern:`);
+      critical.forEach(id => {
+        const free = freeOpponents.get(id);
+        const played_with = eligible.filter(o => o!==id && hp(id,o));
+        log(`   ${state.teams[id]?.name}: nur noch ${free.length} freie Gegner`);
+        if (free.length > 0) log(`     → frei gegen: ${free.map(o=>state.teams[o]?.name).join(', ')}`);
+        else log(`     → bereits gegen ALLE gespielt!`);
+      });
+    }
+    if (warning.length > 0) {
+      warn(`${warning.length} Team(s) mit nur 3 freien Gegnern (Beobachten):`);
+      warning.forEach(id => log(`   ${state.teams[id]?.name}`));
+    }
+  }
+
+  // ── Simuliere ob Pairing ohne Rematch möglich ist ──
+  log(`\n── Pairing-Simulation ──`);
+
+  function canPairWithoutRematch(ids) {
+    if (!ids.length) return true;
+    if (ids.length % 2 !== 0) return false;
+    const paired = new Array(ids.length).fill(false);
+    const freeCnt = ids.map((a,i) => ids.filter((b,j)=>i!==j&&!hp(a,b)).length);
+    const order = ids.map((_,i)=>i).sort((a,b)=>freeCnt[a]-freeCnt[b]);
+    function bt(k) {
+      while (k<order.length && paired[order[k]]) k++;
+      if (k>=order.length) return true;
+      const ia=order[k]; const a=ids[ia];
+      const cands=ids.map((_,j)=>j).filter(j=>!paired[j]&&j!==ia&&!hp(a,ids[j]));
+      for (const ib of cands) {
+        paired[ia]=paired[ib]=true;
+        if (bt(k+1)) return true;
+        paired[ia]=paired[ib]=false;
+      }
+      return false;
+    }
+    return bt(0);
+  }
+
+  function minRematches(ids) {
+    if (!ids.length) return 0;
+    if (ids.length % 2 !== 0) return -1;
+    const paired = new Array(ids.length).fill(false);
+    let bestRematches = Infinity;
+    function bt(k, currentRematches) {
+      while (k<ids.length && paired[k]) k++;
+      if (k>=ids.length) { bestRematches=Math.min(bestRematches,currentRematches); return; }
+      for (let j=k+1;j<ids.length;j++) {
+        if (paired[j]) continue;
+        const isRematch = hp(ids[k],ids[j]);
+        if (currentRematches + (isRematch?1:0) >= bestRematches) continue; // prune
+        paired[k]=paired[j]=true;
+        bt(k+1, currentRematches + (isRematch?1:0));
+        paired[k]=paired[j]=false;
+      }
+    }
+    bt(0,0);
+    return bestRematches === Infinity ? -1 : bestRematches;
+  }
+
+  const noRematch = canPairWithoutRematch(eligible);
+
+  if (noRematch) {
+    ok('Runde kann OHNE Rematches generiert werden');
+    tip('Einfach "Nächste Runde generieren" klicken – kein Eingriff nötig');
+  } else {
+    const minR = minRematches(eligible.slice(0, Math.min(eligible.length, 20)));
+    err(`Mindestens ${minR >= 0 ? minR : '?'} Rematch(es) unvermeidbar`);
+
+    // Welche Teams verursachen den Rematch?
+    log(`\n── Betroffene Teams ──`);
+    const exhausted = eligible.filter(id => freeOpponents.get(id).length === 0);
+    if (exhausted.length > 0) {
+      err(`Diese Teams haben KEINE freien Gegner mehr:`);
+      exhausted.forEach(id => {
+        log(`   ${state.teams[id]?.name} – spielte bereits gegen alle anderen Teams`);
+      });
+    }
+
+    tip('Empfehlung: Direkt generieren lassen – der Algorithmus minimiert');
+    tip('Rematches automatisch und wählt die fairste Kombination.');
+    tip('Kein manueller Eingriff (Punkteanpassung) mehr nötig!');
+  }
+
+  // ── Punktestand Top 5 zur Info ──
+  log(`\n── Tabelle vor Runde ${nextRound} (Top 8) ──`);
+  standings.slice(0,8).forEach((t,i) => {
+    const free = freeOpponents.get(t.id)?.length ?? '–';
+    const marker = critical.includes(t.id) ? ' ⚠️' : warning.includes(t.id) ? ' 👀' : '';
+    log(`  ${i+1}. ${t.name.padEnd(32)} ${t.pts} Pkt  BH:${t.buchholz}  freie Gegner: ${free}${marker}`);
+  });
+
+  out.textContent = lines.join('\n');
+  out.scrollTop = 0;
+};
+
+
