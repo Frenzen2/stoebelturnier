@@ -411,6 +411,7 @@
           <button class="btn btn-primary" id="btn-next-round" onclick="generateNextRound()">Nächste Runde generieren</button>
           <button class="btn btn-ghost" onclick="diagnosePairing()">🔍 Pairing prüfen</button>
           <button class="btn btn-ghost" onclick="generateAusgleichsrunde()" id="btn-ausgleich" title="Letzte Runde: Teams mit Freirunde spielen gegeneinander">⚖️ Ausgleichsrunde</button>
+          <button class="btn btn-ghost" onclick="fillRandomResults()" title="Zufällige Ergebnisse (realistisch, zum Testen)">🎲 Zufallsergebnisse</button>
           <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
         </div>
@@ -1230,6 +1231,72 @@ window.diagnosePairing = function() {
 
   out.textContent = lines.join('\n');
   out.scrollTop = 0;
+};
+
+// ── Zufallsergebnisse (realistisch basierend auf Stöbelturnier 2025) ──
+window.fillRandomResults = async function() {
+  if (!db) { toast('Nicht verbunden'); return; }
+  const round = state.rounds[state.currentRound];
+  if (!round?.length) { toast('Keine Paarungen in aktueller Runde'); return; }
+
+  const open = round.filter(m => !m.bye && m.score1 === undefined);
+  if (open.length === 0) { toast('Alle Ergebnisse bereits eingetragen'); return; }
+
+  // Realistischer Score-Generator basierend auf Stöbelturnier 2025
+  // 86% Siege, 14% Unentschieden
+  // Häufigste Scores: 3, 5, 6, 8, 9, 10, 11, 13, 16
+  function randomScore() {
+    // Gewichtete Zufallsauswahl der häufigsten Scores
+    const pool = [
+      0,0,
+      3,3,3,3,3,3,3,3,
+      5,5,5,5,
+      6,6,6,6,6,6,
+      7,7,
+      8,8,8,8,8,8,8,8,
+      9,9,9,9,
+      10,10,10,10,
+      11,11,11,
+      12,12,12,
+      13,13,13,13,
+      14,14,
+      15,15,
+      16,16,
+      17,18,19
+    ];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function randomResult() {
+    const isDrawChance = Math.random();
+    if (isDrawChance < 0.14) {
+      // Unentschieden – häufigste Draw-Scores: 8, 6, 10
+      const drawScores = [6,6,8,8,8,8,8,8,10,10,14];
+      const s = drawScores[Math.floor(Math.random() * drawScores.length)];
+      return [s, s];
+    } else {
+      // Sieg – Gewinner bekommt höheren Score
+      let s1 = randomScore(), s2 = randomScore();
+      // Sicherstellen dass es kein Unentschieden ist
+      while (s1 === s2) s2 = randomScore();
+      if (s1 < s2) [s1, s2] = [s2, s1]; // Gewinner links
+      // Zufällig entscheiden wer gewinnt (50/50)
+      return Math.random() < 0.5 ? [s1, s2] : [s2, s1];
+    }
+  }
+
+  // Alle offenen Paarungen mit Zufallsergebnissen füllen
+  const updated = [...round];
+  open.forEach(m => {
+    const idx = updated.findIndex(x => x.id === m.id);
+    if (idx >= 0) {
+      const [s1, s2] = randomResult();
+      updated[idx] = { ...updated[idx], score1: s1, score2: s2 };
+    }
+  });
+
+  await fbSet(`/tournament/rounds/${state.currentRound}`, updated);
+  toast(`🎲 ${open.length} Zufallsergebnisse eingetragen`);
 };
 
 window.generateAusgleichsrunde = async function() {
