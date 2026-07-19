@@ -434,10 +434,16 @@
     </div>
   </div>
 
-  <!-- TABELLE OVERLAY (einblendbar per Admin) -->
+  <!-- TABELLE OVERLAY – fullscreen ranklist -->
   <div class="standings-overlay" id="standings-overlay">
-    <div class="standings-overlay-title">🏆 Aktuelle Tabelle – Runde <span id="overlay-round">–</span></div>
-    <div class="standings-grid" id="standings-grid"></div>
+    <div class="standings-header">
+      <div class="standings-header-title">🏆 Aktuelle Tabelle</div>
+      <div class="standings-header-sub">Runde <span id="overlay-round">–</span> · Stöbelturnier 2026</div>
+    </div>
+    <div class="standings-body">
+      <div class="standings-col" id="standings-col-left"></div>
+      <div class="standings-col" id="standings-col-right"></div>
+    </div>
   </div>
 
   <!-- SPONSOR BANNER -->
@@ -636,51 +642,34 @@ function calcZones(data) {
   });
 }
 
-// ── Render standings overlay – zone-based, no rank ──
+// ── Render standings overlay – fullscreen 2-column ranklist ──
 function renderStandings() {
-  const grid = document.getElementById('standings-grid');
+  const colLeft  = document.getElementById('standings-col-left');
+  const colRight = document.getElementById('standings-col-right');
+  document.getElementById('overlay-round').textContent = state.currentRound || '–';
   const data = calcStandings();
-  if (!data.length) {
-    grid.innerHTML = '<div style="color:var(--muted);font-size:2rem;padding:40px;grid-column:1/-1">Noch keine Ergebnisse</div>';
-    return;
-  }
+  if (!data.length || !colLeft) return;
 
   const zones = calcZones(data);
-  const ZONE = {
-    top:    { icon:'🏆', label:'Kann gewinnen',   bg:'rgba(240,192,64,0.10)', border:'rgba(240,192,64,0.4)',  color:'#f0c040' },
-    mid:    { icon:'🟢', label:'Mittelfeld',       bg:'rgba(39,174,96,0.08)',  border:'rgba(39,174,96,0.3)',   color:'#27ae60' },
-    bottom: { icon:'🍍', label:'Goldene Ananas',  bg:'rgba(212,43,43,0.10)',  border:'rgba(212,43,43,0.4)',   color:'#d42b2b' },
-  };
-
-  // Group by zone
-  const groups = { top: [], mid: [], bottom: [] };
-  data.forEach((t,i) => groups[zones[i]].push(t));
-
-  let html = '';
-  for (const zone of ['top','mid','bottom']) {
-    const items = groups[zone];
-    if (!items.length) continue;
-    const z = ZONE[zone];
-
-    html += `<div style="grid-column:1/-1;padding:18px 28px 10px;
-      background:${z.bg};border:2px solid ${z.border};border-radius:14px;margin-bottom:6px">
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:2.2rem;color:${z.color};
-        letter-spacing:3px;margin-bottom:12px">${z.icon} ${z.label}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:14px">
-        ${items.map(t => `
-          <div style="background:rgba(0,0,0,0.3);border:1px solid ${z.border};
-            border-radius:10px;padding:14px 22px;display:flex;flex-direction:column;gap:4px;min-width:320px">
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;
-              letter-spacing:1px;line-height:1">${t.name}</div>
-            <div style="display:flex;gap:16px;align-items:center">
-              <span style="font-family:'Bebas Neue',sans-serif;font-size:1.6rem;color:${z.color}">${t.pts} Pkt</span>
-              <span style="font-size:1.1rem;color:var(--muted)">${t.wins}S ${t.draws}U ${t.losses}N</span>
-            </div>
-          </div>`).join('')}
-      </div>
+  const rows = data.map((t, i) => {
+    const zone = zones[i];
+    const zoneClass = zone==='top'?'zone-top':zone==='bottom'?'zone-bottom':'zone-mid';
+    const rankClass = i===0?'r1':i===1?'r2':i===2?'r3':'';
+    const diff = t.diff >= 0 ? `+${t.diff}` : `${t.diff}`;
+    const diffColor = t.diff >= 0 ? '#1a7a3c' : '#c0181a';
+    const zoneIcon = zone==='top'?'🏆':zone==='bottom'?'🍍':'';
+    return `<div class="rank-row ${zoneClass}">
+      <div class="rank-num ${rankClass}">${i+1}</div>
+      <div class="rank-name">${zoneIcon} ${t.name}</div>
+      <div class="rank-pts">${t.pts}</div>
+      <div class="rank-diff" style="color:${diffColor}">${diff}</div>
+      <div class="rank-record">${t.wins}S ${t.draws}U ${t.losses}N</div>
     </div>`;
-  }
-  grid.innerHTML = html;
+  });
+
+  const half = Math.ceil(rows.length / 2);
+  colLeft.innerHTML  = rows.slice(0, half).join('');
+  colRight.innerHTML = rows.slice(half).join('');
 }
 
 // ── Tabelle toggle (via URL param or keyboard) ──
