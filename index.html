@@ -139,9 +139,7 @@
   .pin-badge { font-size: 0.7rem; font-weight: 700; background: var(--surface2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: var(--muted); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 
   /* ── Admin grid ── */
-  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
   @media (max-width: 580px) {
-    .admin-grid { grid-template-columns: 1fr; }
     .pairing-header { font-size: 0.78rem; }
   }
 
@@ -372,23 +370,16 @@
     </div>
 
     <div id="admin-panel" style="display:none">
-      <div class="admin-grid">
-        <div class="card">
-          <div class="card-title">Firebase Konfiguration</div>
-          <div class="form-row"><label class="label">API Key</label><input type="text" id="fb-apikey" placeholder="AIza..."></div>
-          <div class="form-row"><label class="label">Project ID</label><input type="text" id="fb-projectid" placeholder="mein-projekt"></div>
-          <div class="form-row"><label class="label">App ID</label><input type="text" id="fb-appid" placeholder="1:xxx:web:yyy"></div>
-          <div class="form-row"><label class="label">Database URL</label><input type="text" id="fb-dburl" placeholder="https://xxx-default-rtdb.europe-west1.firebasedatabase.app"></div>
-          <button class="btn btn-primary" onclick="saveFirebaseConfig()">Speichern & Verbinden</button>
+      <div class="card">
+        <div class="card-title">Turnier Einstellungen</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <div style="flex:2;min-width:160px"><label class="label">Titel</label><input type="text" id="cfg-title" placeholder="Stöbelturnier 2026"></div>
+          <div style="flex:1;min-width:80px"><label class="label">Spielfelder</label><input type="number" id="cfg-fields" placeholder="15" min="1" max="30"></div>
+          <div style="flex:1;min-width:120px"><label class="label">Admin Passwort</label><input type="password" id="cfg-password" placeholder="••••"></div>
         </div>
-        <div class="card">
-          <div class="card-title">Turnier Einstellungen</div>
-          <div class="form-row"><label class="label">Admin Passwort</label><input type="text" id="cfg-password" placeholder="turnier2025"></div>
-          <div class="form-row"><label class="label">Titel</label><input type="text" id="cfg-title" placeholder="Stöbelturnier 2025"></div>
-          <div class="form-row"><label class="label">Anzahl Spielfelder</label><input type="number" id="cfg-fields" placeholder="6" min="1" max="30" style="max-width:100px"></div>
-          <button class="btn btn-primary" onclick="saveSettings()">Speichern</button>
-        </div>
+        <div style="margin-top:.6rem"><button class="btn btn-primary" onclick="saveSettings()">Speichern</button></div>
       </div>
+
 
       <!-- Teams + PINs -->
       <div class="card">
@@ -569,8 +560,6 @@ window.loginAsAdmin = function() {
     // Auto-unlock admin panel
     document.getElementById('admin-lock-card').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
-    const cfg = loadConfig();
-    if (cfg) { document.getElementById('fb-apikey').value=cfg.apiKey||''; document.getElementById('fb-projectid').value=cfg.projectId||''; document.getElementById('fb-appid').value=cfg.appId||''; document.getElementById('fb-dburl').value=cfg.dbUrl||''; }
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value = state.settings.fieldCount;
     renderAll();
     showSection('admin', null);
@@ -1400,24 +1389,13 @@ window.submitResult = async function() {
   toast('✅ Ergebnis gespeichert');
 };
 
-window.saveFirebaseConfig = async function() {
-  const cfg={
-    apiKey: document.getElementById('fb-apikey').value.trim(),
-    projectId: document.getElementById('fb-projectid').value.trim(),
-    appId: document.getElementById('fb-appid').value.trim(),
-    dbUrl: document.getElementById('fb-dburl').value.trim()
-  };
-  if (!cfg.apiKey||!cfg.projectId) { toast('API Key und Project ID benötigt'); return; }
-  saveConfig(cfg);
-  try { await connectFirebase(cfg); toast('Firebase verbunden!'); }
-  catch(e) { toast('Fehler: '+e.message); }
-};
+
 
 window.saveSettings = async function() {
   if (!db) return;
   const pw=document.getElementById('cfg-password').value.trim();
   const title=document.getElementById('cfg-title').value.trim();
-  const fields=parseInt(document.getElementById('cfg-fields').value)||6;
+  const fields=parseInt(document.getElementById('cfg-fields').value)||15;
   if (pw) { localStorage.setItem('stoebel_admin_pw',pw); await fbSet('/tournament/settings/password',pw); }
   if (title) await fbSet('/tournament/settings/title',title);
   await fbSet('/tournament/settings/fieldCount', fields);
@@ -1429,15 +1407,9 @@ window.unlockAdmin = function() {
   if (pw===loadAdminPw()||pw===(state.settings?.password||'admin')) {
     document.getElementById('admin-lock-card').style.display='none';
     document.getElementById('admin-panel').style.display='block';
-    const cfg=loadConfig();
-    if (cfg) { document.getElementById('fb-apikey').value=cfg.apiKey||''; document.getElementById('fb-projectid').value=cfg.projectId||''; document.getElementById('fb-appid').value=cfg.appId||''; document.getElementById('fb-dburl').value=cfg.dbUrl||''; }
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
     if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
     // Firebase config collapsed by default (already configured)
-    const fbBody = document.getElementById('fb-config');
-    const fbArrow = document.getElementById('arrow-fb-config');
-    if (fbBody) { fbBody.classList.remove('open'); }
-    if (fbArrow) { fbArrow.classList.remove('open'); }
     renderAdminTeams();
     updateTeamsBadge();
   } else { toast('Falsches Passwort'); }
