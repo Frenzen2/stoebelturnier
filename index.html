@@ -680,7 +680,7 @@ function calcStandings() {
   Object.values(state.rounds).forEach(round => {
     if (!Array.isArray(round)) return;
     round.forEach(m => {
-      if (m.bye) { if (s[m.team1]) { s[m.team1].played+=1; } return; }
+      if (m.bye) { return; } // Freirunden zählen nicht als gespielte Runde
       if (m.score1===undefined || !s[m.team1] || !s[m.team2]) return;
       s[m.team1].opponents.push(m.team2); s[m.team2].opponents.push(m.team1);
       s[m.team1].played+=1; s[m.team2].played+=1;
