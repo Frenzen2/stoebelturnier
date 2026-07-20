@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="apple-mobile-web-app-title" content="🔥 FF Pichl">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+<title>🔥 FF Pichl</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --surface2: #222222;
+    --border: #333333;
+    --accent: #d42b2b;
+    --accent2: #a81f1f;
+    --accent-glow: rgba(212,43,43,0.18);
+    --text: #f0f0f0;
+    --muted: #888888;
+    --green: #27ae60;
+    --red: #e74c3c;
+    --blue: #2980b9;
+    --gold: #f0c040;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh;
+    overscroll-behavior: none; /* iOS bounce verhindern */ }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(90deg, #1a0000 0%, #1e0a0a 60%, #1a0000 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 0 1.25rem;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 52px; position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 16px rgba(212,43,43,0.18);
+  }
+  header h1 { font-family: 'Bebas Neue', sans-serif; font-size: 1.25rem; color: #fff; letter-spacing: 2px;
+    text-shadow: 0 0 18px rgba(212,43,43,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-right { display: flex; align-items: center; gap: 0.6rem; }
+  #round-badge { background: var(--accent); color: #fff; font-weight: 700; font-size: 0.65rem; padding: 3px 8px; border-radius: 20px; letter-spacing: 0.5px;
+    box-shadow: 0 0 8px rgba(212,43,43,0.4); white-space: nowrap; }
+  #team-badge { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; cursor: pointer; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Nav ── */
+  nav { display: flex; background: var(--surface2); border-bottom: 1px solid var(--border); overflow-x: auto; }
+  nav button {
+    background: none; border: none; color: var(--muted);
+    font-family: 'Inter', sans-serif; font-size: 0.8rem; font-weight: 600;
+    padding: 0.7rem 1.1rem; cursor: pointer; white-space: nowrap;
+    border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); text-shadow: 0 0 8px rgba(212,43,43,0.4); }
+  nav button:hover:not(.active) { color: var(--text); }
+
+  main { padding: 1.1rem; max-width: 860px; margin: 0 auto; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; margin-bottom: 0.9rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.35); }
+  .card-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 0.7rem; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.5rem 1rem; border-radius: 6px; border: none; font-family: 'Inter', sans-serif; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: opacity .15s, transform .1s; letter-spacing: 0.3px; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent2); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--border); }
+  .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.73rem; }
+
+  /* ── Inputs ── */
+  input[type="text"], input[type="number"], input[type="password"], textarea {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif;
+    font-size: 16px; /* min 16px verhindert iOS Auto-Zoom */ width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+  .label { display: block; font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-row { margin-bottom: 0.7rem; }
+  .inline-row { display: flex; gap: 0.5rem; align-items: center; }
+
+  /* ── Status bar ── */
+  .status-bar { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Pairings ── */
+  .pairing-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.65rem; overflow: hidden; }
+  .pairing-card.mine { border-color: var(--accent); box-shadow: 0 0 12px rgba(212,43,43,0.2); }
+  .pairing-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0.7rem 0.9rem; gap: 0.5rem; }
+  .pairing-team { font-weight: 600; font-size: 0.88rem; }
+  .pairing-team.right { text-align: right; }
+  .mine-label { font-size: 0.65rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
+  .vs-badge { background: var(--surface2); color: var(--muted); font-size: 0.68rem; font-weight: 700; padding: 3px 7px; border-radius: 4px; letter-spacing: 1px; }
+  .pairing-result { padding: 0.55rem 0.9rem; background: var(--surface2); display: flex; align-items: center; gap: 0.5rem; }
+  .result-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; white-space: nowrap; }
+  .result-tag.win  { background: rgba(46,204,113,.18); color: var(--green); }
+  .result-tag.draw { background: rgba(52,152,219,.18); color: var(--blue); }
+  .result-tag.loss { background: rgba(231,76,60,.18);  color: var(--red); }
+  .result-tag.open { background: rgba(122,127,154,.12); color: var(--muted); }
+  .bye-row { padding: 0.65rem 0.9rem; color: var(--muted); font-size: 0.84rem; font-style: italic; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.65rem; }
+
+  /* ── Standings ── */
+  .standings-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  .standings-table th { text-align: left; padding: 0.45rem 0.55rem; color: var(--muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+  .standings-table th.num { text-align: right; }
+  .standings-table td { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--border); }
+  .standings-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .standings-table tr:last-child td { border-bottom: none; }
+  .standings-table tr.highlight td { background: rgba(232,160,32,.06); }
+  .rank-cell { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+  .rank-1 { color: var(--gold); text-shadow: 0 0 6px rgba(240,192,64,0.5); }
+  .rank-2 { color: #b0b8c8; }
+  .rank-3 { color: #c07a40; }
+  .pts-cell { font-weight: 700; color: var(--accent); font-size: 0.92rem; text-shadow: 0 0 6px rgba(212,43,43,0.3); }
+  .wl-w { color: var(--green); font-weight: 600; }
+  .wl-d { color: var(--blue); font-weight: 600; }
+  .wl-l { color: var(--red); font-weight: 600; }
+
+  /* ── Teams list ── */
+  .team-row { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
+  .team-row:last-child { border-bottom: none; }
+  .team-num { width: 20px; height: 20px; border-radius: 50%; background: var(--surface2); color: var(--muted); font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .team-name-text { flex: 1; font-size: 0.88rem; }
+  .pin-badge { font-size: 0.7rem; font-weight: 700; background: var(--surface2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: var(--muted); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+
+  /* ── Admin grid ── */
+  @media (max-width: 580px) {
+    .pairing-header { font-size: 0.78rem; }
+  }
+
+  /* ── PIN Login overlay ── */
+  #pin-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(10,12,20,0.96); z-index: 300;
+    align-items: center; justify-content: center;
+    height: 100dvh; /* iOS dynamic viewport */
+    overflow: hidden;
+  }
+  #pin-overlay.open { display: flex; }
+  .pin-box { background: #141414; border: 1px solid #3a0a0a; border-radius: 14px; padding: 2rem 1.75rem; width: min(360px, 92vw); text-align: center;
+    box-shadow: 0 0 40px rgba(212,43,43,0.2); }
+  .pin-box h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--accent); letter-spacing: 2px; margin-bottom: 0.25rem; }
+  .pin-box p { color: var(--muted); font-size: 0.82rem; margin-bottom: 1.25rem; }
+  .pin-display { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 1.25rem; }
+  .pin-digit { width: 48px; height: 56px; background: var(--surface2); border: 2px solid var(--border); border-radius: 8px; font-size: 1.6rem; font-weight: 700; display: flex; align-items: center; justify-content: center; transition: border-color .15s; }
+  .pin-digit.filled { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 8px rgba(212,43,43,0.4); }
+  .pin-digit.error { border-color: var(--red); color: var(--red); }
+  .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; max-width: 240px; margin: 0 auto 1rem; }
+  .pin-key { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 1.1rem; font-weight: 600; padding: 0.8rem; cursor: pointer; transition: background .1s, transform .1s; font-family: 'Inter', sans-serif; }
+  .pin-key:active { transform: scale(0.93); background: var(--border); }
+  .pin-key.del { color: var(--muted); font-size: 0.9rem; }
+  .pin-skip { font-size: 0.75rem; color: var(--muted); cursor: pointer; text-decoration: underline; }
+  .pin-skip:hover { color: var(--text); }
+  .pin-error-msg { color: var(--red); font-size: 0.78rem; min-height: 1.1rem; margin-bottom: 0.5rem; }
+
+  /* ── Modals ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 200; align-items: center; justify-content: center;
+    height: 100dvh; align-items: flex-start; padding-top: 20vh; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; width: min(400px, 92vw); }
+  .modal h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.9rem; }
+  .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.9rem; }
+  .score-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.75rem; align-items: end; margin-bottom: 0.75rem; }
+  .score-sep { font-size: 1.3rem; font-weight: 700; color: var(--muted); padding-bottom: 0.4rem; text-align: center; }
+  input.score-input { text-align: center; font-size: 1.2rem !important; font-weight: 700 !important; }
+
+  /* ── Toast ── */
+  .toast { position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 0.6rem 1.1rem; border-radius: 8px; font-size: 0.82rem; font-weight: 500; z-index: 999; transition: transform .3s ease; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 2.2rem 1rem; font-size: 0.88rem; }
+  .empty-state .icon { font-size: 2.2rem; margin-bottom: 0.4rem; }
+
+  /* ── Collapsible sections ── */
+  .collapsible-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; padding: .1rem 0;
+  }
+  .collapsible-header:hover .collapse-arrow { color: var(--text); }
+  .collapse-arrow { color: var(--muted); font-size: .9rem; transition: transform .2s; }
+  .collapse-arrow.open { transform: rotate(180deg); }
+  .collapsible-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; max-height: 0; opacity: 0; }
+  .collapsible-body.open { max-height: 2000px; opacity: 1; }
+
+  /* Teams list scrollable */
+  #admin-teams-list { max-height: 400px; overflow-y: auto; overscroll-behavior: contain; }
+  #admin-teams-list::-webkit-scrollbar { width: 4px; }
+  #admin-teams-list::-webkit-scrollbar-track { background: var(--surface2); }
+  #admin-teams-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Round progress bar ── */
+  .progress-bar-wrap { background: var(--border); border-radius: 4px; height: 6px; margin-top: .4rem; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .4s ease; }
+
+  /* ── Inline save confirm ── */
+  .save-confirm { display:none; font-size:.75rem; font-weight:700; color:var(--green); padding:.2rem .5rem; }
+  .save-confirm.show { display:inline; }
+
+  /* ── Quick round button in pairings ── */
+  .quick-round-bar {
+    display: none;
+    align-items: center; justify-content: space-between;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: .6rem .9rem; margin-bottom: .75rem; gap: .75rem;
+  }
+  .quick-round-bar.visible { display: flex; }
+
+  /* ── My-match hero banner ── */
+  .my-match-banner {
+    background: linear-gradient(135deg, rgba(212,43,43,.18) 0%, rgba(212,43,43,.06) 100%);
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    padding: 1.4rem 1.4rem 1.1rem;
+    margin-bottom: 1.1rem;
+    box-shadow: 0 0 24px rgba(212,43,43,0.12);
+  }
+  .my-match-banner .banner-label {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--accent); margin-bottom: 0.75rem; margin-top: 0.1rem;
+  }
+  .my-match-banner .banner-vs {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 0.4rem; margin-bottom: 0.85rem;
+  }
+  .my-match-banner .banner-team {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(1.1rem, 4.5vw, 1.75rem); font-weight: 400; line-height: 1.15; letter-spacing: 1px;
+    word-break: break-word; hyphens: auto;
+  }
+  .my-match-banner .banner-team.right { text-align: right; }
+  .my-match-banner .banner-vs-dot {
+    font-size: 0.7rem; font-weight: 700; color: var(--muted);
+    background: var(--surface2); padding: 4px 7px; border-radius: 5px;
+    letter-spacing: 1px; white-space: nowrap;
+  }
+  .field-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--accent); color: #fff;
+    font-size: 1rem; font-weight: 700;
+    padding: 0.5rem 1.1rem; border-radius: 8px;
+    letter-spacing: 0.3px;
+    box-shadow: 0 0 10px rgba(212,43,43,0.35);
+  }
+  .field-chip-ghost {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: var(--surface2); color: var(--muted);
+    border: 1px solid var(--border);
+    font-size: 0.75rem; font-weight: 600;
+    padding: 0.25rem 0.65rem; border-radius: 5px;
+  }
+</style>
+</head>
+<body>
+
+<!-- PIN Login -->
+<div id="pin-overlay" class="open">
+  <div class="pin-box">
+    <h2>🔥 Stöbelturnier</h2>
+    <p id="pin-overlay-msg">Bitte PIN deines Teams eingeben</p>
+    <div class="pin-display">
+      <div class="pin-digit" id="pd0">·</div>
+      <div class="pin-digit" id="pd1">·</div>
+      <div class="pin-digit" id="pd2">·</div>
+      <div class="pin-digit" id="pd3">·</div>
+    </div>
+    <div class="pin-error-msg" id="pin-error"></div>
+    <div class="pin-keypad">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key del" onclick="pinKey('del')">⌫</button>
+      <button class="pin-key" onclick="pinKey('0')">0</button>
+      <button class="pin-key del" onclick="pinKey('clr')">C</button>
+    </div>
+    <div class="pin-skip" onclick="skipPin()">Ohne Login zuschauen</div>
+    <div style="margin-top:.6rem">
+      <div class="pin-skip" onclick="toggleAdminLogin()">⚙ Admin-Zugang</div>
+    </div>
+    <div id="admin-login-row" style="display:none;margin-top:.75rem;display:none">
+      <div class="inline-row" style="justify-content:center">
+        <input type="password" id="overlay-admin-pw" placeholder="Admin-Passwort" style="max-width:180px;font-size:16px">
+        <button class="btn btn-primary btn-sm" onclick="loginAsAdmin()">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<header>
+  <h1 id="main-title">🔥 Stöbelturnier</h1>
+  <div class="header-right">
+    <span id="round-badge">Runde –</span>
+    <span id="team-badge" onclick="showPinOverlay()" title="Team wechseln">👤 Gast</span>
+    <div class="spinner" id="loader" style="display:none"></div>
+  </div>
+</header>
+
+<nav>
+  <button class="active" onclick="showSection('pairings',this)">Paarungen</button>
+  <button onclick="showSection('standings',this)">Tabelle</button>
+  <button onclick="showSection('teams',this)">Teams</button>
+  <button onclick="showSection('admin',this)">Admin</button>
+</nav>
+
+<main>
+  <!-- PAARUNGEN -->
+  <div id="sec-pairings" class="section active">
+    <div class="status-bar"><div class="dot"></div><span id="status-text">Verbinde...</span></div>
+    <div id="round-nav" style="display:none;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
+      <button class="btn btn-ghost btn-sm" onclick="navRound(-1)">◀ Zurück</button>
+      <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
+      <button class="btn btn-ghost btn-sm" onclick="navRound(+1)">Vor ▶</button>
+    </div>
+    <div class="quick-round-bar" id="quick-round-bar">
+      <div>
+        <div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Rundenfortschritt</div>
+        <div id="quick-progress-text" style="font-size:.85rem;font-weight:600;margin-top:.15rem"></div>
+        <div class="progress-bar-wrap" style="width:180px"><div class="progress-bar-fill" id="quick-progress-bar" style="width:0%"></div></div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="quick-next-btn" onclick="generateNextRound()">Nächste Runde</button>
+    </div>
+    <div id="pairings-list"><div class="empty-state"><div class="icon">🎯</div>Keine Paarungen vorhanden</div></div>
+  </div>
+
+  <!-- TABELLE -->
+  <div id="sec-standings" class="section">
+    <div id="standings-body"></div>
+  </div>
+
+  <!-- TEAMS -->
+  <div id="sec-teams" class="section">
+    <div class="card">
+      <div class="card-title">Alle Teams</div>
+      <div id="teams-list"><div class="empty-state"><div class="icon">👥</div>Keine Teams</div></div>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="sec-admin" class="section">
+    <div class="card" id="admin-lock-card">
+      <div class="card-title">Admin-Bereich</div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:0.7rem">Admin-Passwort eingeben</p>
+      <div class="inline-row">
+        <input type="password" id="admin-pw-input" placeholder="Passwort" style="max-width:180px">
+        <button class="btn btn-primary" onclick="unlockAdmin()">Einloggen</button>
+      </div>
+    </div>
+
+    <div id="admin-panel" style="display:none">
+      <div class="card">
+        <div class="card-title">Turnier Einstellungen</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <div style="flex:2;min-width:160px"><label class="label">Titel</label><input type="text" id="cfg-title" placeholder="Stöbelturnier 2026"></div>
+          <div style="flex:1;min-width:80px"><label class="label">Spielfelder</label><input type="number" id="cfg-fields" placeholder="15" min="1" max="30"></div>
+          <div style="flex:1;min-width:120px"><label class="label">Admin Passwort</label><input type="password" id="cfg-password" placeholder="••••"></div>
+        </div>
+        <div style="margin-top:.6rem"><button class="btn btn-primary" onclick="saveSettings()">Speichern</button></div>
+      </div>
+
+
+      <!-- Teams + PINs -->
+      <div class="card">
+        <div class="collapsible-header" onclick="toggleCollapse('teams-panel')">
+          <div class="card-title" style="margin-bottom:0">Teams &amp; PINs <span id="teams-count-badge" style="font-size:.7rem;color:var(--muted);font-family:Inter;font-weight:500;text-transform:none;letter-spacing:0"></span></div>
+          <span class="collapse-arrow open" id="arrow-teams-panel">▼</span>
+        </div>
+        <div class="collapsible-body open" id="teams-panel">
+          <div style="height:.75rem"></div>
+          <div class="form-row">
+            <div class="inline-row">
+              <input type="text" id="new-team-name" placeholder="Teamname..." style="flex:1">
+              <button class="btn btn-primary" onclick="addTeam()">+ Hinzufügen</button>
+            </div>
+          </div>
+          <div class="form-row" style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="openImportModal()">📋 Mehrere einfügen</button>
+            <button class="btn btn-ghost btn-sm" onclick="assignAllPins()">🔑 Alle PINs vergeben</button>
+            <button class="btn btn-ghost btn-sm" onclick="printPins()">🖨 PIN-Liste drucken</button>
+          </div>
+          <div id="admin-teams-list"></div>
+        </div>
+      </div>
+
+      <!-- Runden -->
+      <div class="card">
+        <div class="card-title">Runden Steuerung</div>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-primary" id="btn-next-round" onclick="generateNextRound()">Nächste Runde generieren</button>
+          <button class="btn btn-ghost" onclick="diagnosePairing()">🔍 Pairing prüfen</button>
+          <button class="btn btn-ghost" onclick="generateAusgleichsrunde()">⚖️ Ausgleichsrunde</button>
+          <button class="btn btn-ghost" onclick="fillRandomResults()">🎲 Zufallsergebnisse</button>
+          <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
+          <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
+        </div>
+        <div id="diagnose-output" style="display:none;margin-top:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto"></div>
+        <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 2/1/0 · Diff-Tiebreaker</p>
+        <div style="margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border)">
+          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.4rem">Beamer Dashboard</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <a href="dashboard.html" target="_blank" class="btn btn-ghost btn-sm">📺 Dashboard öffnen</a>
+            <a href="dashboard.html?tabelle=1" target="_blank" class="btn btn-ghost btn-sm">🏆 Dashboard + Tabelle</a>
+          </div>
+        </div>
+        <div id="manual-pairing-area" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.9rem">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.6rem">⚡ Manuelle Notfall-Paarung</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:.5rem;align-items:center;margin-bottom:.5rem">
+            <select id="manual-t1" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <span style="color:var(--muted);font-weight:700;padding:0 .25rem">VS</span>
+            <select id="manual-t2" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <button class="btn btn-danger btn-sm" onclick="addManualPairing()">+ Hinzufügen</button>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <select id="manual-bye" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif;flex:1"></select>
+            <button class="btn btn-ghost btn-sm" onclick="addManualBye()">+ Freirunde</button>
+          </div>
+          <p style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Nur verwenden wenn der Algorithmus versagt. Rematches werden nicht geprüft.</p>
+        </div>
+        <div style="margin-top:.6rem">
+          <button class="btn btn-ghost btn-sm" onclick="toggleManualPairing()">🔧 Manuelle Paarung (Notfall)</button>
+        </div>
+      </div>
+
+      <!-- Simulation -->
+      <div class="card">
+        <div class="card-title">🧪 Pairing-Simulation & Test</div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
+          <div><label class="label">Teams</label><input type="number" id="sim-teams" value="41" min="4" max="80" style="width:70px"></div>
+          <div><label class="label">Runden</label><input type="number" id="sim-rounds" value="13" min="2" max="20" style="width:70px"></div>
+          <button class="btn btn-primary" onclick="runSimulation()">▶ Simulation starten</button>
+        </div>
+        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft lokal – schreibt nichts in Firebase. Prüft Rematches, Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
+        <div id="sim-output" style="display:none">
+          <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Result Modal -->
+<div class="modal-overlay" id="result-modal">
+  <div class="modal">
+    <h3>Ergebnis eintragen</h3>
+    <div class="score-grid">
+      <div><div class="label" id="modal-t1">–</div><input type="number" class="score-input" id="modal-s1" min="0" placeholder="0"></div>
+      <div class="score-sep">:</div>
+      <div><div class="label" id="modal-t2">–</div><input type="number" class="score-input" id="modal-s2" min="0" placeholder="0"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="submitResult()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <h3>Teams importieren</h3>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:.6rem">Einen Teamnamen pro Zeile:</p>
+    <textarea id="import-textarea" rows="10" style="resize:vertical"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeImportModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="confirmImport()">Importieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Print PIN list (hidden) -->
+<div id="print-area" style="display:none"></div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let db = null;
+let state = {
+  teams: {},       // id -> { name, pin }
+  rounds: {},      // roundNum -> [ match ]
+  currentRound: 0,
+  settings: { password: 'admin', title: 'Stöbelturnier 2025' }
+};
+let session = {
+  teamId: null,    // null = Gast
+  isAdmin: false
+};
+let currentMatchId = null;
+let currentRoundNum = null;
+let pinBuffer = '';
+let viewRound = null; // null = aktuell, sonst Rundennummer
+let displayRound = null; // aktuell angezeigte Runde (wird in renderPairings gesetzt)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PIN Overlay
+// ─────────────────────────────────────────────────────────────────────────────
+window.showPinOverlay = function() {
+  pinBuffer = '';
+  updatePinDisplay();
+  document.getElementById('pin-error').textContent = '';
+  const hasTeams = Object.keys(state.teams).length > 0;
+  document.getElementById('pin-overlay-msg').textContent = hasTeams
+    ? 'Bitte PIN deines Teams eingeben'
+    : '⏳ Verbinde mit Datenbank...';
+  document.getElementById('pin-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  document.body.style.position = 'fixed';
+  document.body.style.width = '100%';
+};
+
+function closePinOverlay() {
+  document.getElementById('pin-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  document.body.style.position = '';
+  document.body.style.width = '';
+}
+
+window.skipPin = function() {
+  session.teamId = null;
+  closePinOverlay();
+  document.getElementById('team-badge').textContent = '👤 Gast';
+  renderAll();
+};
+
+window.toggleAdminLogin = function() {
+  const row = document.getElementById('admin-login-row');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  if (row.style.display === 'flex') document.getElementById('overlay-admin-pw').focus();
+};
+
+window.loginAsAdmin = function() {
+  const pw = document.getElementById('overlay-admin-pw').value;
+  if (pw === loadAdminPw() || pw === (state.settings?.password || 'admin')) {
+    session.teamId = null;
+    session.isAdmin = true;
+    closePinOverlay();
+    document.getElementById('team-badge').textContent = '⚙ Admin';
+    // Auto-unlock admin panel
+    document.getElementById('admin-lock-card').style.display = 'none';
+    document.getElementById('admin-panel').style.display = 'block';
+    if (state.settings?.fieldCount) document.getElementById('cfg-fields').value = state.settings.fieldCount;
+    renderAll();
+    showSection('admin', null);
+    toast('Willkommen, Admin!');
+  } else {
+    document.getElementById('overlay-admin-pw').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('overlay-admin-pw').style.borderColor = '', 1000);
+    toast('Falsches Passwort');
+  }
+};
+
+window.pinKey = function(k) {
+  document.getElementById('pin-error').textContent = '';
+  if (k === 'del') { pinBuffer = pinBuffer.slice(0,-1); }
+  else if (k === 'clr') { pinBuffer = ''; }
+  else if (pinBuffer.length < 4) { pinBuffer += k; }
+  updatePinDisplay();
+  if (pinBuffer.length === 4) checkPin();
+};
+
+function updatePinDisplay() {
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById('pd' + i);
+    el.textContent = pinBuffer[i] ? '●' : '·';
+    el.className = 'pin-digit' + (pinBuffer[i] ? ' filled' : '');
+  }
+}
+
+function checkPin() {
+  // Admin PIN = 'ADMIN' -> use admin password field, but here we use numeric admin PIN
+  // Check against all team PINs
+  const teams = Object.entries(state.teams);
+  const match = teams.find(([id, t]) => t.pin === pinBuffer);
+
+  // Also allow admin PIN (stored separately)
+  const adminPin = state.settings?.adminPin || '';
+
+  if (match) {
+    session.teamId = match[0];
+    session.isAdmin = false;
+    closePinOverlay();
+    document.getElementById('team-badge').textContent = '🏆 ' + match[1].name;
+    renderAll();
+    toast('Willkommen, ' + match[1].name + '!');
+  } else if (adminPin && pinBuffer === adminPin) {
+    session.teamId = null;
+    session.isAdmin = true;
+    closePinOverlay();
+    document.getElementById('team-badge').textContent = '⚙ Admin';
+    renderAll();
+    toast('Admin-Modus');
+  } else {
+    // Error
+    for (let i = 0; i < 4; i++) {
+      document.getElementById('pd' + i).className = 'pin-digit error';
+    }
+    document.getElementById('pin-error').textContent = 'Unbekannter PIN – bitte nochmals versuchen';
+    setTimeout(() => { pinBuffer = ''; updatePinDisplay(); }, 900);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Firebase
+// ─────────────────────────────────────────────────────────────────────────────
+function loadConfig() {
+  const r = localStorage.getItem('stoebel_fb_config');
+  return r ? JSON.parse(r) : null;
+}
+function saveConfig(cfg) { localStorage.setItem('stoebel_fb_config', JSON.stringify(cfg)); }
+function loadAdminPw() { return localStorage.getItem('stoebel_admin_pw') || 'admin'; }
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBukGl8KprWShSKyIuK6l4rfHM8kabKbwk",
+  authDomain: "ffpstoebel.firebaseapp.com",
+  databaseURL: "https://ffpstoebel-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "ffpstoebel",
+  appId: "1:899454609586:web:40465b0c61489f51cfc1ab"
+};
+
+async function connectFirebase() {
+  const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+  const { getDatabase, ref, onValue, set, update, remove, push }
+    = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
+  window._fb = { ref, onValue, set, update, remove, push };
+
+  const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+  db = getDatabase(app);
+  window._db = db;
+  setStatus('Verbunden ✓');
+  const { ref: r, onValue: ov } = window._fb;
+  ov(r(db, '/tournament'), snap => {
+    const d = snap.val() || {};
+    state.teams = d.teams || {};
+    state.rounds = d.rounds || {};
+    state.currentRound = d.currentRound || 0;
+    state.settings = d.settings || state.settings;
+    renderAll();
+  });
+}
+
+async function fbSet(path, val) { const {ref,set}=window._fb; await set(ref(db,path),val); }
+async function fbUpdate(path, val) { const {ref,update}=window._fb; await update(ref(db,path),val); }
+async function fbPush(path, val) { const {ref,push}=window._fb; return (await push(ref(db,path),val)).key; }
+async function fbRemove(path) { const {ref,remove}=window._fb; await remove(ref(db,path)); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Standings calc
+// ─────────────────────────────────────────────────────────────────────────────
+function calcStandings() {
+  const ids = Object.keys(state.teams);
+  if (!ids.length) return [];
+  const s = {};
+  ids.forEach(id => s[id] = { pts:0, wins:0, draws:0, losses:0, diff:0, played:0, buchholz:0, opponents:[] });
+
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) { if (s[m.team1]) { s[m.team1].played+=1; } return; }
+      if (m.score1===undefined || !s[m.team1] || !s[m.team2]) return;
+      s[m.team1].opponents.push(m.team2); s[m.team2].opponents.push(m.team1);
+      s[m.team1].played+=1; s[m.team2].played+=1;
+      s[m.team1].diff += m.score1-m.score2; s[m.team2].diff += m.score2-m.score1;
+      if (m.score1>m.score2) { s[m.team1].pts+=2; s[m.team1].wins+=1; s[m.team2].losses+=1; }
+      else if (m.score2>m.score1) { s[m.team2].pts+=2; s[m.team2].wins+=1; s[m.team1].losses+=1; }
+      else { s[m.team1].pts+=1; s[m.team2].pts+=1; s[m.team1].draws+=1; s[m.team2].draws+=1; }
+    });
+  });
+  // Buchholz = Summe der Punkte aller Gegner
+  ids.forEach(id => {
+    s[id].buchholz = s[id].opponents.reduce((sum, opp) => sum + (s[opp]?.pts || 0), 0);
+  });
+  // Tiebreaker: Punkte → Differenz → Buchholz → Siege → Name
+  return ids.map(id=>({id, name:state.teams[id].name, ...s[id]}))
+            .sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins||a.name.localeCompare(b.name));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Swiss Pairing
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Swiss Pairing – Rematch-Minimierung primär, Buchholz/Bracket als Tiebreaker
+// ─────────────────────────────────────────────────────────────────────────────
+const HYBRID_SWITCH_ROUND = 5;
+
+function generateSwissPairing() {
+  const standings = calcStandings();
+  if (standings.length < 2) { toast('Mindestens 2 Teams benötigt'); return null; }
+
+  const nextRound = state.currentRound + 1;
+  const keyPair = (a,b) => [a,b].sort().join('_');
+  const shuffle = arr => {
+    const a = arr.slice();
+    for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  };
+
+  // ── Historie ──
+  const playedSet = new Set();
+  const byeHistory = new Map();
+  Object.entries(state.rounds).forEach(([rNum, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) { byeHistory.set(m.team1, Math.max(byeHistory.get(m.team1)||0, parseInt(rNum))); }
+      else { playedSet.add(keyPair(m.team1, m.team2)); }
+    });
+  });
+  const hasPlayed = (a,b) => playedSet.has(keyPair(a,b));
+
+  // ── BYE-Vergabe ──
+  let eligibleIds = standings.map(t => t.id);
+  let byeTeam = null;
+  if (eligibleIds.length % 2 !== 0) {
+    const worstFirst = [...eligibleIds].reverse();
+    byeTeam = worstFirst.find(id => !byeHistory.has(id))
+           ?? worstFirst.find(id => byeHistory.get(id) !== state.currentRound)
+           ?? worstFirst[0];
+    eligibleIds = eligibleIds.filter(id => id !== byeTeam);
+  }
+
+  // ── Qualitäts-Score für eine Paarung (niedriger = besser) ──
+  // Primär: war schon gespielt? (0 = nein, 1000 = ja)
+  // Sekundär: Punktedifferenz zwischen den Teams
+  const ptOf = new Map(standings.map(t => [t.id, t.pts]));
+  const bhOf = new Map(standings.map(t => [t.id, t.buchholz||0]));
+  const rankOf = new Map(standings.map((t,i) => [t.id, i]));
+
+  const pairQuality = (a, b) => {
+    const rematch = hasPlayed(a,b) ? 10000 : 0;
+    const ptDiff = Math.abs((ptOf.get(a)||0) - (ptOf.get(b)||0));
+    const rankDiff = Math.abs((rankOf.get(a)||0) - (rankOf.get(b)||0));
+    return rematch + ptDiff * 10 + rankDiff;
+  };
+
+  // ── Backtracking mit Rematch-Minimierung ──
+  // Sortiere nach wenigsten möglichen rematch-freien Gegnern (schwierigste zuerst)
+  function tryPairOptimal(ids) {
+    if (!ids.length) return { pairs: [], rematches: 0 };
+    if (ids.length % 2 !== 0) return null;
+
+    // Erst ohne Rematches versuchen
+    const result = backtrack(ids, false);
+    if (result) return { pairs: result, rematches: 0 };
+
+    // Mit minimalem Rematch
+    const resultR = backtrack(ids, true);
+    if (resultR) {
+      const rematches = resultR.filter(([a,b]) => hasPlayed(a,b)).length;
+      return { pairs: resultR, rematches };
+    }
+    return null;
+  }
+
+  function backtrack(ids, allowRematch) {
+    const paired = new Array(ids.length).fill(false);
+    // Sortiere: wer hat die wenigsten freien Gegner? → zuerst pairen
+    const freeCnt = ids.map((a,i) => ids.filter((b,j) => i!==j && !paired[j] && (allowRematch||!hasPlayed(a,b))).length);
+    const order = ids.map((_,i)=>i).sort((a,b)=>freeCnt[a]-freeCnt[b]);
+    const res = [];
+    function bt(k) {
+      while (k<order.length && paired[order[k]]) k++;
+      if (k>=order.length) return true;
+      const ia=order[k]; const a=ids[ia];
+      // Kandidaten nach Paarungsqualität sortieren (beste zuerst)
+      let cands = ids.map((_,j)=>j)
+        .filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
+      cands.sort((j1,j2) => pairQuality(a,ids[j1]) - pairQuality(a,ids[j2]));
+      for (const ib of cands) {
+        paired[ia]=paired[ib]=true; res.push([a,ids[ib]]);
+        if (bt(k+1)) return true;
+        res.pop(); paired[ia]=paired[ib]=false;
+      }
+      return false;
+    }
+    return bt(0) ? res : null;
+  }
+
+  // ── Haupt-Pairing: nach Qualitäts-Gruppen ──
+  // Buchholz ab Runde 5 stärker gewichten
+  const useBuchholz = nextRound >= HYBRID_SWITCH_ROUND;
+  let sortedIds;
+  if (useBuchholz) {
+    const maxPt = Math.max(...eligibleIds.map(id=>ptOf.get(id)||0),1);
+    const maxBH = Math.max(...eligibleIds.map(id=>bhOf.get(id)||0),1);
+    sortedIds = [...eligibleIds].sort((a,b) => {
+      const sa = (ptOf.get(a)||0)/maxPt*100 + (bhOf.get(a)||0)/maxBH*10;
+      const sb = (ptOf.get(b)||0)/maxPt*100 + (bhOf.get(b)||0)/maxBH*10;
+      return sb-sa;
+    });
+  } else {
+    sortedIds = [...eligibleIds].sort((a,b) => (rankOf.get(a)||999)-(rankOf.get(b)||999));
+  }
+
+  // Versuche zuerst globales Backtracking (beste Qualität)
+  const result = tryPairOptimal(sortedIds);
+  if (!result) { toast('⚠️ Pairing nicht möglich'); return null; }
+
+  const matches = result.pairs.map(([a,b]) => ({ team1:a, team2:b }));
+  if (byeTeam) matches.push({ team1:byeTeam, bye:true });
+  return matches;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Simulation & Robustness Test
+// ─────────────────────────────────────────────────────────────────────────────
+window.runSimulation = function() {
+  const numTeams  = parseInt(document.getElementById('sim-teams').value)  || 40;
+  const numRounds = parseInt(document.getElementById('sim-rounds').value) || 6;
+  const log = []; let errors = 0; let warnings = 0;
+  const out  = msg => log.push(msg);
+  const ok   = msg => log.push('✅ ' + msg);
+  const warn = msg => { log.push('⚠️  ' + msg); warnings++; };
+  const err  = msg => { log.push('❌ ' + msg); errors++; };
+
+  out(`━━━ Simulation: ${numTeams} Teams, ${numRounds} Runden ━━━\n`);
+
+  // Build local teams
+  const simTeams = {};
+  for (let i = 1; i <= numTeams; i++) simTeams[`t${i}`] = { name: `Team ${String(i).padStart(2,'0')}` };
+  const simRounds = {};
+
+  function simStandings() {
+    const ids = Object.keys(simTeams);
+    const s = {};
+    ids.forEach(id => s[id] = { pts:0, wins:0, draws:0, losses:0, diff:0, played:0, opponents:[] });
+    Object.values(simRounds).forEach(round => {
+      if (!Array.isArray(round)) return;
+      round.forEach(m => {
+        if (m.bye) { if (s[m.team1]) { s[m.team1].played+=1; } return; }
+        if (m.score1===undefined||!s[m.team1]||!s[m.team2]) return;
+        s[m.team1].opponents.push(m.team2); s[m.team2].opponents.push(m.team1);
+        s[m.team1].played+=1; s[m.team2].played+=1;
+        s[m.team1].diff+=m.score1-m.score2; s[m.team2].diff+=m.score2-m.score1;
+        if (m.score1>m.score2){ s[m.team1].pts+=2; s[m.team1].wins+=1; s[m.team2].losses+=1; }
+        else if (m.score2>m.score1){ s[m.team2].pts+=2; s[m.team2].wins+=1; s[m.team1].losses+=1; }
+        else { s[m.team1].pts+=1; s[m.team2].pts+=1; s[m.team1].draws+=1; s[m.team2].draws+=1; }
+      });
+    });
+    ids.forEach(id => { s[id].buchholz = s[id].opponents.reduce((sum,o)=>sum+(s[o]?.pts||0),0); });
+    return ids.map(id=>({id,...s[id]})).sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins);
+  }
+
+  function simPairing(roundNum) {
+    const standings = simStandings();
+    const useBuchholz = roundNum >= HYBRID_SWITCH_ROUND;
+    const kp = (a,b) => [a,b].sort().join('_');
+    const sh = arr => { const a=arr.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+    const playedSet = new Set();
+    const byeHist = new Map();
+    Object.entries(simRounds).forEach(([rn,round]) => {
+      if (!Array.isArray(round)) return;
+      round.forEach(m => {
+        if (m.bye) { byeHist.set(m.team1, Math.max(byeHist.get(m.team1)||0, parseInt(rn))); }
+        else { playedSet.add(kp(m.team1,m.team2)); }
+      });
+    });
+    const hp = (a,b) => playedSet.has(kp(a,b));
+
+    let eligibleIds = standings.map(t=>t.id);
+    let byeTeam = null;
+    if (eligibleIds.length%2!==0) {
+      const wf=[...eligibleIds].reverse();
+      byeTeam = wf.find(id=>!byeHist.has(id)) ?? wf.find(id=>byeHist.get(id)!==roundNum-1) ?? wf[0];
+      eligibleIds = eligibleIds.filter(id=>id!==byeTeam);
+    }
+
+    function pairAdj(ids, rankOf, allowRem) {
+      const ord=ids.slice().sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999));
+      const pairs=[]; const lo=[]; let i=0;
+      while(i<ord.length){
+        if(i===ord.length-1){lo.push(ord[i]);break;}
+        const a=ord[i],b=ord[i+1];
+        if(allowRem||!hp(a,b)){pairs.push([a,b]);i+=2;continue;}
+        if(i+3<ord.length){
+          const c=ord[i+2],d=ord[i+3];
+          if((!hp(a,c)||allowRem)&&(!hp(b,d)||allowRem)){pairs.push([a,c],[b,d]);i+=4;continue;}
+          if((!hp(a,d)||allowRem)&&(!hp(b,c)||allowRem)){pairs.push([a,d],[b,c]);i+=4;continue;}
+        }
+        lo.push(a);i++;
+      }
+      return {pairs,leftover:lo};
+    }
+    function tryAll(ids,allowRem){
+      if(!ids.length)return[];
+      if(ids.length%2!==0)return null;
+      const paired=new Array(ids.length).fill(false);
+      const res=[];
+      function bt(k){
+        while(k<ids.length&&paired[k])k++;
+        if(k>=ids.length)return true;
+        let cands=ids.map((_,j)=>j).filter(j=>!paired[j]&&j!==k&&(allowRem||!hp(ids[k],ids[j])));
+        cands=sh(cands);
+        for(const j of cands){paired[k]=paired[j]=true;res.push([ids[k],ids[j]]);if(bt(k+1))return true;res.pop();paired[k]=paired[j]=false;}
+        return false;
+      }
+      return bt(0)?res:null;
+    }
+
+    const finalPairs=[]; const pg=new Set();
+
+    if (useBuchholz) {
+      const maxPts=Math.max(...standings.map(t=>t.pts),1);
+      const maxBH=Math.max(...standings.map(t=>t.buchholz),1);
+      const scoreOf=new Map(standings.map(t=>[t.id,(t.pts/maxPts)*100+(t.buchholz/maxBH)*10]));
+      const bRank=new Map([...eligibleIds].sort((a,b)=>(scoreOf.get(b)||0)-(scoreOf.get(a)||0)).map((id,i)=>[id,i]));
+      const {pairs,leftover}=pairAdj(eligibleIds,bRank,false);
+      pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
+      const rest=eligibleIds.filter(id=>!pg.has(id));
+      leftover.forEach(id=>{if(!rest.includes(id))rest.push(id);});
+      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
+    } else {
+      const ptOf=new Map(standings.map(t=>[t.id,t.pts]));
+      const rankOf=new Map(standings.map((t,i)=>[t.id,i]));
+      const brackets=new Map();
+      eligibleIds.forEach(id=>{const p=ptOf.get(id)||0;if(!brackets.has(p))brackets.set(p,[]);brackets.get(p).push(id);});
+      const bpts=[...brackets.keys()].sort((a,b)=>b-a);
+      let carry=null;
+      for(const pts of bpts){
+        let ids=sh((brackets.get(pts)||[]).filter(id=>!pg.has(id)).sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999)));
+        if(carry!==null){ids=[carry,...ids];carry=null;}
+        if(!ids.length)continue;
+        const {pairs,leftover}=pairAdj(ids,rankOf,false);
+        pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
+        if(leftover.length>0)carry=leftover[0];
+      }
+      const rest=eligibleIds.filter(id=>!pg.has(id));
+      if(carry&&!pg.has(carry)&&!rest.includes(carry))rest.push(carry);
+      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
+    }
+
+    let rematchCount=0;
+    finalPairs.forEach(([a,b])=>{if(hp(a,b))rematchCount++;});
+    const matches=finalPairs.map(([a,b])=>({team1:a,team2:b}));
+    if(byeTeam)matches.push({team1:byeTeam,bye:true});
+    return {matches, rematchCount};
+  }
+
+  const byeCount={}; let totalRematches=0;
+
+  for (let r=1;r<=numRounds;r++) {
+    const mode = r >= HYBRID_SWITCH_ROUND ? '📊 Buchholz' : '🏆 Bracket';
+    out(`\n── Runde ${r} [${mode}] ──`);
+    const {matches, rematchCount} = simPairing(r);
+    totalRematches += rematchCount;
+    if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
+
+    // Every team appears exactly once?
+    const seen=new Set(); let dupes=0;
+    matches.forEach(m => {
+      if (seen.has(m.team1)){ err(`${simTeams[m.team1].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team1);
+      if (!m.bye){ if (seen.has(m.team2)){ err(`${simTeams[m.team2].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team2); }
+    });
+    const missing=Object.keys(simTeams).filter(id=>!seen.has(id));
+    if (missing.length>0) err(`${missing.length} Teams fehlen in Runde ${r}`);
+    if (dupes===0&&missing.length===0) ok(`Alle ${numTeams} Teams korrekt zugeteilt`);
+
+    // Bye
+    const byeM=matches.find(m=>m.bye);
+    if (numTeams%2!==0) {
+      if (!byeM) err(`Keine Freirunde obwohl ungerade Teamzahl!`);
+      else {
+        byeCount[byeM.team1]=(byeCount[byeM.team1]||0)+1;
+        if (byeCount[byeM.team1]>1) warn(`${simTeams[byeM.team1].name} hat ${byeCount[byeM.team1]}x Freirunde`);
+        else ok(`Freirunde: ${simTeams[byeM.team1].name}`);
+      }
+    }
+
+    // Simulate results
+    simRounds[r] = matches.map((m,i)=>{
+      const base={id:`r${r}m${i}`,...m};
+      if (!m.bye){ base.score1=Math.floor(Math.random()*20); base.score2=Math.floor(Math.random()*20); }
+      return base;
+    });
+
+    // Points sanity
+    // Punkte dieser Runde (nicht kumulativ) - jede Partie vergibt genau 2 Punkte (Sieg 2:0 oder Unentsch. 1:1)
+    const matchCount = matches.filter(m=>!m.bye).length;
+    const roundPts = simRounds[r].filter(m=>!m.bye).reduce((s,m)=>s+(m.score1>m.score2?2:m.score2>m.score1?2:2),0);
+    if (roundPts !== matchCount*2)
+      err(`Runde ${r}: Rundenpunkte ${roundPts} ≠ erwartet ${matchCount*2}`);
+    else ok(`Runde ${r}: ${matchCount} Partien, ${roundPts} Pkt vergeben ✓`);
+  }
+
+  // Abschlussprüfung
+  out(`\n━━━ Abschlussprüfung ━━━`);
+  const final=simStandings();
+
+  // Differenz-Konsistenz prüfen
+  let diffOk=true;
+  final.forEach(t=>{
+    if (!Number.isFinite(t.diff)){err(`Diff-Fehler: ${simTeams[t.id].name}`);diffOk=false;}
+  });
+  if (diffOk) ok('Differenz-Wertung für alle Teams korrekt');
+
+  // Top 5
+  out(`\nFinal-Tabelle (Top 5):`);
+  final.slice(0,5).forEach((t,i)=>{
+    out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Diff: ${t.diff>=0?'+':''}${t.diff}  BH: ${t.buchholz}  Siege: ${t.wins}`);
+  });
+
+  out(`\nRematches gesamt: ${totalRematches}`);
+  if (totalRematches===0) ok('Keine Rematches!');
+  else if (totalRematches<=numRounds) ok(`${totalRematches} Rematch(es) – akzeptabel`);
+  else warn(`${totalRematches} Rematches – zu viele?`);
+
+  out(`\n━━━ Ergebnis: ${errors} Fehler · ${warnings} Warnungen ━━━`);
+  if (errors===0&&warnings===0) out('🏆 Alles perfekt!');
+  else if (errors===0) out('👍 Keine kritischen Fehler');
+  else out('🔴 Kritische Fehler – bitte melden!');
+
+  document.getElementById('sim-log').textContent=log.join('\n');
+  document.getElementById('sim-output').style.display='block';
+  document.getElementById('sim-log').scrollTop=9999;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function tn(id) { return state.teams[id]?.name||id; }
+function setStatus(msg) { document.getElementById('status-text').textContent=msg; }
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2400);
+}
+function randomPin(exclude=[]) {
+  let p;
+  do { p=String(Math.floor(1000+Math.random()*9000)); } while(exclude.includes(p));
+  return p;
+}
+
+window.showSection = function(id, btn) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  if(btn) btn.classList.add('active'); else document.querySelector(`nav button[onclick*="${id}"]`)?.classList.add('active');
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+(async()=>{
+  setStatus('Verbinde...');
+  // Show PIN overlay immediately - Firebase loads in background
+  showPinOverlay();
+  try {
+    await connectFirebase();
+  } catch(e) {
+    setStatus('Verbindung fehlgeschlagen: ' + e.message);
+  }
+
+// ── Zufallsergebnisse ──
+window.fillRandomResults = async function() {
+  if (!db) { toast('Nicht verbunden'); return; }
+  const round = state.rounds[state.currentRound];
+  if (!round || !round.length) { toast('Keine Paarungen'); return; }
+  const open = round.filter(function(m) { return !m.bye && m.score1 === undefined; });
+  if (!open.length) { toast('Alle Ergebnisse bereits eingetragen'); return; }
+  const scorePool = [0,0,3,3,3,3,3,3,3,3,5,5,5,5,6,6,6,6,6,6,7,7,8,8,8,8,8,8,8,8,9,9,9,9,10,10,10,10,11,11,11,12,12,12,13,13,13,13,14,14,15,15,16,16,17,18,19];
+  const drawPool = [6,6,8,8,8,8,8,8,10,10,14];
+  function randResult() {
+    if (Math.random() < 0.14) {
+      var s = drawPool[Math.floor(Math.random() * drawPool.length)];
+      return [s, s];
+    }
+    var s1 = scorePool[Math.floor(Math.random() * scorePool.length)];
+    var s2 = scorePool[Math.floor(Math.random() * scorePool.length)];
+    while (s1 === s2) { s2 = scorePool[Math.floor(Math.random() * scorePool.length)]; }
+    if (s1 < s2) { var tmp = s1; s1 = s2; s2 = tmp; }
+    return Math.random() < 0.5 ? [s1, s2] : [s2, s1];
+  }
+  var updated = round.slice();
+  open.forEach(function(m) {
+    var idx = updated.findIndex(function(x) { return x.id === m.id; });
+    if (idx >= 0) {
+      var res = randResult();
+      updated[idx] = Object.assign({}, updated[idx], { score1: res[0], score2: res[1] });
+    }
+  });
+  await fbSet('/tournament/rounds/' + state.currentRound, updated);
+  toast('🎲 ' + open.length + ' Zufallsergebnisse eingetragen');
+};
+
+// ── Ausgleichsrunde ──
+window.generateAusgleichsrunde = async function() {
+  if (!db) { toast('Nicht verbunden'); return; }
+  var standings = calcStandings();
+  var teamIds = standings.map(function(t) { return t.id; });
+  var realGames = {};
+  teamIds.forEach(function(id) { realGames[id] = 0; });
+  Object.values(state.rounds).forEach(function(round) {
+    if (!Array.isArray(round)) return;
+    round.forEach(function(m) {
+      if (!m.bye) {
+        if (realGames[m.team1] !== undefined) realGames[m.team1]++;
+        if (realGames[m.team2] !== undefined) realGames[m.team2]++;
+      }
+    });
+  });
+  var maxGames = Math.max.apply(null, Object.values(realGames));
+  var needGame = teamIds.filter(function(id) { return realGames[id] < maxGames; });
+  if (!needGame.length) { toast('Alle Teams haben gleich viele Spiele'); return; }
+  if (needGame.length % 2 !== 0) { toast('⚠️ ' + needGame.length + ' Teams mit Freirunde - ungerade Anzahl'); return; }
+  if (!confirm('Ausgleichsrunde: Nur ' + needGame.length + ' Teams spielen. Die anderen ' + (teamIds.length - needGame.length) + ' spielen NICHT. Fortfahren?')) return;
+  var played = new Set();
+  Object.values(state.rounds).forEach(function(round) {
+    if (!Array.isArray(round)) return;
+    round.forEach(function(m) {
+      if (!m.bye) played.add([m.team1, m.team2].sort().join('_'));
+    });
+  });
+  function hp(a, b) { return played.has([a, b].sort().join('_')); }
+  var sorted = needGame.slice().sort(function(a, b) {
+    var pa = (standings.find(function(t) { return t.id === b; }) || {}).pts || 0;
+    var pb = (standings.find(function(t) { return t.id === a; }) || {}).pts || 0;
+    return pa - pb;
+  });
+  function tryPair(ids, allowRem) {
+    if (!ids.length) return [];
+    if (ids.length % 2 !== 0) return null;
+    var paired = new Array(ids.length).fill(false);
+    var res = [];
+    function bt(k) {
+      while (k < ids.length && paired[k]) k++;
+      if (k >= ids.length) return true;
+      for (var j = k + 1; j < ids.length; j++) {
+        if (paired[j] || (!allowRem && hp(ids[k], ids[j]))) continue;
+        paired[k] = paired[j] = true;
+        res.push([ids[k], ids[j]]);
+        if (bt(k + 1)) return true;
+        res.pop();
+        paired[k] = paired[j] = false;
+      }
+      return false;
+    }
+    return bt(0) ? res : null;
+  }
+  var pairs = tryPair(sorted, false) || tryPair(sorted, true);
+  if (!pairs) { toast('❌ Konnte keine Paarungen erstellen'); return; }
+  var next = state.currentRound + 1;
+  var fc = parseInt(state.settings && state.settings.fieldCount) || 15;
+  var roundData = pairs.map(function(p, i) {
+    return { id: 'r' + next + 'm' + i, team1: p[0], team2: p[1], field: (i % fc) + 1 };
+  });
+  await fbUpdate('/tournament', { ['rounds/' + next]: roundData, currentRound: next });
+  toast('⚖️ Ausgleichsrunde ' + next + ': ' + pairs.length + ' Partien');
+};
+
+// ── Pairing Diagnose ──
+window.diagnosePairing = function() {
+  const out = document.getElementById('diagnose-output');
+  out.style.display = 'block';
+  const lines = [];
+  const log  = msg => lines.push(msg);
+  const ok   = msg => lines.push('✅ ' + msg);
+  const warn = msg => lines.push('⚠️  ' + msg);
+  const err  = msg => lines.push('❌ ' + msg);
+  const tip  = msg => lines.push('💡 ' + msg);
+
+  const standings = calcStandings();
+  if (standings.length < 2) { out.textContent = '❌ Zu wenig Teams'; return; }
+
+  const nextRound = state.currentRound + 1;
+  log(`━━━ Pairing-Diagnose für Runde ${nextRound} ━━━\n`);
+
+  const keyPair = (a,b) => [a,b].sort().join('_');
+  const played = new Set();
+  const byeHistory = new Map();
+  Object.entries(state.rounds).forEach(([rn, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye) byeHistory.set(m.team1, (byeHistory.get(m.team1)||0)+1);
+      else played.add(keyPair(m.team1, m.team2));
+    });
+  });
+  const hp = (a,b) => played.has(keyPair(a,b));
+
+  let eligible = standings.map(t=>t.id);
+
+  // ── BYE ──
+  if (eligible.length % 2 !== 0) {
+    const wf = [...eligible].reverse();
+    const byeCandidate = wf.find(id=>!byeHistory.has(id))
+      ?? wf.find(id=>byeHistory.get(id) < Math.max(...[...byeHistory.values()]))
+      ?? wf[0];
+    const byeName = state.teams[byeCandidate]?.name;
+    const byeCount = byeHistory.get(byeCandidate)||0;
+    if (byeCount === 0) ok(`Freirunde → ${byeName} (erstes Mal)`);
+    else warn(`Freirunde → ${byeName} (bereits ${byeCount}x – keine andere Option)`);
+    eligible = eligible.filter(id => id !== byeCandidate);
+  }
+
+  // ── Rematch-Analyse ──
+  log(`\n── Rematch-Analyse (${eligible.length} Teams) ──`);
+
+  // Für jedes Team: wie viele freie Gegner hat es noch?
+  const freeOpponents = new Map();
+  eligible.forEach(id => {
+    const free = eligible.filter(o => o!==id && !hp(id,o));
+    freeOpponents.set(id, free);
+  });
+
+  // Kritische Teams (≤ 2 freie Gegner)
+  const critical = eligible.filter(id => freeOpponents.get(id).length <= 2);
+  const warning  = eligible.filter(id => freeOpponents.get(id).length === 3);
+
+  if (critical.length === 0 && warning.length === 0) {
+    ok('Alle Teams haben genügend freie Gegner – kein Rematch erwartet');
+  } else {
+    if (critical.length > 0) {
+      err(`${critical.length} Team(s) mit kritisch wenig freien Gegnern:`);
+      critical.forEach(id => {
+        const free = freeOpponents.get(id);
+        const played_with = eligible.filter(o => o!==id && hp(id,o));
+        log(`   ${state.teams[id]?.name}: nur noch ${free.length} freie Gegner`);
+        if (free.length > 0) log(`     → frei gegen: ${free.map(o=>state.teams[o]?.name).join(', ')}`);
+        else log(`     → bereits gegen ALLE gespielt!`);
+      });
+    }
+    if (warning.length > 0) {
+      warn(`${warning.length} Team(s) mit nur 3 freien Gegnern (Beobachten):`);
+      warning.forEach(id => log(`   ${state.teams[id]?.name}`));
+    }
+  }
+
+  // ── Simuliere ob Pairing ohne Rematch möglich ist ──
+  log(`\n── Pairing-Simulation ──`);
+
+  function canPairWithoutRematch(ids) {
+    if (!ids.length) return true;
+    if (ids.length % 2 !== 0) return false;
+    const paired = new Array(ids.length).fill(false);
+    const freeCnt = ids.map((a,i) => ids.filter((b,j)=>i!==j&&!hp(a,b)).length);
+    const order = ids.map((_,i)=>i).sort((a,b)=>freeCnt[a]-freeCnt[b]);
+    function bt(k) {
+      while (k<order.length && paired[order[k]]) k++;
+      if (k>=order.length) return true;
+      const ia=order[k]; const a=ids[ia];
+      const cands=ids.map((_,j)=>j).filter(j=>!paired[j]&&j!==ia&&!hp(a,ids[j]));
+      for (const ib of cands) {
+        paired[ia]=paired[ib]=true;
+        if (bt(k+1)) return true;
+        paired[ia]=paired[ib]=false;
+      }
+      return false;
+    }
+    return bt(0);
+  }
+
+  function minRematches(ids) {
+    if (!ids.length) return 0;
+    if (ids.length % 2 !== 0) return -1;
+    const paired = new Array(ids.length).fill(false);
+    let bestRematches = Infinity;
+    function bt(k, currentRematches) {
+      while (k<ids.length && paired[k]) k++;
+      if (k>=ids.length) { bestRematches=Math.min(bestRematches,currentRematches); return; }
+      for (let j=k+1;j<ids.length;j++) {
+        if (paired[j]) continue;
+        const isRematch = hp(ids[k],ids[j]);
+        if (currentRematches + (isRematch?1:0) >= bestRematches) continue; // prune
+        paired[k]=paired[j]=true;
+        bt(k+1, currentRematches + (isRematch?1:0));
+        paired[k]=paired[j]=false;
+      }
+    }
+    bt(0,0);
+    return bestRematches === Infinity ? -1 : bestRematches;
+  }
+
+  const noRematch = canPairWithoutRematch(eligible);
+
+  if (noRematch) {
+    ok('Runde kann OHNE Rematches generiert werden');
+    tip('Einfach "Nächste Runde generieren" klicken – kein Eingriff nötig');
+  } else {
+    const minR = minRematches(eligible.slice(0, Math.min(eligible.length, 20)));
+    err(`Mindestens ${minR >= 0 ? minR : '?'} Rematch(es) unvermeidbar`);
+
+    // Welche Teams verursachen den Rematch?
+    log(`\n── Betroffene Teams ──`);
+    const exhausted = eligible.filter(id => freeOpponents.get(id).length === 0);
+    if (exhausted.length > 0) {
+      err(`Diese Teams haben KEINE freien Gegner mehr:`);
+      exhausted.forEach(id => {
+        log(`   ${state.teams[id]?.name} – spielte bereits gegen alle anderen Teams`);
+      });
+    }
+
+    tip('Empfehlung: Direkt generieren lassen – der Algorithmus minimiert');
+    tip('Rematches automatisch und wählt die fairste Kombination.');
+    tip('Kein manueller Eingriff (Punkteanpassung) mehr nötig!');
+  }
+
+  // ── Punktestand Top 5 zur Info ──
+  log(`\n── Tabelle vor Runde ${nextRound} (Top 8) ──`);
+  standings.slice(0,8).forEach((t,i) => {
+    const free = freeOpponents.get(t.id)?.length ?? '–';
+    const marker = critical.includes(t.id) ? ' ⚠️' : warning.includes(t.id) ? ' 👀' : '';
+    log(`  ${i+1}. ${t.name.padEnd(32)} ${t.pts} Pkt  BH:${t.buchholz}  freie Gegner: ${free}${marker}`);
+  });
+
+  out.textContent = lines.join('\n');
+  out.scrollTop = 0;
+};
+
+
+
+
+})();
+</script>
+</body>
+</html>
