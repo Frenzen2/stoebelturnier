@@ -941,7 +941,7 @@ function renderPairings() {
       const tag = myScore>oppScore?'win':myScore<oppScore?'loss':'draw';
       const tagLabel = myScore>oppScore?'SIEG':myScore<oppScore?'NIEDERLAGE':'UNENTSCHIEDEN';
       resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
-        <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myMatch.score1} : ${myMatch.score2}</span>
+        <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myScore} : ${oppScore}</span>
         <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>
       </div>`;
