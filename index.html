@@ -324,7 +324,7 @@
   <button onclick="showSection('standings',this)">Tabelle</button>
   <button onclick="showSection('teams',this)">Teams</button>
   <button onclick="showSection('admin',this)">Admin</button>
-  <button onclick="showSection('analyse',this)">🔍 Analyse</button>
+  <button onclick="showSection('analyse',this)" id="nav-analyse" style="display:none">🔍 Analyse</button>
 </nav>
 
 <main>
@@ -582,6 +582,7 @@ window.loginAsAdmin = function() {
     // Auto-unlock admin panel
     document.getElementById('admin-lock-card').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
+    const navAn = document.getElementById('nav-analyse'); if (navAn) navAn.style.display = '';
     const cfg = loadConfig();
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value = state.settings.fieldCount;
     renderAll();
@@ -900,7 +901,8 @@ function renderAll() {
   renderRoundStatus();
   updateQuickBar();
   updateTeamsBadge();
-}
+  updateTeamsBadge();
+  if (document.getElementById('sec-analyse')?.classList.contains('active')) renderAnalyse();
 
 function renderRoundStatus() {
   const btn = document.getElementById('btn-next-round');
@@ -1432,6 +1434,7 @@ window.unlockAdmin = function() {
   if (pw===loadAdminPw()||pw===(state.settings?.password||'admin')) {
     document.getElementById('admin-lock-card').style.display='none';
     document.getElementById('admin-panel').style.display='block';
+    const navAn2 = document.getElementById('nav-analyse'); if (navAn2) navAn2.style.display='';
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
     if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
     // Firebase config collapsed by default (already configured)
