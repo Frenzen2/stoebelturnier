@@ -1277,16 +1277,8 @@ window.generateAusgleichsrunde = async function() {
   const needGame = teamIds.filter(id => realGames[id] < maxGames);
   if (!needGame.length) { toast('Alle Teams haben gleich viele Spiele'); return; }
   if (needGame.length % 2 !== 0) { toast(`⚠️ ${needGame.length} Teams mit Freirunde – ungerade Anzahl`); return; }
-  const names = needGame.map(id => state.teams[id]?.name||id).join('
-  ');
-  if (!confirm(`⚖️ Ausgleichsrunde:
-Nur diese ${needGame.length} Teams spielen:
-
-  ${names}
-
-Die anderen ${teamIds.length-needGame.length} Teams spielen NICHT.
-
-Fortfahren?`)) return;
+  const names = needGame.map(id => state.teams[id]?.name||id).join(', ');
+  if (!confirm('Ausgleichsrunde: Nur ' + needGame.length + ' Teams spielen gegeneinander. Die anderen ' + (teamIds.length-needGame.length) + ' Teams spielen NICHT. Fortfahren?')) return;
   const played = new Set();
   Object.values(state.rounds).forEach(round => {
     if (!Array.isArray(round)) return;
