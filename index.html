@@ -1331,6 +1331,284 @@ window.diagnosePairing = function() {
 
 
 
+
+// ── Render Functions ──────────────────────────────────────────────────────────
+function renderAll() {
+  var rb = document.getElementById('round-badge');
+  if (rb) rb.textContent = 'Runde ' + (state.currentRound || '-');
+  var mt = document.getElementById('main-title');
+  if (mt) mt.textContent = '🔥 ' + (state.settings && state.settings.title || 'Stobelturnier');
+  if (viewRound && viewRound > state.currentRound) viewRound = null;
+  renderPairings();
+  renderStandings();
+  renderTeamsList();
+  renderAdminTeams();
+  renderRoundStatus();
+  updateTeamsBadge();
+}
+
+function renderRoundStatus() {
+  var btn = document.getElementById('btn-next-round');
+  if (!btn) return;
+  if (state.currentRound === 0) { btn.disabled = false; btn.textContent = 'Nachste Runde generieren'; return; }
+  var round = state.rounds[state.currentRound] || [];
+  var open = round.filter(function(m) { return !m.bye && m.score1 === undefined; });
+  if (open.length > 0) { btn.disabled = true; btn.textContent = 'Noch ' + open.length + ' offen'; }
+  else { btn.disabled = false; btn.textContent = 'Nachste Runde generieren'; }
+}
+
+function updateTeamsBadge() {
+  var b = document.getElementById('teams-count-badge');
+  if (b) { var n = Object.keys(state.teams).length; b.textContent = n > 0 ? '(' + n + ' Teams)' : ''; }
+}
+
+function renderPairings() {
+  var el = document.getElementById('pairings-list');
+  if (!el) return;
+  displayRound = viewRound !== null ? viewRound : state.currentRound;
+  var round = state.rounds[displayRound];
+  if (!round || !round.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">🎯</div>Noch keine Paarungen</div>';
+    return;
+  }
+  var myMatch = null, myBye = null;
+  if (session.teamId) {
+    myMatch = round.find(function(m) { return !m.bye && (m.team1 === session.teamId || m.team2 === session.teamId); }) || null;
+    myBye   = round.find(function(m) { return m.bye && m.team1 === session.teamId; }) || null;
+  }
+  var html = '';
+  if (myMatch) {
+    var isT1 = myMatch.team1 === session.teamId;
+    var hasResult = myMatch.score1 !== undefined;
+    var fieldHtml = myMatch.field ? '<span class="field-chip">Feld ' + myMatch.field + '</span>' : '';
+    var resultHtml = '';
+    if (hasResult) {
+      var myS = isT1 ? myMatch.score1 : myMatch.score2;
+      var oppS = isT1 ? myMatch.score2 : myMatch.score1;
+      var tag = myS > oppS ? 'win' : myS < oppS ? 'loss' : 'draw';
+      var label = myS > oppS ? 'SIEG' : myS < oppS ? 'NIEDERLAGE' : 'UNENTSCHIEDEN';
+      resultHtml = '<div style="margin-top:.6rem;display:flex;align-items:center;gap:.6rem">'
+        + '<span style="font-size:2rem;font-weight:700;color:var(--accent)">' + myMatch.score1 + ' : ' + myMatch.score2 + '</span>'
+        + '<span class="result-tag ' + tag + '">' + label + '</span>'
+        + '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('' + myMatch.id + '',' + displayRound + ')">Andern</button></div>';
+    } else {
+      resultHtml = '<div style="margin-top:.6rem"><button class="btn btn-primary" style="width:100%" onclick="openModal('' + myMatch.id + '',' + displayRound + ')">+ Ergebnis eintragen</button></div>';
+    }
+    html += '<div class="my-match-banner">'
+      + '<div class="banner-label">Deine Paarung - Runde ' + displayRound + '</div>'
+      + '<div class="banner-vs"><div class="banner-team">' + tn(myMatch.team1) + '</div><div class="banner-vs-dot">VS</div><div class="banner-team right">' + tn(myMatch.team2) + '</div></div>'
+      + '<div>' + fieldHtml + '</div>' + resultHtml + '</div>';
+  } else if (myBye) {
+    html += '<div class="my-match-banner"><div class="banner-label">Runde ' + displayRound + '</div><div>Freirunde</div></div>';
+  }
+  html += round.map(function(m) {
+    if (m.bye) return '<div class="bye-row">Freirunde: <strong>' + tn(m.team1) + '</strong></div>';
+    var isMine = session.teamId && (m.team1 === session.teamId || m.team2 === session.teamId);
+    var canEdit = isMine || session.isAdmin;
+    var hasResult = m.score1 !== undefined && m.score2 !== undefined;
+    var tag1 = '', tag2 = '';
+    if (hasResult) {
+      if (m.score1 > m.score2) { tag1 = '<span class="result-tag win">S</span>'; tag2 = '<span class="result-tag loss">N</span>'; }
+      else if (m.score2 > m.score1) { tag2 = '<span class="result-tag win">S</span>'; tag1 = '<span class="result-tag loss">N</span>'; }
+      else { tag1 = tag2 = '<span class="result-tag draw">U</span>'; }
+    }
+    var fieldHtml = m.field ? '<span class="field-chip-ghost">Feld ' + m.field + '</span>' : '';
+    var resultPart = '';
+    if (hasResult) {
+      resultPart = '<span style="font-size:1rem;font-weight:700">' + m.score1 + ' : ' + m.score2 + '</span>'
+        + (canEdit ? '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('' + m.id + '',' + displayRound + ')">&#9998;</button>' : '');
+    } else if (canEdit) {
+      resultPart = '<button class="btn btn-primary btn-sm" onclick="openModal('' + m.id + '',' + displayRound + ')">+ Ergebnis</button>'
+        + '<span class="result-tag open" style="margin-left:auto">OFFEN</span>';
+    } else {
+      resultPart = '<span class="result-tag open">OFFEN</span>';
+    }
+    return '<div class="pairing-card' + (isMine ? ' mine' : '') + '">'
+      + '<div class="pairing-header">'
+      + '<div><div class="pairing-team">' + tn(m.team1) + '</div>' + tag1 + '</div>'
+      + '<div style="text-align:center"><div class="vs-badge">VS</div>' + fieldHtml + '</div>'
+      + '<div style="text-align:right"><div class="pairing-team right">' + tn(m.team2) + '</div>' + tag2 + '</div>'
+      + '</div><div class="pairing-result">' + resultPart + '</div></div>';
+  }).join('');
+  el.innerHTML = html;
+}
+
+function renderStandings() {
+  var body = document.getElementById('standings-body');
+  if (!body) return;
+  var data = calcStandings();
+  if (!data.length) { body.innerHTML = '<div class="empty-state"><div class="icon">&#128202;</div>Noch keine Ergebnisse</div>'; return; }
+  var maxPts = data[0].pts, minPts = data[data.length-1].pts, spread = maxPts - minPts || 1;
+  var topT = maxPts - Math.max(2, Math.round(spread * 0.2));
+  var botT = minPts + Math.max(2, Math.round(spread * 0.2));
+  function getZone(t) { return t.pts >= topT ? 'top' : t.pts <= botT ? 'bottom' : 'mid'; }
+  var ZONE = {
+    top:    { icon: '&#127942;', label: 'Kann gewinnen',  bg: 'rgba(240,192,64,0.08)',  border: 'rgba(240,192,64,0.35)',  color: '#f0c040' },
+    mid:    { icon: '&#129001;', label: 'Mittelfeld',      bg: 'rgba(39,174,96,0.06)',   border: 'rgba(39,174,96,0.25)',   color: '#27ae60' },
+    bottom: { icon: '&#127821;', label: 'Goldene Ananas', bg: 'rgba(212,43,43,0.08)',   border: 'rgba(212,43,43,0.3)',    color: '#d42b2b' }
+  };
+  var groups = { top: [], mid: [], bottom: [] };
+  data.forEach(function(t) { groups[getZone(t)].push(t); });
+  var html = '';
+  ['top','mid','bottom'].forEach(function(zone) {
+    var items = groups[zone]; if (!items.length) return;
+    var z = ZONE[zone];
+    html += '<div style="background:' + z.bg + ';border:1.5px solid ' + z.border + ';border-radius:10px;margin-bottom:.75rem;overflow:hidden">'
+      + '<div style="padding:.5rem .9rem;border-bottom:1px solid ' + z.border + '"><span style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:' + z.color + '">' + z.icon + ' ' + z.label + '</span></div>'
+      + items.map(function(t) {
+          var mine = t.id === session.teamId;
+          var diff = t.diff >= 0 ? '+' + t.diff : '' + t.diff;
+          return '<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;' + (mine ? 'background:rgba(212,43,43,0.08)' : '') + '">'
+            + '<div style="flex:1;font-size:.88rem;font-weight:600">' + t.name + (mine ? ' &#128072;' : '') + '</div>'
+            + '<div style="font-size:.95rem;font-weight:700;color:' + z.color + ';min-width:36px;text-align:right">' + t.pts + '</div>'
+            + '<div style="font-size:.75rem;color:var(--muted);min-width:40px;text-align:right">' + diff + '</div>'
+            + '<div style="font-size:.72rem;color:var(--muted);min-width:70px;text-align:right">' + t.wins + 'S ' + t.draws + 'U ' + t.losses + 'N</div></div>';
+        }).join('') + '</div>';
+  });
+  body.innerHTML = html;
+}
+
+function renderTeamsList() {
+  var el = document.getElementById('teams-list');
+  if (!el) return;
+  var teams = Object.entries(state.teams);
+  if (!teams.length) { el.innerHTML = '<div class="empty-state"><div class="icon">&#128101;</div>Keine Teams</div>'; return; }
+  el.innerHTML = teams.map(function(entry, i) {
+    return '<div class="team-row"><div class="team-num">' + (i+1) + '</div><div class="team-name-text">' + entry[1].name + '</div></div>';
+  }).join('');
+}
+
+function renderAdminTeams() {
+  var el = document.getElementById('admin-teams-list');
+  if (!el) return;
+  var teams = Object.entries(state.teams);
+  if (!teams.length) { el.innerHTML = '<p style="color:var(--muted);font-size:.83rem;margin-top:.5rem">Noch keine Teams</p>'; return; }
+  el.innerHTML = '<div style="margin-top:.6rem">' + teams.map(function(entry, i) {
+    var id = entry[0], t = entry[1];
+    return '<div class="team-row"><div class="team-num">' + (i+1) + '</div>'
+      + '<div class="team-name-text">' + t.name + '</div>'
+      + '<span class="pin-badge">' + (t.pin || '--') + '</span>'
+      + '<button class="btn btn-ghost btn-sm" onclick="editPin('' + id + '','' + (t.pin||'') + '')">&#9998;</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="deleteTeam('' + id + '')">&#10005;</button></div>';
+  }).join('') + '</div>';
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+window.openModal = function(matchId, rnd) {
+  var round = state.rounds[rnd] || [];
+  var m = round.find(function(x) { return x.id === matchId; });
+  if (!m) return;
+  document.getElementById('modal-title').textContent = tn(m.team1) + ' vs ' + tn(m.team2);
+  document.getElementById('modal-score1-label').textContent = tn(m.team1);
+  document.getElementById('modal-score2-label').textContent = tn(m.team2);
+  document.getElementById('modal-score1').value = m.score1 !== undefined ? m.score1 : '';
+  document.getElementById('modal-score2').value = m.score2 !== undefined ? m.score2 : '';
+  document.getElementById('modal-overlay').classList.add('open');
+  window._modalMatchId = matchId;
+  window._modalRound = rnd;
+};
+
+window.closeModal = function() {
+  document.getElementById('modal-overlay').classList.remove('open');
+};
+
+window.saveResult = async function() {
+  var s1 = parseInt(document.getElementById('modal-score1').value);
+  var s2 = parseInt(document.getElementById('modal-score2').value);
+  if (isNaN(s1) || isNaN(s2)) { toast('Bitte beide Ergebnisse eingeben'); return; }
+  var rnd = window._modalRound, mid = window._modalMatchId;
+  var round = (state.rounds[rnd] || []).slice();
+  var idx = round.findIndex(function(x) { return x.id === mid; });
+  if (idx < 0) return;
+  round[idx] = Object.assign({}, round[idx], { score1: s1, score2: s2 });
+  await fbSet('/tournament/rounds/' + rnd, round);
+  closeModal();
+  toast('Ergebnis gespeichert');
+};
+
+// ── Admin ──────────────────────────────────────────────────────────────────────
+window.saveSettings = async function() {
+  var title  = document.getElementById('cfg-title').value.trim() || 'Stobelturnier';
+  var fields = parseInt(document.getElementById('cfg-fields').value) || 15;
+  var pw     = document.getElementById('cfg-password').value.trim();
+  var upd = { title: title, fieldCount: fields };
+  if (pw) upd.password = pw;
+  await fbUpdate('/tournament/settings', upd);
+  toast('Einstellungen gespeichert');
+};
+
+window.addTeam = async function() {
+  var inp = document.getElementById('new-team-name');
+  var name = inp.value.trim();
+  if (!name) { toast('Bitte Teamnamen eingeben'); return; }
+  var ids = Object.keys(state.teams).map(function(k) { return parseInt(k.replace('t','')); }).filter(function(n) { return !isNaN(n); });
+  var nextId = 't' + (ids.length ? Math.max.apply(null, ids) + 1 : 1);
+  var obj = {}; obj[nextId] = { name: name, pin: randomPin() };
+  await fbUpdate('/tournament/teams', obj);
+  inp.value = '';
+  toast('Team hinzugefugt');
+};
+
+window.deleteTeam = async function(id) {
+  if (!confirm('Team loschen?')) return;
+  await fbRemove('/tournament/teams/' + id);
+  toast('Team geloscht');
+};
+
+window.editPin = async function(id, oldPin) {
+  var pin = prompt('Neuer PIN (4 Ziffern):', oldPin);
+  if (pin === null) return;
+  if (pin.length !== 4 || isNaN(pin)) { toast('PIN muss 4 Ziffern sein'); return; }
+  var obj = {}; obj['pin'] = pin;
+  await fbUpdate('/tournament/teams/' + id, obj);
+  toast('PIN aktualisiert');
+};
+
+window.resetTournament = async function() {
+  if (!confirm('Turnier zuruecksetzen? Alle Runden werden geloescht!')) return;
+  await fbUpdate('/tournament', { rounds: {}, currentRound: 0 });
+  toast('Turnier zurueckgesetzt');
+};
+
+window.deleteCurrentRound = async function() {
+  if (!state.currentRound) { toast('Keine aktuelle Runde'); return; }
+  if (!confirm('Runde ' + state.currentRound + ' loeschen?')) return;
+  var upd = {}; 
+  upd['rounds/' + state.currentRound] = null;
+  upd['currentRound'] = state.currentRound - 1;
+  await fbUpdate('/tournament', upd);
+  toast('Runde geloescht');
+};
+
+window.generateNextRound = async function() {
+  if (!db) { toast('Nicht verbunden'); return; }
+  var round = state.rounds[state.currentRound] || [];
+  var open = round.filter(function(m) { return !m.bye && (m.score1 === undefined || m.score2 === undefined); });
+  if (open.length > 0) { toast('Noch ' + open.length + ' Ergebnisse offen'); return; }
+  var next = state.currentRound + 1;
+  var matches = generateSwissPairing();
+  if (!matches) return;
+  var fieldCount = parseInt(state.settings && state.settings.fieldCount) || 15;
+  var fi = 0;
+  var roundData = matches.map(function(m) {
+    if (m.bye) return { id: 'r' + next + 'm' + (fi++), team1: m.team1, bye: true };
+    var entry = { id: 'r' + next + 'm' + fi, team1: m.team1, team2: m.team2, field: (fi % fieldCount) + 1 };
+    fi++;
+    return entry;
+  });
+  var upd = {}; upd['rounds/' + next] = roundData; upd['currentRound'] = next;
+  await fbUpdate('/tournament', upd);
+  toast('Runde ' + next + ' generiert');
+};
+
+window.navRound = function(dir) {
+  var cur = viewRound !== null ? viewRound : state.currentRound;
+  var next = cur + dir;
+  if (next < 1 || next > state.currentRound) return;
+  viewRound = next === state.currentRound ? null : next;
+  renderPairings();
+};
+
 })();
 </script>
 </body>
