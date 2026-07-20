@@ -324,6 +324,7 @@
   <button onclick="showSection('standings',this)">Tabelle</button>
   <button onclick="showSection('teams',this)">Teams</button>
   <button onclick="showSection('admin',this)">Admin</button>
+  <button onclick="showSection('analyse',this)">🔍 Analyse</button>
 </nav>
 
 <main>
@@ -456,6 +457,25 @@
           <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="sec-analyse" class="section">
+    <div class="card">
+      <div class="card-title">🔁 Rematch-Übersicht</div>
+      <div id="analyse-rematches"></div>
+    </div>
+    <div class="card" style="margin-top:.75rem">
+      <div class="card-title">⏸ Freirunden-Übersicht</div>
+      <div id="analyse-byes"></div>
+    </div>
+    <div class="card" style="margin-top:.75rem">
+      <div class="card-title">📊 Gegner-Matrix</div>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">Wer hat gegen wen gespielt? ✓ = gespielt, leer = noch nicht</p>
+      <div id="analyse-matrix" style="overflow-x:auto"></div>
+    </div>
+    <div style="margin-top:.5rem;text-align:right">
+      <button class="btn btn-ghost btn-sm" onclick="renderAnalyse()">↻ Aktualisieren</button>
     </div>
   </div>
 </main>
@@ -1741,6 +1761,7 @@ window.showSection = function(id, btn) {
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('sec-'+id).classList.add('active');
   if(btn) btn.classList.add('active'); else document.querySelector(`nav button[onclick*="${id}"]`)?.classList.add('active');
+  if (id === 'analyse') renderAnalyse();
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1835,6 +1856,152 @@ window.generateAusgleichsrunde = async function() {
   await fbUpdate('/tournament', {[`rounds/${next}`]:roundData, currentRound:next});
   toast(`⚖️ Ausgleichsrunde ${next}: ${pairs.length} Partien`);
 };
+
+
+// ── Analyse Dashboard ──────────────────────────────────────────────────────────
+window.renderAnalyse = function() {
+  renderRematchAnalyse();
+  renderByeAnalyse();
+  renderMatrix();
+};
+
+function renderRematchAnalyse() {
+  const el = document.getElementById('analyse-rematches');
+  if (!el) return;
+  const played = {};
+  const rematches = [];
+
+  Object.entries(state.rounds).forEach(([rNum, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye || !m.team2) return;
+      const key = [m.team1, m.team2].sort().join('_');
+      if (played[key]) {
+        rematches.push({ round: parseInt(rNum), team1: m.team1, team2: m.team2, prevRound: played[key] });
+      }
+      played[key] = parseInt(rNum);
+    });
+  });
+
+  if (!rematches.length) {
+    el.innerHTML = '<div style="color:var(--green);font-weight:600;padding:.5rem 0">✅ Keine Rematches – perfekt!</div>';
+    return;
+  }
+
+  el.innerHTML = '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + rematches.length + ' Rematch(es) gefunden:</div>'
+    + rematches.map(r => '<div style="padding:.4rem .6rem;background:rgba(212,43,43,0.08);border-left:3px solid var(--accent);border-radius:4px;margin-bottom:.3rem;font-size:.85rem">'
+      + '<strong>' + tn(r.team1) + '</strong> vs <strong>' + tn(r.team2) + '</strong>'
+      + ' – Runde ' + r.round + ' (vorher Runde ' + r.prevRound + ')'
+      + '</div>').join('');
+}
+
+function renderByeAnalyse() {
+  const el = document.getElementById('analyse-byes');
+  if (!el) return;
+  const byeCount = {};
+  const byeRounds = {};
+  Object.keys(state.teams).forEach(id => { byeCount[id] = 0; byeRounds[id] = []; });
+
+  Object.entries(state.rounds).forEach(([rNum, round]) => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye && m.team1) {
+        byeCount[m.team1] = (byeCount[m.team1] || 0) + 1;
+        (byeRounds[m.team1] = byeRounds[m.team1] || []).push(parseInt(rNum));
+      }
+    });
+  });
+
+  const withBye = Object.entries(byeCount).filter(([id, c]) => c > 0).sort((a,b) => b[1]-a[1]);
+  const doubleBye = withBye.filter(([id, c]) => c > 1);
+
+  let html = '';
+  if (doubleBye.length) {
+    html += '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + doubleBye.length + ' Team(s) mit 2+ Freirunden:</div>'
+      + doubleBye.map(([id, c]) => '<div style="padding:.4rem .6rem;background:rgba(212,43,43,0.08);border-left:3px solid var(--accent);border-radius:4px;margin-bottom:.3rem;font-size:.85rem">'
+        + '<strong>' + tn(id) + '</strong> – ' + c + 'x Freirunde (Runde ' + byeRounds[id].join(', ') + ')</div>').join('');
+  } else {
+    html += '<div style="color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Kein Team hat 2x ausgesetzt</div>';
+  }
+
+  if (withBye.length) {
+    html += '<div style="font-size:.78rem;color:var(--muted);margin-top:.5rem;margin-bottom:.3rem">Teams mit Freirunde (' + withBye.length + '):</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:.3rem">'
+      + withBye.map(([id, c]) => '<span style="font-size:.78rem;padding:3px 8px;border-radius:12px;background:rgba(255,255,255,0.06);border:1px solid var(--border)">'
+        + tn(id) + ' <span style="color:var(--muted)">R' + byeRounds[id].join('/') + '</span></span>').join('')
+      + '</div>';
+  } else {
+    html += '<div style="font-size:.78rem;color:var(--muted);margin-top:.3rem">Noch keine Freirunden vergeben.</div>';
+  }
+
+  // Noch nicht gespielt count
+  const realGames = {};
+  Object.keys(state.teams).forEach(id => realGames[id] = 0);
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (!m.bye && m.team2) {
+        if (realGames[m.team1] !== undefined) realGames[m.team1]++;
+        if (realGames[m.team2] !== undefined) realGames[m.team2]++;
+      }
+    });
+  });
+  const maxGames = Math.max(...Object.values(realGames), 0);
+  const needGame = Object.entries(realGames).filter(([id, g]) => g < maxGames);
+  if (needGame.length > 0) {
+    html += '<div style="margin-top:.75rem;padding:.5rem .75rem;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.3);border-radius:6px;font-size:.83rem">'
+      + '<strong style="color:#f0c040">⚖️ Ausgleichsrunde empfohlen:</strong> '
+      + needGame.length + ' Team(s) haben ' + (maxGames-1) + ' statt ' + maxGames + ' Spiele:'
+      + '<div style="margin-top:.3rem;display:flex;flex-wrap:wrap;gap:.3rem">'
+      + needGame.map(([id]) => '<span style="font-size:.75rem;padding:2px 7px;border-radius:10px;background:rgba(240,192,64,0.12);border:1px solid rgba(240,192,64,0.3)">' + tn(id) + '</span>').join('')
+      + '</div></div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderMatrix() {
+  const el = document.getElementById('analyse-matrix');
+  if (!el) return;
+  const ids = Object.keys(state.teams);
+  if (!ids.length) { el.innerHTML = '<div style="color:var(--muted)">Keine Teams</div>'; return; }
+
+  const played = {};
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => {
+      if (m.bye || !m.team2) return;
+      played[m.team1 + '_' + m.team2] = true;
+      played[m.team2 + '_' + m.team1] = true;
+    });
+  });
+
+  const names = ids.map(id => tn(id));
+  const short = names.map(n => n.length > 10 ? n.slice(0,10) + '…' : n);
+
+  let table = '<table style="font-size:.65rem;border-collapse:collapse;min-width:100%">';
+  // Header row
+  table += '<tr><th style="padding:2px 4px;text-align:left;color:var(--muted);min-width:100px"></th>'
+    + ids.map((id, i) => '<th style="padding:2px 4px;writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);max-width:18px;color:var(--muted);font-weight:500" title="' + names[i] + '">' + short[i] + '</th>').join('')
+    + '</tr>';
+
+  ids.forEach((id1, i) => {
+    const totalPlayed = ids.filter(id2 => id2 !== id1 && played[id1+'_'+id2]).length;
+    const pct = ids.length > 1 ? Math.round(totalPlayed / (ids.length-1) * 100) : 0;
+    table += '<tr>'
+      + '<td style="padding:2px 4px;white-space:nowrap;color:var(--text);font-weight:500" title="' + names[i] + '">'
+      + short[i] + ' <span style="color:var(--muted);font-size:.6rem">(' + totalPlayed + '/' + (ids.length-1) + ')</span></td>'
+      + ids.map((id2, j) => {
+          if (i === j) return '<td style="padding:2px 4px;text-align:center;background:rgba(255,255,255,0.04)">·</td>';
+          const done = played[id1+'_'+id2];
+          return '<td style="padding:2px 4px;text-align:center;' + (done ? 'color:var(--green)' : 'color:rgba(255,255,255,0.15)') + '" title="' + names[i] + ' vs ' + names[j] + '">'
+            + (done ? '✓' : '○') + '</td>';
+        }).join('')
+      + '</tr>';
+  });
+  table += '</table>';
+  el.innerHTML = table;
+}
 
 })();
 </script>
