@@ -1073,11 +1073,6 @@ window.showSection = function(id, btn) {
     setStatus('Verbindung fehlgeschlagen: ' + e.message);
   }
 
-// ── State & Display ──
-let viewRound = null;
-let displayRound = null;
-let pinBuffer = '';
-
 function renderAll() {
   const rb = document.getElementById('round-badge');
   if (rb) rb.textContent = `Runde ${state.currentRound||'–'}`;
