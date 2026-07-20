@@ -827,6 +827,155 @@ function generateSwissPairing() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Simulation & Robustness Test
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Render Functions ─────────────────────────────────────────────────────────
+function renderAll() {
+  const rb = document.getElementById('round-badge');
+  if (rb) rb.textContent = 'Runde ' + (state.currentRound||'–');
+  const mt = document.getElementById('main-title');
+  if (mt) mt.textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
+  if (viewRound && viewRound > state.currentRound) viewRound = null;
+  renderPairings();
+  renderStandings();
+  renderTeamsList();
+  renderAdminTeams();
+  renderRoundStatus();
+  updateTeamsBadge();
+}
+
+function renderRoundStatus() {
+  const btn = document.getElementById('btn-next-round');
+  if (!btn) return;
+  if (state.currentRound === 0) { btn.disabled=false; btn.textContent='Nächste Runde generieren'; return; }
+  const round = state.rounds[state.currentRound]||[];
+  const open = round.filter(m=>!m.bye&&m.score1===undefined);
+  if (open.length>0) { btn.disabled=true; btn.textContent='⏳ Noch '+open.length+' offen'; }
+  else { btn.disabled=false; btn.textContent='Nächste Runde generieren'; }
+}
+
+function updateTeamsBadge() {
+  const b = document.getElementById('teams-count-badge');
+  if (b) { const n=Object.keys(state.teams).length; b.textContent=n>0?'('+n+' Teams)':''; }
+}
+
+window.navRound = function(dir) {
+  const cur = viewRound??state.currentRound;
+  const next = cur+dir;
+  if (next<1||next>state.currentRound) return;
+  viewRound = next===state.currentRound?null:next;
+  renderPairings();
+};
+
+function renderPairings() {
+  const el = document.getElementById('pairings-list');
+  if (!el) return;
+  displayRound = viewRound??state.currentRound;
+  const round = state.rounds[displayRound];
+  if (!round||!round.length) {
+    el.innerHTML='<div class="empty-state"><div class="icon">🎯</div>Noch keine Paarungen</div>';
+    return;
+  }
+  const myMatch = session.teamId?round.find(m=>!m.bye&&(m.team1===session.teamId||m.team2===session.teamId)):null;
+  const myBye   = session.teamId?round.find(m=>m.bye&&m.team1===session.teamId):null;
+  let html='';
+  if (myMatch) {
+    const isT1=myMatch.team1===session.teamId;
+    const hasResult=myMatch.score1!==undefined;
+    const fieldHtml=myMatch.field?'<span class="field-chip">📍 Feld '+myMatch.field+'</span>':'';
+    let resultHtml='';
+    if (hasResult) {
+      const myS=isT1?myMatch.score1:myMatch.score2, oppS=isT1?myMatch.score2:myMatch.score1;
+      const tag=myS>oppS?'win':myS<oppS?'loss':'draw';
+      const label=myS>oppS?'SIEG':myS<oppS?'NIEDERLAGE':'UNENTSCHIEDEN';
+      resultHtml='<div style="display:flex;align-items:center;gap:.6rem;margin-top:.6rem">'
+        +'<span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;color:var(--accent)">'+myMatch.score1+' : '+myMatch.score2+'</span>'
+        +'<span class="result-tag '+tag+'">'+label+'</span>'
+        +'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal(''+myMatch.id+'','+displayRound+')">✏ Ändern</button></div>';
+    } else {
+      resultHtml='<div style="margin-top:.6rem"><button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal(''+myMatch.id+'','+displayRound+')">+ Ergebnis eintragen</button></div>';
+    }
+    html+='<div class="my-match-banner">'
+      +'<div class="banner-label">🏆 Deine Paarung – Runde '+displayRound+'</div>'
+      +'<div class="banner-vs"><div class="banner-team">'+tn(myMatch.team1)+'</div><div class="banner-vs-dot">VS</div><div class="banner-team right">'+tn(myMatch.team2)+'</div></div>'
+      +'<div>'+fieldHtml+(hasResult?'':'<span class="result-tag open" style="margin-left:auto">OFFEN</span>')+'</div>'
+      +resultHtml+'</div>';
+  } else if (myBye) {
+    html+='<div class="my-match-banner"><div class="banner-label">Runde '+displayRound+'</div><div style="font-size:1rem;font-weight:700;margin:.3rem 0">🔄 Freirunde</div></div>';
+  }
+  html+=round.map(m=>{
+    if (m.bye) return '<div class="bye-row">🔄 <strong>'+tn(m.team1)+'</strong> – Freirunde</div>';
+    const isMine=session.teamId&&(m.team1===session.teamId||m.team2===session.teamId);
+    const canEdit=isMine||session.isAdmin;
+    const hasResult=m.score1!==undefined&&m.score2!==undefined;
+    let tag1='',tag2='';
+    if (hasResult) {
+      if (m.score1>m.score2){tag1='<span class="result-tag win">S</span>';tag2='<span class="result-tag loss">N</span>';}
+      else if (m.score2>m.score1){tag2='<span class="result-tag win">S</span>';tag1='<span class="result-tag loss">N</span>';}
+      else{tag1=tag2='<span class="result-tag draw">U</span>';}
+    }
+    const fieldHtml=m.field?'<span class="field-chip-ghost">📍 Feld '+m.field+'</span>':'';
+    return '<div class="pairing-card'+(isMine?' mine':'')+'"><div class="pairing-header">'
+      +'<div><div class="pairing-team">'+tn(m.team1)+'</div>'+tag1+'</div>'
+      +'<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div class="vs-badge">VS</div>'+fieldHtml+'</div>'
+      +'<div style="text-align:right"><div class="pairing-team right">'+tn(m.team2)+'</div><div style="text-align:right">'+tag2+'</div></div>'
+      +'</div><div class="pairing-result">'
+      +(hasResult
+        ? '<span style="font-size:1.05rem;font-weight:700;letter-spacing:2px">'+m.score1+' : '+m.score2+'</span>'
+          +(canEdit?'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal(''+m.id+'','+displayRound+')">✏</button>':'')
+        : canEdit
+          ? '<button class="btn btn-primary btn-sm" onclick="openModal(''+m.id+'','+displayRound+')">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px">● OFFEN</span>'
+          : '<span class="result-tag open" style="font-size:.78rem;padding:4px 10px">● OFFEN</span>')
+      +'</div></div>';
+  }).join('');
+  el.innerHTML=html;
+}
+
+function renderStandings() {
+  const body=document.getElementById('standings-body');
+  if (!body) return;
+  const data=calcStandings();
+  if (!data.length) { body.innerHTML='<div class="empty-state"><div class="icon">📊</div>Noch keine Ergebnisse</div>'; return; }
+  const maxPts=data[0].pts, minPts=data[data.length-1].pts, spread=maxPts-minPts||1;
+  const topT=maxPts-Math.max(2,Math.round(spread*0.2)), botT=minPts+Math.max(2,Math.round(spread*0.2));
+  const getZone=t=>t.pts>=topT?'top':t.pts<=botT?'bottom':'mid';
+  const ZONE={
+    top:{icon:'🏆',label:'Kann gewinnen',bg:'rgba(240,192,64,0.08)',border:'rgba(240,192,64,0.35)',color:'#f0c040'},
+    mid:{icon:'🟢',label:'Mittelfeld',bg:'rgba(39,174,96,0.06)',border:'rgba(39,174,96,0.25)',color:'#27ae60'},
+    bottom:{icon:'🍍',label:'Goldene Ananas',bg:'rgba(212,43,43,0.08)',border:'rgba(212,43,43,0.3)',color:'#d42b2b'}
+  };
+  const groups={top:[],mid:[],bottom:[]};
+  data.forEach(t=>groups[getZone(t)].push(t));
+  let html='';
+  for (const zone of ['top','mid','bottom']) {
+    const items=groups[zone]; if (!items.length) continue;
+    const z=ZONE[zone];
+    html+='<div style="background:'+z.bg+';border:1.5px solid '+z.border+';border-radius:10px;margin-bottom:.75rem;overflow:hidden">'
+      +'<div style="padding:.5rem .9rem;border-bottom:1px solid '+z.border+'"><span style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:'+z.color+'">'+z.icon+' '+z.label+'</span></div>'
+      +items.map(t=>{
+        const mine=t.id===session.teamId;
+        const diff=t.diff>=0?'+'+t.diff:''+t.diff;
+        return '<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;border-bottom:1px solid rgba(255,255,255,0.04);'+(mine?'background:rgba(212,43,43,0.08)':'')+'"><div style="flex:1;font-size:.88rem;font-weight:600">'+t.name+(mine?' 👈':'')+'</div><div style="font-size:.95rem;font-weight:700;color:'+z.color+';min-width:36px;text-align:right">'+t.pts+'</div><div style="font-size:.75rem;color:var(--muted);min-width:40px;text-align:right">'+diff+'</div><div style="font-size:.72rem;color:var(--muted);min-width:70px;text-align:right">'+t.wins+'S '+t.draws+'U '+t.losses+'N</div></div>';
+      }).join('')+'</div>';
+  }
+  body.innerHTML=html;
+}
+
+function renderTeamsList() {
+  const el=document.getElementById('teams-list');
+  if (!el) return;
+  const teams=Object.entries(state.teams);
+  if (!teams.length) { el.innerHTML='<div class="empty-state"><div class="icon">👥</div>Keine Teams</div>'; return; }
+  el.innerHTML=teams.map(([id,t],i)=>'<div class="team-row"><div class="team-num">'+(i+1)+'</div><div class="team-name-text">'+t.name+'</div></div>').join('');
+}
+
+function renderAdminTeams() {
+  const el=document.getElementById('admin-teams-list');
+  if (!el) return;
+  const teams=Object.entries(state.teams);
+  if (!teams.length) { el.innerHTML='<p style="color:var(--muted);font-size:.83rem;margin-top:.5rem">Noch keine Teams</p>'; return; }
+  el.innerHTML='<div style="margin-top:.6rem">'+teams.map(([id,t],i)=>'<div class="team-row"><div class="team-num">'+(i+1)+'</div><div class="team-name-text">'+t.name+'</div><span class="pin-badge">'+(t.pin||'––')+'</span><button class="btn btn-ghost btn-sm" onclick="editPin(''+id+'',''+(t.pin||'')+'')">✏</button><button class="btn btn-ghost btn-sm" onclick="deleteTeam(''+id+'')">✕</button></div>').join('')+'</div>';
+}
+
 window.runSimulation = function() {
   const numTeams  = parseInt(document.getElementById('sim-teams').value)  || 40;
   const numRounds = parseInt(document.getElementById('sim-rounds').value) || 6;
