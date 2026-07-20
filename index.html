@@ -1133,11 +1133,11 @@ function renderPairings() {
       const tag = myS > oppS ? 'win' : myS < oppS ? 'loss' : 'draw';
       const label = myS > oppS ? 'SIEG' : myS < oppS ? 'NIEDERLAGE' : 'UNENTSCHIEDEN';
       resultHtml = '<div style="display:flex;align-items:center;gap:.6rem;margin-top:.6rem">'
-        + '<span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;color:var(--accent)">' + myMatch.score1 + ' : ' + myMatch.score2 + '</span>'
+        + '<span style="font-family:&quot;Bebas Neue&quot;,sans-serif;font-size:2.8rem;letter-spacing:6px;color:var(--accent)">' + myMatch.score1 + ' : ' + myMatch.score2 + '</span>'
         + '<span class="result-tag ' + tag + '">' + label + '</span>'
-        + '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('' + myMatch.id + '',' + displayRound + ')">✏ Ändern</button></div>';
+        + '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal(\'' + myMatch.id + '\',' + displayRound + ')">✏ Ändern</button></div>';
     } else {
-      resultHtml = '<div style="margin-top:.6rem"><button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('' + myMatch.id + '',' + displayRound + ')">+ Ergebnis eintragen</button></div>';
+      resultHtml = '<div style="margin-top:.6rem"><button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal(\'' + myMatch.id + '\',' + displayRound + ')">+ Ergebnis eintragen</button></div>';
     }
     html += '<div class="my-match-banner"><div class="banner-label">🏆 Deine Paarung – Runde ' + displayRound + '</div>'
       + '<div class="banner-vs"><div class="banner-team">' + tn(myMatch.team1) + '</div><div class="banner-vs-dot">VS</div><div class="banner-team right">' + tn(myMatch.team2) + '</div></div>'
@@ -1165,9 +1165,9 @@ function renderPairings() {
       + '</div><div class="pairing-result">'
       + (hasResult
         ? '<span style="font-size:1.05rem;font-weight:700;letter-spacing:2px">' + m.score1 + ' : ' + m.score2 + '</span>'
-          + (canEdit ? '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('' + m.id + '',' + displayRound + ')">✏</button>' : '')
+          + (canEdit ? '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal(\'' + m.id + '\',' + displayRound + ')">✏</button>' : '')
         : canEdit
-          ? '<button class="btn btn-primary btn-sm" onclick="openModal('' + m.id + '',' + displayRound + ')">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px">● OFFEN</span>'
+          ? '<button class="btn btn-primary btn-sm" onclick="openModal(\'' + m.id + '\',' + displayRound + ')">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px">● OFFEN</span>'
           : '<span class="result-tag open" style="font-size:.78rem;padding:4px 10px">● OFFEN</span>')
       + '</div></div>';
   }).join('');
