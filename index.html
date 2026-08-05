@@ -1230,21 +1230,41 @@ function renderDraftRoundPreview() {
   let html = '<div class="card" style="border-color:var(--accent)">'
     + '<div class="card-title">🎲 Auslosung Runde ' + draftRound.round + ' – Vorschau (noch nicht auf den Handys sichtbar)</div>'
     + (rematchCount
-        ? '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + rematchCount + ' Rematch(es) in dieser Auslosung – ggf. neu auslosen</div>'
+        ? '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + rematchCount + ' Rematch(es) in dieser Auslosung – bitte neu auslosen, bevor du veröffentlichst</div>'
         : '<div style="color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Keine Rematches</div>')
     + rows.map(r => '<div style="padding:.4rem .6rem;background:' + (r.rematch ? 'rgba(212,43,43,0.08);border-left:3px solid var(--accent)' : 'rgba(255,255,255,0.03)') + ';border-radius:4px;margin-bottom:.3rem;font-size:.85rem">' + r.html + '</div>').join('')
     + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">'
-    + '<button class="btn btn-primary" onclick="publishDraftRound()">📲 Veröffentlichen (an Handys pushen)</button>'
+    + (rematchCount
+        ? '<button class="btn btn-primary" disabled title="Erst veröffentlichbar, wenn keine Rematches mehr da sind">📲 Veröffentlichen (an Handys pushen)</button>'
+        : '<button class="btn btn-primary" onclick="publishDraftRound()">📲 Veröffentlichen (an Handys pushen)</button>')
     + '<button class="btn btn-ghost" onclick="drawNextRoundPreview()">🔄 Neu auslosen</button>'
     + '<button class="btn btn-ghost" onclick="discardDraftRound()">✖ Verwerfen</button>'
+    + (rematchCount
+        ? '<button class="btn btn-danger btn-sm" onclick="publishDraftRound(true)">⚠ Trotzdem veröffentlichen (Rematch unvermeidbar)</button>'
+        : '')
     + '</div></div>';
 
   el.innerHTML = html;
   el.style.display = 'block';
 }
 
-window.publishDraftRound = async function() {
+function draftRematchCount() {
+  if (!draftRound) return 0;
+  const playedSet = new Set();
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => { if (!m.bye && m.team2) playedSet.add([m.team1,m.team2].sort().join('_')); });
+  });
+  return draftRound.matches.filter(m => !m.bye && m.team2 && playedSet.has([m.team1,m.team2].sort().join('_'))).length;
+}
+
+window.publishDraftRound = async function(force) {
   if (!draftRound) { toast('Keine Auslosung zum Veröffentlichen vorhanden'); return; }
+  const rematchCount = draftRematchCount();
+  if (rematchCount > 0 && !force) {
+    toast(`⛔ ${rematchCount} Rematch(es) – erst neu auslosen oder bewusst überschreiben`);
+    return;
+  }
   const { round, matches } = draftRound;
   await fbUpdate('/tournament', { [`rounds/${round}`]: matches, currentRound: round });
   toast(`Runde ${round} veröffentlicht – jetzt auf den Handys sichtbar`);
