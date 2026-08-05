@@ -1966,7 +1966,7 @@ function renderByeAnalyse() {
 function renderMatrix() {
   const el = document.getElementById('analyse-matrix');
   if (!el) return;
-  const ids = Object.keys(state.teams);
+  const ids = calcStandings().map(t => t.id);
   if (!ids.length) { el.innerHTML = '<div style="color:var(--muted)">Keine Teams</div>'; return; }
 
   const played = {};
