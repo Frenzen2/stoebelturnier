@@ -331,6 +331,7 @@
   <!-- PAARUNGEN -->
   <div id="sec-pairings" class="section active">
     <div class="status-bar"><div class="dot"></div><span id="status-text">Verbinde...</span></div>
+    <div id="results-locked-banner" style="display:none;background:rgba(212,43,43,0.1);border:1px solid rgba(212,43,43,0.3);color:var(--red);border-radius:6px;padding:.5rem .75rem;font-size:.8rem;font-weight:600;margin-bottom:.75rem">🔒 Ergebnisse sind gesperrt – es können keine Ergebnisse mehr eingetragen oder geändert werden</div>
     <div id="round-nav" style="display:none;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
       <button class="btn btn-ghost btn-sm" onclick="navRound(-1)">◀ Zurück</button>
       <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
@@ -415,6 +416,7 @@
           <button class="btn btn-ghost" onclick="fillRandomResults()">🎲 Zufallsergebnisse</button>
           <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
+          <button class="btn btn-danger btn-sm" id="btn-lock-results" onclick="toggleResultsLock()">🔒 Ergebnisse sperren</button>
         </div>
         <div id="diagnose-output" style="display:none;margin-top:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto"></div>
         <div id="draft-round-preview" style="display:none;margin-top:.75rem"></div>
@@ -895,6 +897,7 @@ function renderAll() {
   document.getElementById('round-badge').textContent = `Runde ${state.currentRound||'–'}`;
   document.getElementById('main-title').textContent = '🔥 ' + (state.settings?.title||'Stöbelturnier');
   if (viewRound && viewRound > state.currentRound) viewRound = null;
+  renderResultsLockUI();
   renderPairings();
   renderStandings();
   renderTeamsList();
@@ -904,6 +907,26 @@ function renderAll() {
   updateTeamsBadge();
   if (document.getElementById('sec-analyse')?.classList.contains('active')) renderAnalyse();
 }
+
+function renderResultsLockUI() {
+  const locked = !!state.settings?.resultsLocked;
+  const banner = document.getElementById('results-locked-banner');
+  if (banner) banner.style.display = locked ? 'block' : 'none';
+
+  const btn = document.getElementById('btn-lock-results');
+  if (btn) {
+    btn.textContent = locked ? '🔓 Ergebnisse entsperren' : '🔒 Ergebnisse sperren';
+    btn.classList.toggle('btn-danger', !locked);
+    btn.classList.toggle('btn-primary', locked);
+  }
+}
+
+window.toggleResultsLock = async function() {
+  if (!db) return;
+  const locked = !!state.settings?.resultsLocked;
+  await fbUpdate('/tournament/settings', { resultsLocked: !locked });
+  toast(locked ? '🔓 Ergebnisse entsperrt' : '🔒 Ergebnisse gesperrt – keine Änderungen mehr möglich');
+};
 
 function renderRoundStatus() {
   const btn = document.getElementById('btn-next-round');
@@ -954,6 +977,7 @@ function renderPairings() {
     const myName = tn(session.teamId);
     const oppName = tn(isT1 ? myMatch.team2 : myMatch.team1);
     const hasResult = myMatch.score1 !== undefined;
+    const locked = !!state.settings?.resultsLocked && !session.isAdmin;
     const fieldHtml = myMatch.field
       ? `<span class="field-chip">📍 Feld ${myMatch.field}</span>`
       : '';
@@ -966,10 +990,12 @@ function renderPairings() {
       resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
         <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myScore} : ${oppScore}</span>
         <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>
+        ${locked?'':`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>`}
       </div>`;
     } else {
-      resultHtml = `<div style="margin-top:.6rem">
+      resultHtml = locked
+        ? `<div style="margin-top:.6rem;font-size:.8rem;color:var(--muted)">🔒 Ergebniseingabe gesperrt</div>`
+        : `<div style="margin-top:.6rem">
         <button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('${myMatch.id}',${displayRound})">+ Ergebnis eintragen</button>
       </div>`;
     }
@@ -998,7 +1024,7 @@ function renderPairings() {
   html += round.map(m => {
     if (m.bye) return `<div class="bye-row">🔄 <strong>${tn(m.team1)}</strong> – Freirunde</div>`;
     const isMine = session.teamId && (m.team1===session.teamId||m.team2===session.teamId);
-    const canEdit = (isMine || session.isAdmin) && (!isHistoric || session.isAdmin);
+    const canEdit = (isMine || session.isAdmin) && (!isHistoric || session.isAdmin) && (!state.settings?.resultsLocked || session.isAdmin);
     const hasResult = m.score1!==undefined && m.score2!==undefined;
     let tag1='',tag2='';
     if (hasResult) {
@@ -1474,6 +1500,7 @@ window.resetTournament = async function() {
 };
 
 window.openModal = function(matchId, roundNum) {
+  if (state.settings?.resultsLocked && !session.isAdmin) { toast('🔒 Ergebnisse sind gesperrt'); return; }
   currentMatchId=matchId; currentRoundNum=roundNum ?? displayRound ?? state.currentRound;
   const m = state.rounds[currentRoundNum]?.find(x=>x.id===matchId);
   if (!m) return;
@@ -1488,6 +1515,7 @@ window.closeModal = ()=>document.getElementById('result-modal').classList.remove
 
 window.submitResult = async function() {
   if (!db) return;
+  if (state.settings?.resultsLocked && !session.isAdmin) { toast('🔒 Ergebnisse sind gesperrt'); return; }
   const s1=parseInt(document.getElementById('modal-s1').value);
   const s2=parseInt(document.getElementById('modal-s2').value);
   if (isNaN(s1)||isNaN(s2)) { toast('Beide Werte eingeben'); return; }
