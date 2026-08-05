@@ -342,7 +342,7 @@
         <div id="quick-progress-text" style="font-size:.85rem;font-weight:600;margin-top:.15rem"></div>
         <div class="progress-bar-wrap" style="width:180px"><div class="progress-bar-fill" id="quick-progress-bar" style="width:0%"></div></div>
       </div>
-      <button class="btn btn-primary btn-sm" id="quick-next-btn" onclick="generateNextRound()">Nächste Runde</button>
+      <button class="btn btn-primary btn-sm" id="quick-next-btn" onclick="drawNextRoundPreview()">Nächste Runde</button>
     </div>
     <div id="pairings-list"><div class="empty-state"><div class="icon">🎯</div>Keine Paarungen vorhanden</div></div>
   </div>
@@ -409,7 +409,7 @@
       <div class="card">
         <div class="card-title">Runden Steuerung</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-primary" id="btn-next-round" onclick="generateNextRound()">Nächste Runde generieren</button>
+          <button class="btn btn-primary" id="btn-next-round" onclick="drawNextRoundPreview()">🎲 Runde auslosen</button>
           <button class="btn btn-ghost" onclick="diagnosePairing()">🔍 Pairing prüfen</button>
           <button class="btn btn-ghost" onclick="generateAusgleichsrunde()">⚖️ Ausgleichsrunde</button>
           <button class="btn btn-ghost" onclick="fillRandomResults()">🎲 Zufallsergebnisse</button>
@@ -417,6 +417,7 @@
           <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
         </div>
         <div id="diagnose-output" style="display:none;margin-top:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto"></div>
+        <div id="draft-round-preview" style="display:none;margin-top:.75rem"></div>
         <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 2/1/0 · Diff-Tiebreaker</p>
         <div style="margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border)">
           <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.4rem">Beamer Dashboard</div>
@@ -917,7 +918,7 @@ function renderRoundStatus() {
   } else {
     btn.disabled = false;
     btn.title = '';
-    btn.textContent = 'Nächste Runde generieren';
+    btn.textContent = '🎲 Runde auslosen';
   }
 }
 
@@ -1166,7 +1167,10 @@ window.assignAllPins = async function() {
   }
 };
 
-window.generateNextRound = async function() {
+// ── Runde auslosen (lokale Vorschau) → erst nach Bestätigung an Firebase pushen ──
+let draftRound = null; // { round, matches } – nur lokal, noch nicht auf den Handys sichtbar
+
+window.drawNextRoundPreview = async function() {
   if (!db) { toast('Nicht verbunden'); return; }
 
   // Prüfen ob alle Ergebnisse der aktuellen Runde eingetragen sind
@@ -1190,8 +1194,68 @@ window.generateNextRound = async function() {
     if (!m.bye) { base.field = (fieldIdx % fieldCount) + 1; fieldIdx++; }
     return base;
   });
-  await fbUpdate('/tournament', { [`rounds/${next}`]: roundData, currentRound: next });
-  toast(`Runde ${next} generiert`);
+
+  draftRound = { round: next, matches: roundData };
+  showSection('admin', null);
+  renderDraftRoundPreview();
+  toast(`Runde ${next} ausgelost – bitte prüfen & veröffentlichen`);
+};
+
+function renderDraftRoundPreview() {
+  const el = document.getElementById('draft-round-preview');
+  if (!el) return;
+  if (!draftRound) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  // Bereits gespielte Paarungen (für Rematch-Check)
+  const playedSet = new Set();
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => { if (!m.bye && m.team2) playedSet.add([m.team1,m.team2].sort().join('_')); });
+  });
+
+  const rows = draftRound.matches.map(m => {
+    if (m.bye) {
+      return { rematch:false, html: '<strong>' + tn(m.team1) + '</strong> – Freirunde' };
+    }
+    const isRematch = playedSet.has([m.team1,m.team2].sort().join('_'));
+    return {
+      rematch: isRematch,
+      html: '<strong>' + tn(m.team1) + '</strong> vs <strong>' + tn(m.team2) + '</strong>'
+        + (m.field ? ' <span style="color:var(--muted)">· Feld ' + m.field + '</span>' : '')
+        + (isRematch ? ' <span style="color:var(--red);font-weight:700">⚠ Rematch</span>' : '')
+    };
+  });
+  const rematchCount = rows.filter(r => r.rematch).length;
+
+  let html = '<div class="card" style="border-color:var(--accent)">'
+    + '<div class="card-title">🎲 Auslosung Runde ' + draftRound.round + ' – Vorschau (noch nicht auf den Handys sichtbar)</div>'
+    + (rematchCount
+        ? '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + rematchCount + ' Rematch(es) in dieser Auslosung – ggf. neu auslosen</div>'
+        : '<div style="color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Keine Rematches</div>')
+    + rows.map(r => '<div style="padding:.4rem .6rem;background:' + (r.rematch ? 'rgba(212,43,43,0.08);border-left:3px solid var(--accent)' : 'rgba(255,255,255,0.03)') + ';border-radius:4px;margin-bottom:.3rem;font-size:.85rem">' + r.html + '</div>').join('')
+    + '<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem">'
+    + '<button class="btn btn-primary" onclick="publishDraftRound()">📲 Veröffentlichen (an Handys pushen)</button>'
+    + '<button class="btn btn-ghost" onclick="drawNextRoundPreview()">🔄 Neu auslosen</button>'
+    + '<button class="btn btn-ghost" onclick="discardDraftRound()">✖ Verwerfen</button>'
+    + '</div></div>';
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+window.publishDraftRound = async function() {
+  if (!draftRound) { toast('Keine Auslosung zum Veröffentlichen vorhanden'); return; }
+  const { round, matches } = draftRound;
+  await fbUpdate('/tournament', { [`rounds/${round}`]: matches, currentRound: round });
+  toast(`Runde ${round} veröffentlicht – jetzt auf den Handys sichtbar`);
+  draftRound = null;
+  renderDraftRoundPreview();
+};
+
+window.discardDraftRound = function() {
+  draftRound = null;
+  renderDraftRoundPreview();
+  toast('Vorschau verworfen');
 };
 
 // ── Pairing Diagnose ──
