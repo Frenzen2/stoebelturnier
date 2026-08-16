@@ -435,18 +435,25 @@
         </div>
 
         <div id="manual-pairing-area" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.9rem">
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.6rem">⚡ Manuelle Notfall-Paarung</div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.4rem">⚡ Manuelle Notfall-Paarung</div>
+          <p style="font-size:.72rem;color:var(--muted);margin-bottom:.7rem">Ergänzt Paarungen in <strong id="manual-round-label">der aktuellen Runde</strong> – erzeugt <u>keine</u> neue Runde. Speichert sofort live, ohne Vorschau. Nur für Teams verwenden, die in dieser Runde noch keinen Gegner/keine Freirunde haben.</p>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem">
-            <select id="manual-t1" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <select id="manual-t1" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
             <span style="color:var(--muted);font-weight:700;padding:0 .25rem">VS</span>
-            <select id="manual-t2" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+            <select id="manual-t2" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
             <button class="btn btn-danger btn-sm" onclick="addManualPairing()">+ Hinzufügen</button>
           </div>
+          <div id="manual-rematch-warning" style="display:none;margin-bottom:.5rem;font-size:.75rem;color:var(--red);font-weight:600">⚠ Diese Teams haben bereits gegeneinander gespielt</div>
           <div style="display:flex;gap:.5rem;align-items:center">
             <select id="manual-bye" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
             <button class="btn btn-ghost btn-sm" onclick="addManualBye()">+ Freirunde</button>
           </div>
-          <p style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Nur verwenden wenn der Algorithmus versagt. Rematches werden nicht geprüft.</p>
+          <p style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Nur verwenden, wenn der Algorithmus ein/zwei Teams nicht zuordnen konnte.</p>
+
+          <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
+            <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.4rem">Paarungen in dieser Runde</div>
+            <div id="manual-current-list"></div>
+          </div>
         </div>
         <div style="margin-top:.6rem">
           <button class="btn btn-ghost btn-sm" onclick="toggleManualPairing()">🔧 Manuelle Paarung (Notfall)</button>
@@ -1478,16 +1485,30 @@ window.toggleManualPairing = function() {
   if (!visible) populateManualSelects();
 };
 
+function manualHasPlayed(a, b) {
+  return Object.values(state.rounds).some(round =>
+    Array.isArray(round) && round.some(m => !m.bye && ((m.team1===a && m.team2===b) || (m.team1===b && m.team2===a)))
+  );
+}
+
+window.checkManualRematch = function() {
+  const t1 = document.getElementById('manual-t1')?.value;
+  const t2 = document.getElementById('manual-t2')?.value;
+  const warn = document.getElementById('manual-rematch-warning');
+  if (!warn) return;
+  warn.style.display = (t1 && t2 && t1 !== t2 && manualHasPlayed(t1, t2)) ? 'block' : 'none';
+};
+
 function populateManualSelects() {
+  const label = document.getElementById('manual-round-label');
+  if (label) label.textContent = state.currentRound ? `Runde ${state.currentRound}` : 'der aktuellen Runde';
+
   const round = state.rounds[state.currentRound] || [];
   const alreadyPaired = new Set();
   round.forEach(m => { alreadyPaired.add(m.team1); if (!m.bye) alreadyPaired.add(m.team2); });
 
   const unpaired = Object.entries(state.teams)
     .filter(([id]) => !alreadyPaired.has(id))
-    .sort((a,b) => a[1].name.localeCompare(b[1].name));
-
-  const allTeams = Object.entries(state.teams)
     .sort((a,b) => a[1].name.localeCompare(b[1].name));
 
   ['manual-t1','manual-t2'].forEach(sid => {
@@ -1497,13 +1518,44 @@ function populateManualSelects() {
 
   const byeSel = document.getElementById('manual-bye');
   byeSel.innerHTML = unpaired.map(([id,t]) => `<option value="${id}">${t.name}</option>`).join('');
+
+  checkManualRematch();
+  renderManualCurrentList();
 }
+
+function renderManualCurrentList() {
+  const el = document.getElementById('manual-current-list');
+  if (!el) return;
+  const round = state.rounds[state.currentRound] || [];
+  if (!round.length) { el.innerHTML = '<div style="font-size:.78rem;color:var(--muted)">Noch keine Paarungen in dieser Runde.</div>'; return; }
+  el.innerHTML = round.map(m => {
+    const label = m.bye
+      ? tn(m.team1) + ' – Freirunde'
+      : tn(m.team1) + ' vs ' + tn(m.team2) + (m.score1!==undefined ? ` <span style="color:var(--muted)">(${m.score1}:${m.score2})</span>` : '');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.35rem .55rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:.3rem;font-size:.8rem">
+      <span>${label}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeManualMatch('${m.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+window.removeManualMatch = async function(matchId) {
+  if (!db) return;
+  const round = state.currentRound;
+  const existing = state.rounds[round] || [];
+  const match = existing.find(m => m.id === matchId);
+  if (!match) return;
+  if (match.score1 !== undefined && !confirm('Diese Paarung hat bereits ein eingetragenes Ergebnis. Trotzdem entfernen?')) return;
+  await fbSet(`/tournament/rounds/${round}`, existing.filter(m => m.id !== matchId));
+  toast('Paarung entfernt');
+};
 
 window.addManualPairing = async function() {
   if (!db) return;
   const t1 = document.getElementById('manual-t1').value;
   const t2 = document.getElementById('manual-t2').value;
   if (!t1 || !t2 || t1 === t2) { toast('Bitte zwei verschiedene Teams wählen'); return; }
+  if (manualHasPlayed(t1, t2) && !confirm(`${state.teams[t1]?.name} und ${state.teams[t2]?.name} haben bereits gegeneinander gespielt. Trotzdem paaren?`)) return;
   const round = state.currentRound;
   const existing = [...(state.rounds[round] || [])];
   // check not already in round
