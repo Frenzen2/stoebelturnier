@@ -437,16 +437,19 @@
         <div id="manual-pairing-area" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.9rem">
           <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.4rem">⚡ Manuelle Notfall-Paarung</div>
           <p style="font-size:.72rem;color:var(--muted);margin-bottom:.7rem">Ergänzt Paarungen in <strong id="manual-round-label">der aktuellen Runde</strong> – erzeugt <u>keine</u> neue Runde. Speichert sofort live, ohne Vorschau. Nur für Teams verwenden, die in dieser Runde noch keinen Gegner/keine Freirunde haben.</p>
-          <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem">
-            <select id="manual-t1" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
-            <span style="color:var(--muted);font-weight:700;padding:0 .25rem">VS</span>
-            <select id="manual-t2" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
-            <button class="btn btn-danger btn-sm" onclick="addManualPairing()">+ Hinzufügen</button>
-          </div>
-          <div id="manual-rematch-warning" style="display:none;margin-bottom:.5rem;font-size:.75rem;color:var(--red);font-weight:600">⚠ Diese Teams haben bereits gegeneinander gespielt</div>
-          <div style="display:flex;gap:.5rem;align-items:center">
-            <select id="manual-bye" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
-            <button class="btn btn-ghost btn-sm" onclick="addManualBye()">+ Freirunde</button>
+          <div id="manual-no-unpaired" style="display:none;padding:.6rem .7rem;background:rgba(39,174,96,.08);border:1px solid rgba(39,174,96,.3);border-radius:8px;font-size:.8rem;color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Alle Teams sind in dieser Runde bereits verplant – nichts zu ergänzen.</div>
+          <div id="manual-select-rows">
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem">
+              <select id="manual-t1" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+              <span style="color:var(--muted);font-weight:700;padding:0 .25rem">VS</span>
+              <select id="manual-t2" onchange="checkManualRematch()" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+              <button class="btn btn-danger btn-sm" onclick="addManualPairing()">+ Hinzufügen</button>
+            </div>
+            <div id="manual-rematch-warning" style="display:none;margin-bottom:.5rem;font-size:.75rem;color:var(--red);font-weight:600">⚠ Diese Teams haben bereits gegeneinander gespielt</div>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <select id="manual-bye" style="flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .6rem;font-size:.82rem;font-family:Inter,sans-serif"></select>
+              <button class="btn btn-ghost btn-sm" onclick="addManualBye()">+ Freirunde</button>
+            </div>
           </div>
           <p style="font-size:.7rem;color:var(--muted);margin-top:.4rem">Nur verwenden, wenn der Algorithmus ein/zwei Teams nicht zuordnen konnte.</p>
 
@@ -1510,6 +1513,11 @@ function populateManualSelects() {
   const unpaired = Object.entries(state.teams)
     .filter(([id]) => !alreadyPaired.has(id))
     .sort((a,b) => a[1].name.localeCompare(b[1].name));
+
+  const noUnpaired = document.getElementById('manual-no-unpaired');
+  const selectRows = document.getElementById('manual-select-rows');
+  if (noUnpaired) noUnpaired.style.display = unpaired.length ? 'none' : 'block';
+  if (selectRows) selectRows.style.display = unpaired.length ? 'block' : 'none';
 
   ['manual-t1','manual-t2'].forEach(sid => {
     const sel = document.getElementById(sid);
