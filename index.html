@@ -413,21 +413,27 @@
           <button class="btn btn-primary" id="btn-next-round" onclick="drawNextRoundPreview()">🎲 Runde auslosen</button>
           <button class="btn btn-ghost" onclick="diagnosePairing()">🔍 Pairing prüfen</button>
           <button class="btn btn-ghost" onclick="generateAusgleichsrunde()">⚖️ Ausgleichsrunde</button>
-          <button class="btn btn-ghost" onclick="fillRandomResults()">🎲 Zufallsergebnisse</button>
-          <button class="btn btn-ghost" onclick="deleteCurrentRound()">Aktuelle Runde löschen</button>
-          <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
-          <button class="btn btn-danger btn-sm" id="btn-lock-results" onclick="toggleResultsLock()">🔒 Ergebnisse sperren</button>
         </div>
         <div id="diagnose-output" style="display:none;margin-top:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.8;white-space:pre-wrap;max-height:280px;overflow-y:auto"></div>
         <div id="draft-round-preview" style="display:none;margin-top:.75rem"></div>
         <p style="font-size:.73rem;color:var(--muted);margin-top:.6rem">Swiss-Pairing · 2/1/0 · Diff-Tiebreaker</p>
-        <div style="margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border)">
+
+        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Ergebniseingabe</div>
+            <div style="font-size:.72rem;color:var(--muted)">Sperrt die Eingabe für alle Teams · Admin bleibt editierfähig</div>
+          </div>
+          <button class="btn btn-danger btn-sm" id="btn-lock-results" onclick="toggleResultsLock()">🔒 Ergebnisse sperren</button>
+        </div>
+
+        <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
           <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.4rem">Beamer Dashboard</div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
             <a href="dashboard.html" target="_blank" class="btn btn-ghost btn-sm">📺 Dashboard öffnen</a>
             <a href="dashboard.html?tabelle=1" target="_blank" class="btn btn-ghost btn-sm">🏆 Dashboard + Tabelle</a>
           </div>
         </div>
+
         <div id="manual-pairing-area" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.9rem">
           <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:.6rem">⚡ Manuelle Notfall-Paarung</div>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem">
@@ -444,6 +450,46 @@
         </div>
         <div style="margin-top:.6rem">
           <button class="btn btn-ghost btn-sm" onclick="toggleManualPairing()">🔧 Manuelle Paarung (Notfall)</button>
+        </div>
+      </div>
+
+      <!-- Debug-Tools -->
+      <div class="card">
+        <div class="collapsible-header" onclick="toggleCollapse('debug-tools')">
+          <div class="card-title" style="margin-bottom:0">🧪 Debug-Tools</div>
+          <span class="collapse-arrow" id="arrow-debug-tools">▼</span>
+        </div>
+        <div class="collapsible-body" id="debug-tools">
+          <div style="height:.75rem"></div>
+          <button class="btn btn-ghost btn-sm" onclick="fillRandomResults()">🎲 Zufallsergebnisse eintragen</button>
+          <p style="font-size:.72rem;color:var(--muted);margin-top:.5rem">Trägt echte Zufallsergebnisse in die aktuelle Runde ein (schreibt live nach Firebase!). Nur zum Testen vor dem Turnier verwenden.</p>
+        </div>
+      </div>
+
+      <!-- Gefahrenzone -->
+      <div class="card" style="border-color:rgba(231,76,60,.4)">
+        <div class="collapsible-header" onclick="toggleCollapse('danger-zone')">
+          <div class="card-title" style="margin-bottom:0;color:var(--red)">⚠ Gefahrenzone</div>
+          <span class="collapse-arrow" id="arrow-danger-zone">▼</span>
+        </div>
+        <div class="collapsible-body" id="danger-zone">
+          <div style="height:.75rem"></div>
+          <div style="display:flex;flex-direction:column;gap:.6rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.6rem .7rem;background:rgba(231,76,60,.06);border:1px solid rgba(231,76,60,.25);border-radius:8px">
+              <div>
+                <div style="font-size:.85rem;font-weight:600">Aktuelle Runde löschen</div>
+                <div style="font-size:.72rem;color:var(--muted)">Entfernt die letzte Runde inkl. aller eingetragenen Ergebnisse.</div>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="deleteCurrentRound()">Löschen</button>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.6rem .7rem;background:rgba(231,76,60,.06);border:1px solid rgba(231,76,60,.25);border-radius:8px">
+              <div>
+                <div style="font-size:.85rem;font-weight:600">Turnier komplett zurücksetzen</div>
+                <div style="font-size:.72rem;color:var(--muted)">Löscht ALLE Teams, Runden und Ergebnisse unwiderruflich.</div>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="resetTournament()">⚠ Zurücksetzen</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1493,8 +1539,9 @@ window.deleteCurrentRound = async function() {
 };
 
 window.resetTournament = async function() {
-  if (!confirm('Alle Daten löschen? Nicht rückgängig machbar!')) return;
-  if (!confirm('Wirklich? Teams und alle Runden werden gelöscht!')) return;
+  const word = 'ZURUECKSETZEN';
+  const input = prompt(`⚠ Das löscht ALLE Teams, Runden und Ergebnisse unwiderruflich!\n\nTippe "${word}" um zu bestätigen:`);
+  if (input !== word) { toast('Abgebrochen'); return; }
   await fbSet('/tournament', { settings:state.settings, currentRound:0 });
   toast('Turnier zurückgesetzt');
 };
