@@ -189,6 +189,8 @@ const SPONSORS = [
   { name: 'Raiffeisen Timelkam-Lenzing-Puchkirchen', logo: 'raika.svg' },
   { name: 'Fliesen Gaborek',  logo: 'gaborek.png' },
   { name: 'Atos Schiemer',    logo: 'logo-atos.gif' },
+  { name: 'Hüschie', url: 'https://www.hüschie.at' },
+  { name: 'Landtechnik Ablinger' },
 ];
 
 // ── State ──
@@ -367,9 +369,14 @@ window.toggleStandings = toggleStandings;
 function initSponsors() {
   const slides = document.getElementById('sponsor-slides');
   if (!SPONSORS.length) return;
-  const makeSlide = s => s.logo
-    ? `<div class="sponsor-slide"><img src="${s.logo}" alt="${s.name}" onerror="this.parentNode.innerHTML='<div class=\\"sponsor-name\\">${s.name}</div>'"></div>`
-    : `<div class="sponsor-slide"><div class="sponsor-name">${s.name}</div></div>`;
+  const makeSlide = s => {
+    const inner = s.logo
+      ? `<img src="${s.logo}" alt="${s.name}" onerror="this.parentNode.innerHTML='<div class=\\"sponsor-name\\">${s.name}</div>'">`
+      : `<div class="sponsor-name">${s.name}</div>`;
+    return s.url
+      ? `<div class="sponsor-slide"><a href="${s.url}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:inherit;text-decoration:none">${inner}</a></div>`
+      : `<div class="sponsor-slide">${inner}</div>`;
+  };
   const minCopies = Math.max(2, Math.ceil(12/SPONSORS.length));
   let html='';
   for(let i=0;i<minCopies*2;i++) SPONSORS.forEach(s=>html+=makeSlide(s));
