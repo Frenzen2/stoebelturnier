@@ -243,6 +243,15 @@
     font-size: 0.75rem; font-weight: 600;
     padding: 0.25rem 0.65rem; border-radius: 5px;
   }
+
+  /* ── Sponsor ticker (mobile) ── */
+  .sponsor-bar-mobile { margin-top: 1rem; background: #fff; border-radius: 10px; padding: 0.65rem 0; overflow: hidden; }
+  .sponsor-label-m { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #999; text-align: center; margin-bottom: 0.4rem; }
+  .sponsor-track-m { overflow: hidden; }
+  .sponsor-slides-m { display: flex; align-items: center; gap: 1.75rem; width: max-content; }
+  .sponsor-slide-m { display: flex; align-items: center; justify-content: center; height: 46px; padding: 0 0.4rem; flex-shrink: 0; }
+  .sponsor-slide-m img { max-height: 38px; max-width: 110px; object-fit: contain; }
+  .sponsor-name-m { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: #c0181a; letter-spacing: 2px; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -322,6 +331,11 @@
       <button class="btn btn-primary btn-sm" id="quick-next-btn" onclick="drawNextRoundPreview()">Nächste Runde</button>
     </div>
     <div id="pairings-list"><div class="empty-state"><div class="icon">🎯</div>Keine Paarungen vorhanden</div></div>
+
+    <div class="sponsor-bar-mobile">
+      <div class="sponsor-label-m">Unsere Sponsoren</div>
+      <div class="sponsor-track-m"><div class="sponsor-slides-m" id="sponsor-slides-m"></div></div>
+    </div>
   </div>
 
   <!-- TABELLE -->
@@ -1936,12 +1950,62 @@ window.showSection = function(id, btn) {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sponsoren (gleiche Liste wie dashboard.html – bei neuen Sponsoren dort mitpflegen!)
+// ─────────────────────────────────────────────────────────────────────────────
+const SPONSORS = [
+  { name: 'Raiffeisen Timelkam-Lenzing-Puchkirchen', logo: 'raika.svg' },
+  { name: 'Fliesen Gaborek',  logo: 'gaborek.png' },
+  { name: 'Atos Schiemer',    logo: 'logo-atos.gif' },
+  { name: 'Hüschie', logo: 'hueschi.png', url: 'https://www.hüschie.at' },
+  { name: 'Landtechnik Ablinger', logo: 'ltablinger.jpeg' },
+];
+
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+function initSponsorsMobile() {
+  const slides = document.getElementById('sponsor-slides-m');
+  if (!slides || !SPONSORS.length) return;
+  const makeSlide = s => {
+    const inner = s.logo
+      ? `<img src="${s.logo}" alt="${escAttr(s.name)}" data-fallback-name="${escAttr(s.name)}">`
+      : `<div class="sponsor-name-m">${s.name}</div>`;
+    return s.url
+      ? `<div class="sponsor-slide-m"><a href="${s.url}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;color:inherit;text-decoration:none">${inner}</a></div>`
+      : `<div class="sponsor-slide-m">${inner}</div>`;
+  };
+  const minCopies = Math.max(2, Math.ceil(8/SPONSORS.length));
+  let html = '';
+  for (let i=0;i<minCopies*2;i++) SPONSORS.forEach(s => html += makeSlide(s));
+  slides.innerHTML = html;
+  slides.querySelectorAll('img[data-fallback-name]').forEach(img => {
+    img.addEventListener('error', () => {
+      const div = document.createElement('div');
+      div.className = 'sponsor-name-m';
+      div.textContent = img.dataset.fallbackName;
+      img.replaceWith(div);
+    });
+  });
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const els = slides.querySelectorAll('.sponsor-slide-m');
+    let hw = 0; const half = Math.floor(els.length/2);
+    for (let i=0;i<half;i++) hw += els[i].offsetWidth || 150;
+    if (hw < 50) hw = half * 150;
+    const dur = Math.max(20, SPONSORS.length*10);
+    const st = document.createElement('style');
+    st.textContent = `@keyframes ssm{0%{transform:translateX(0)}100%{transform:translateX(-${hw}px)}}`;
+    document.head.appendChild(st);
+    slides.style.animation = `ssm ${dur}s linear infinite`;
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 (async()=>{
   setStatus('Verbinde...');
   // Show PIN overlay immediately - Firebase loads in background
   showPinOverlay();
+  initSponsorsMobile();
   try {
     await connectFirebase();
   } catch(e) {
