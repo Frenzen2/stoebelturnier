@@ -64,6 +64,7 @@
   main { padding: 1.1rem; max-width: 860px; margin: 0 auto; }
   .section { display: none; }
   .section.active { display: block; }
+  #sec-pairings.active { padding-bottom: 5.5rem; } /* Platz fuer das angeheftete Sponsoren-Band */
 
   /* ── Cards ── */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; margin-bottom: 0.9rem;
@@ -244,9 +245,14 @@
     padding: 0.25rem 0.65rem; border-radius: 5px;
   }
 
-  /* ── Sponsor ticker (mobile) ── */
-  .sponsor-bar-mobile { margin-top: 1rem; background: #fff; border-radius: 10px; padding: 0.65rem 0; overflow: hidden; }
-  .sponsor-label-m { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #999; text-align: center; margin-bottom: 0.4rem; }
+  /* ── Sponsor ticker (mobile) – am unteren Bildschirmrand angeheftet ── */
+  .sponsor-bar-mobile {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    max-width: 860px; margin: 0 auto;
+    background: #fff; padding: 0.55rem 0; overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.35);
+  }
+  .sponsor-label-m { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #999; text-align: center; margin-bottom: 0.3rem; }
   .sponsor-track-m { overflow: hidden; }
   .sponsor-slides-m { display: flex; align-items: center; gap: 1.75rem; width: max-content; }
   .sponsor-slide-m { display: flex; align-items: center; justify-content: center; height: 46px; padding: 0 0.4rem; flex-shrink: 0; }
@@ -1990,7 +1996,7 @@ function initSponsorsMobile() {
     let hw = 0; const half = Math.floor(els.length/2);
     for (let i=0;i<half;i++) hw += els[i].offsetWidth || 150;
     if (hw < 50) hw = half * 150;
-    const dur = Math.max(20, SPONSORS.length*10);
+    const dur = Math.max(8, SPONSORS.length*3);
     const st = document.createElement('style');
     st.textContent = `@keyframes ssm{0%{transform:translateX(0)}100%{transform:translateX(-${hw}px)}}`;
     document.head.appendChild(st);
