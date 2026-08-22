@@ -511,7 +511,7 @@
           <div><label class="label">Runden</label><input type="number" id="sim-rounds" value="13" min="2" max="20" style="width:70px"></div>
           <button class="btn btn-primary" onclick="runSimulation()">▶ Simulation starten</button>
         </div>
-        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft mit dem echten Pairing-Algorithmus und speichert das Ergebnis unter <code>/simulation</code> in Firebase (komplett getrennt von euren echten Turnierdaten unter <code>/tournament</code>). Prüft Rematches (inkl. welche Teams/Runde), Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
+        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft mit dem echten Pairing-Algorithmus und speichert jeden Lauf einzeln unter <code>/simulation/runs</code> in Firebase (komplett getrennt von euren echten Turnierdaten unter <code>/tournament</code>, letzte 20 Läufe als Historie zum Vergleichen). Prüft Rematches (inkl. welche Teams/Runde), Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
         <div id="sim-output" style="display:none">
           <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
@@ -724,9 +724,9 @@ const FIREBASE_CONFIG = {
 
 async function connectFirebase() {
   const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-  const { getDatabase, ref, onValue, set, update, remove, push }
+  const { getDatabase, ref, onValue, set, update, remove, push, get }
     = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
-  window._fb = { ref, onValue, set, update, remove, push };
+  window._fb = { ref, onValue, set, update, remove, push, get };
 
   const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
   db = getDatabase(app);
@@ -747,6 +747,7 @@ async function fbSet(path, val) { const {ref,set}=window._fb; await set(ref(db,p
 async function fbUpdate(path, val) { const {ref,update}=window._fb; await update(ref(db,path),val); }
 async function fbPush(path, val) { const {ref,push}=window._fb; return (await push(ref(db,path),val)).key; }
 async function fbRemove(path) { const {ref,remove}=window._fb; await remove(ref(db,path)); }
+async function fbGet(path) { const {ref,get}=window._fb; const snap = await get(ref(db,path)); return snap.exists() ? snap.val() : null; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standings calc
@@ -1868,16 +1869,28 @@ window.runSimulation = async function() {
     else if (errors===0) out('👍 Keine kritischen Fehler');
     else out('🔴 Kritische Fehler – bitte melden!');
 
-    // In Firebase unter einem eigenen Pfad ablegen (nicht /tournament!), damit
-    // die Auslosung im Detail nachvollzogen/analysiert werden kann.
+    // Als eigener Lauf in der Historie ablegen (nicht /tournament!), damit
+    // mehrere Laeufe verglichen werden koennen, um Pairing-Logik/Rematch-Vermeidung zu verbessern.
     try {
-      await fbSet('/simulation', {
+      const MAX_RUNS = 20;
+      const runKey = await fbPush('/simulation/runs', {
         meta: { ranAt: Date.now(), numTeams, numRounds, totalRematches, errors, warnings },
         teams: simTeams,
         rounds: state.rounds,
         currentRound: numRounds,
       });
-      out(`\n📡 Simulationsdaten in Firebase gespeichert unter /simulation`);
+      out(`\n📡 Simulationslauf gespeichert unter /simulation/runs/${runKey}`);
+
+      // Alte Laeufe aufraeumen, damit die Historie nicht unbegrenzt waechst
+      const allRuns = await fbGet('/simulation/runs');
+      if (allRuns) {
+        const keys = Object.keys(allRuns).sort(); // Push-Keys sind chronologisch sortierbar
+        if (keys.length > MAX_RUNS) {
+          const toDelete = keys.slice(0, keys.length - MAX_RUNS);
+          for (const k of toDelete) await fbRemove(`/simulation/runs/${k}`);
+          out(`🧹 ${toDelete.length} ältere(r) Lauf/Läufe entfernt (max. ${MAX_RUNS} Läufe in der Historie)`);
+        }
+      }
     } catch (e) {
       out(`\n⚠ Konnte Simulationsdaten nicht speichern: ${e.message}`);
     }
