@@ -998,9 +998,9 @@ function renderPairings() {
   const round = state.rounds[displayRound];
   const isHistoric = viewRound !== null && viewRound < state.currentRound;
 
-  // Show nav for admin
+  // Rundennavigation für alle sichtbar (nicht mehr nur Admin)
   if (navEl) {
-    navEl.style.display = (session.isAdmin && state.currentRound > 1) ? 'flex' : 'none';
+    navEl.style.display = (state.currentRound > 1) ? 'flex' : 'none';
     if (navLabel) navLabel.textContent = isHistoric
       ? `◀ Runde ${displayRound} von ${state.currentRound} (Historie)`
       : `Runde ${displayRound} – Aktuell`;
@@ -1010,9 +1010,11 @@ function renderPairings() {
     el.innerHTML = '<div class="empty-state"><div class="icon">🎯</div>Noch keine Paarungen</div>'; return;
   }
 
-  // Separate my match from the rest
-  const myMatch = (session.teamId && !isHistoric) ? round.find(m => !m.bye && (m.team1===session.teamId||m.team2===session.teamId)) : null;
-  const myBye   = (session.teamId && !isHistoric) ? round.find(m => m.bye && m.team1===session.teamId) : null;
+  // Eigene Paarung: bei Historie nur die eigene zeigen (nicht alle), bei aktueller Runde
+  // zusätzlich noch die volle Liste aller Paarungen darunter.
+  const myMatch = session.teamId ? round.find(m => !m.bye && (m.team1===session.teamId||m.team2===session.teamId)) : null;
+  const myBye   = session.teamId ? round.find(m => m.bye && m.team1===session.teamId) : null;
+  const onlyMine = session.teamId && isHistoric;
 
   let html = '';
 
@@ -1022,7 +1024,7 @@ function renderPairings() {
     const myName = tn(session.teamId);
     const oppName = tn(isT1 ? myMatch.team2 : myMatch.team1);
     const hasResult = myMatch.score1 !== undefined;
-    const locked = !!state.settings?.resultsLocked && !session.isAdmin;
+    const canEditMine = (!isHistoric || session.isAdmin) && !(!!state.settings?.resultsLocked && !session.isAdmin);
     const fieldHtml = myMatch.field
       ? `<span class="field-chip">📍 Feld ${myMatch.field}</span>`
       : '';
@@ -1035,17 +1037,17 @@ function renderPairings() {
       resultHtml = `<div style="display:flex;align-items:center;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
         <span style="font-family:'Bebas Neue',sans-serif;font-size:2.8rem;letter-spacing:6px;line-height:1;color:var(--accent)">${myScore} : ${oppScore}</span>
         <span class="result-tag ${tag}" style="font-size:.85rem;padding:4px 10px">${tagLabel}</span>
-        ${locked?'':`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>`}
+        ${canEditMine?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${myMatch.id}',${displayRound})">✏ Ändern</button>`:''}
       </div>`;
     } else {
-      resultHtml = locked
-        ? `<div style="margin-top:.6rem;font-size:.8rem;color:var(--muted)">🔒 Ergebniseingabe gesperrt</div>`
-        : `<div style="margin-top:.6rem">
+      resultHtml = canEditMine
+        ? `<div style="margin-top:.6rem">
         <button class="btn btn-primary" style="width:100%;justify-content:center;padding:.65rem" onclick="openModal('${myMatch.id}',${displayRound})">+ Ergebnis eintragen</button>
-      </div>`;
+      </div>`
+        : `<div style="margin-top:.6rem;font-size:.8rem;color:var(--muted)">${isHistoric?'– kein Ergebnis eingetragen':'🔒 Ergebniseingabe gesperrt'}</div>`;
     }
     html += `<div class="my-match-banner">
-      <div class="banner-label">🏆 Deine Paarung – Runde ${state.currentRound}</div>
+      <div class="banner-label">🏆 Deine Paarung – Runde ${displayRound}${isHistoric?' (Historie)':''}</div>
       <div class="banner-vs">
         <div class="banner-team">${myName}</div>
         <div class="banner-vs-dot">VS</div>
@@ -1059,10 +1061,14 @@ function renderPairings() {
     </div>`;
   } else if (myBye) {
     html += `<div class="my-match-banner">
-      <div class="banner-label">Runde ${state.currentRound}</div>
+      <div class="banner-label">Runde ${displayRound}${isHistoric?' (Historie)':''}</div>
       <div style="font-size:1rem;font-weight:700;margin:.3rem 0">🔄 Freirunde – ihr habt euch eine Pause verdient 🍺</div>
     </div>`;
+  } else if (onlyMine) {
+    html += '<div class="empty-state"><div class="icon">🎯</div>Keine eigene Paarung in dieser Runde gefunden</div>';
   }
+
+  if (onlyMine) { el.innerHTML = html; return; }
 
   // ── All pairings list ──
   html += `<div class="card-title" style="margin-bottom:.5rem;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)">Alle Paarungen</div>`;
