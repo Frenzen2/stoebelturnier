@@ -105,7 +105,7 @@
   .pairing-team { font-weight: 600; font-size: 0.88rem; }
   .pairing-team.right { text-align: right; }
   .vs-badge { background: var(--surface2); color: var(--muted); font-size: 0.68rem; font-weight: 700; padding: 3px 7px; border-radius: 4px; letter-spacing: 1px; }
-  .pairing-result { padding: 0.55rem 0.9rem; background: var(--surface2); display: flex; align-items: center; gap: 0.5rem; }
+  .pairing-result { padding: 0.55rem 0.9rem; background: var(--surface2); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.5rem; }
   .result-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; white-space: nowrap; }
   .result-tag.win  { background: rgba(46,204,113,.18); color: var(--green); }
   .result-tag.draw { background: rgba(52,152,219,.18); color: var(--blue); }
@@ -1089,11 +1089,11 @@ function renderPairings() {
       </div>
       <div class="pairing-result">
         ${hasResult
-          ? `<span style="font-size:1.05rem;font-weight:700;letter-spacing:2px">${m.score1} : ${m.score2}</span>
-             ${canEdit?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openModal('${m.id}',${displayRound})">✏</button>`:''}`
+          ? `<div></div><span style="text-align:center;font-size:1.05rem;font-weight:700;letter-spacing:2px">${m.score1} : ${m.score2}</span>
+             ${canEdit?`<div style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="openModal('${m.id}',${displayRound})">✏</button></div>`:'<div></div>'}`
           : canEdit
-            ? `<button class="btn btn-primary btn-sm" onclick="openModal('${m.id}',${displayRound})">+ Ergebnis</button><span class="result-tag open" style="margin-left:auto">OFFEN</span>`
-            : `<span class="result-tag open" style="font-size:.78rem;padding:4px 10px;background:rgba(212,43,43,0.12);color:var(--accent);border:1px solid rgba(212,43,43,0.25)">● OFFEN</span>`}
+            ? `<button class="btn btn-primary btn-sm" onclick="openModal('${m.id}',${displayRound})">+ Ergebnis</button><div></div><span class="result-tag open" style="justify-self:end">OFFEN</span>`
+            : `<div></div><span class="result-tag open" style="justify-self:center;font-size:.78rem;padding:4px 10px;background:rgba(212,43,43,0.12);color:var(--accent);border:1px solid rgba(212,43,43,0.25)">● OFFEN</span><div></div>`}
       </div>
     </div>`;
   }).join('');
