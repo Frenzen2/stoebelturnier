@@ -817,6 +817,27 @@ function tryPairAll(ids, hasPlayed, allowRematch, rankOf) {
   return bt(0) ? res : null;
 }
 
+// Anwurf-Ausgleich: team1 hat Anwurf. Zaehlt, wie oft jedes Team bisher team1 war,
+// und ordnet neue Paarungen so, dass moeglichst das Team mit weniger Anwuerfen team1 wird
+// (bei Gleichstand zufaellig) – verhindert, dass einzelne Teams systematisch bevorzugt/benachteiligt werden.
+function computeAnwurfCount() {
+  const count = {};
+  Object.values(state.rounds).forEach(round => {
+    if (!Array.isArray(round)) return;
+    round.forEach(m => { if (!m.bye && m.team2) count[m.team1] = (count[m.team1]||0) + 1; });
+  });
+  return count;
+}
+function balanceAnwurf(pairs) {
+  const count = computeAnwurfCount();
+  return pairs.map(([a,b]) => {
+    const ca = count[a]||0, cb = count[b]||0;
+    if (ca < cb) return [a,b];
+    if (cb < ca) return [b,a];
+    return Math.random() < 0.5 ? [a,b] : [b,a];
+  });
+}
+
 function generateSwissPairing() {
   const standings = calcStandings();
   if (standings.length < 2) { toast('Mindestens 2 Teams benötigt'); return null; }
@@ -945,7 +966,7 @@ function generateSwissPairing() {
     return null;
   }
 
-  const matches = finalPairs.map(([a,b]) => ({ team1:a, team2:b }));
+  const matches = balanceAnwurf(finalPairs).map(([a,b]) => ({ team1:a, team2:b }));
   if (byeTeam) matches.push({ team1:byeTeam, bye:true });
   return matches;
 }
@@ -2077,7 +2098,7 @@ window.generateAusgleichsrunde = function() {
 
   const next = state.currentRound+1;
   const fc = parseInt(state.settings?.fieldCount)||15;
-  const roundData = pairs.map(([a,b],i) => ({id:`r${next}m${i}`,team1:a,team2:b,field:(i%fc)+1}));
+  const roundData = balanceAnwurf(pairs).map(([a,b],i) => ({id:`r${next}m${i}`,team1:a,team2:b,field:(i%fc)+1}));
 
   draftRound = {
     round: next,
