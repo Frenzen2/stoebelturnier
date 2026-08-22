@@ -64,6 +64,7 @@
   main { padding: 1.1rem; max-width: 860px; margin: 0 auto; }
   .section { display: none; }
   .section.active { display: block; }
+  #sec-pairings.active { padding-bottom: 5.5rem; } /* Platz fuer das angeheftete Sponsoren-Band */
 
   /* ── Cards ── */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; margin-bottom: 0.9rem;
@@ -244,9 +245,14 @@
     padding: 0.25rem 0.65rem; border-radius: 5px;
   }
 
-  /* ── Sponsor ticker (mobile) ── */
-  .sponsor-bar-mobile { margin-top: 1rem; background: #fff; border-radius: 10px; padding: 0.65rem 0; overflow: hidden; }
-  .sponsor-label-m { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #999; text-align: center; margin-bottom: 0.4rem; }
+  /* ── Sponsor ticker (mobile) – am unteren Bildschirmrand angeheftet ── */
+  .sponsor-bar-mobile {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    max-width: 860px; margin: 0 auto;
+    background: #fff; padding: 0.55rem 0; overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.35);
+  }
+  .sponsor-label-m { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #999; text-align: center; margin-bottom: 0.3rem; }
   .sponsor-track-m { overflow: hidden; }
   .sponsor-slides-m { display: flex; align-items: center; gap: 1.75rem; width: max-content; }
   .sponsor-slide-m { display: flex; align-items: center; justify-content: center; height: 46px; padding: 0 0.4rem; flex-shrink: 0; }
@@ -315,8 +321,11 @@
 <main>
   <!-- PAARUNGEN -->
   <div id="sec-pairings" class="section active">
-    <div class="status-bar"><div class="dot"></div><span id="status-text">Verbinde...</span></div>
-    <div id="results-locked-banner" style="display:none;background:rgba(212,43,43,0.1);border:1px solid rgba(212,43,43,0.3);color:var(--red);border-radius:6px;padding:.5rem .75rem;font-size:.8rem;font-weight:600;margin-bottom:.75rem">🔒 Runde Abgeschlossen</div>
+    <div class="status-bar">
+      <div class="dot"></div><span id="status-text">Verbinde...</span>
+      <span id="status-lock-sep" style="display:none;color:var(--border)">·</span>
+      <span id="status-lock-text" style="display:none;color:var(--red);font-weight:700">🔒 Runde Abgeschlossen</span>
+    </div>
     <div id="round-nav" style="display:none;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
       <button class="btn btn-ghost btn-sm" onclick="navRound(-1)">◀ Zurück</button>
       <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
@@ -969,8 +978,10 @@ function renderAll() {
 
 function renderResultsLockUI() {
   const locked = !!state.settings?.resultsLocked;
-  const banner = document.getElementById('results-locked-banner');
-  if (banner) banner.style.display = locked ? 'block' : 'none';
+  const sep = document.getElementById('status-lock-sep');
+  const lockText = document.getElementById('status-lock-text');
+  if (sep) sep.style.display = locked ? 'inline' : 'none';
+  if (lockText) lockText.style.display = locked ? 'inline' : 'none';
 
   const btn = document.getElementById('btn-lock-results');
   if (btn) {
@@ -1990,7 +2001,7 @@ function initSponsorsMobile() {
     let hw = 0; const half = Math.floor(els.length/2);
     for (let i=0;i<half;i++) hw += els[i].offsetWidth || 150;
     if (hw < 50) hw = half * 150;
-    const dur = Math.max(20, SPONSORS.length*10);
+    const dur = Math.max(8, SPONSORS.length*3);
     const st = document.createElement('style');
     st.textContent = `@keyframes ssm{0%{transform:translateX(0)}100%{transform:translateX(-${hw}px)}}`;
     document.head.appendChild(st);
