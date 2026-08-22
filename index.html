@@ -789,6 +789,44 @@ function calcStandings() {
 // ─────────────────────────────────────────────────────────────────────────────
 const HYBRID_SWITCH_ROUND = 5; // ab dieser Runde Buchholz-Modus
 
+// ── Gemeinsam genutzte Pairing-Helfer (Swiss-Auslosung UND Ausgleichsrunde) ──
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+// Vollständiges Backtracking für ein rematch-freies perfektes Matching.
+// hasPlayed(a,b): Rematch-Check. rankOf (optional): bevorzugt bei mehreren gültigen
+// Kandidaten die im Rang naheliegenden (verhindert, dass die Rematch-Vermeidung die
+// "Beste gegen Beste"-Logik aufweicht). Zufall bleibt Tie-Breaker unter gleich-nahen Kandidaten.
+function tryPairAll(ids, hasPlayed, allowRematch, rankOf) {
+  if (!ids.length) return [];
+  if (ids.length % 2 !== 0) return null;
+  const paired = new Array(ids.length).fill(false);
+  const candCount = ids.map((a,i) => ids.filter((b,j) => i!==j && (allowRematch||!hasPlayed(a,b))).length);
+  const order = ids.map((_,i)=>i).sort((a,b)=>candCount[a]-candCount[b]);
+  const res = [];
+  function bt(k) {
+    while (k < order.length && paired[order[k]]) k++;
+    if (k >= order.length) return true;
+    const ia = order[k]; const a = ids[ia];
+    let cands = ids.map((_,j)=>j).filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
+    cands = shuffle(cands);
+    if (rankOf) {
+      const rankA = rankOf.get(a) ?? 0;
+      cands.sort((j1,j2) => Math.abs((rankOf.get(ids[j1])??0)-rankA) - Math.abs((rankOf.get(ids[j2])??0)-rankA));
+    }
+    for (const ib of cands) {
+      paired[ia]=paired[ib]=true; res.push([a,ids[ib]]);
+      if (bt(k+1)) return true;
+      res.pop(); paired[ia]=paired[ib]=false;
+    }
+    return false;
+  }
+  return bt(0) ? res : null;
+}
+
 function generateSwissPairing() {
   const standings = calcStandings();
   if (standings.length < 2) { toast('Mindestens 2 Teams benötigt'); return null; }
@@ -798,11 +836,6 @@ function generateSwissPairing() {
 
   // ── Hilfsfunktionen ──
   const keyPair = (a,b) => [a,b].sort().join('_');
-  const shuffle = arr => {
-    const a = arr.slice();
-    for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-    return a;
-  };
 
   // ── Rematch-Historie ──
   const playedSet = new Set();
@@ -827,36 +860,8 @@ function generateSwissPairing() {
     eligibleIds = eligibleIds.filter(id => id !== byeTeam);
   }
 
-  // ── Backtracking ──
-  // rankOf (optional): bevorzugt bei mehreren gültigen Kandidaten die im Rang naheliegenden
-  // (verhindert, dass die Rematch-Vermeidung die "Beste gegen Beste"-Logik aufweicht).
-  // Zufall bleibt als Tie-Breaker unter gleich-nahen Kandidaten erhalten.
-  function tryPairAll(ids, allowRematch, rankOf) {
-    if (!ids.length) return [];
-    if (ids.length % 2 !== 0) return null;
-    const paired = new Array(ids.length).fill(false);
-    const candCount = ids.map((a,i) => ids.filter((b,j) => i!==j && (allowRematch||!hasPlayed(a,b))).length);
-    const order = ids.map((_,i)=>i).sort((a,b)=>candCount[a]-candCount[b]);
-    const res = [];
-    function bt(k) {
-      while (k < order.length && paired[order[k]]) k++;
-      if (k >= order.length) return true;
-      const ia = order[k]; const a = ids[ia];
-      let cands = ids.map((_,j)=>j).filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
-      cands = shuffle(cands);
-      if (rankOf) {
-        const rankA = rankOf.get(a) ?? 0;
-        cands.sort((j1,j2) => Math.abs((rankOf.get(ids[j1])??0)-rankA) - Math.abs((rankOf.get(ids[j2])??0)-rankA));
-      }
-      for (const ib of cands) {
-        paired[ia]=paired[ib]=true; res.push([a,ids[ib]]);
-        if (bt(k+1)) return true;
-        res.pop(); paired[ia]=paired[ib]=false;
-      }
-      return false;
-    }
-    return bt(0) ? res : null;
-  }
+  // (tryPairAll ist jetzt eine gemeinsam genutzte Funktion auf Modulebene, s.o.)
+  const tryPairAllLocal = (ids, allowRematch, rankOf) => tryPairAll(ids, hasPlayed, allowRematch, rankOf);
 
   // ── Adjacent Pairing mit lokalem Swap ──
   function pairAdjacent(ids, rankOf, allowRematch) {
@@ -898,7 +903,7 @@ function generateSwissPairing() {
     // vorsortiert) – findet eine rematch-freie Lösung, wenn eine existiert. Nur falls das
     // scheitert, greift als Sicherheitsnetz der bisherige greedy Ansatz (identisch zu vorher).
     const orderedByRank = [...eligibleIds].sort((a,b) => (buchRankOf.get(a)??999)-(buchRankOf.get(b)??999));
-    const fullMatch = tryPairAll(orderedByRank, false, buchRankOf);
+    const fullMatch = tryPairAllLocal(orderedByRank, false, buchRankOf);
     if (fullMatch) {
       fullMatch.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
     } else {
@@ -908,7 +913,7 @@ function generateSwissPairing() {
       const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
       leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
       if (rest.length > 0) {
-        const rp = tryPairAll(rest, false, buchRankOf) || tryPairAll(rest, true, buchRankOf);
+        const rp = tryPairAllLocal(rest, false, buchRankOf) || tryPairAllLocal(rest, true, buchRankOf);
         if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
       }
     }
@@ -938,7 +943,7 @@ function generateSwissPairing() {
     const rest = eligibleIds.filter(id=>!pairedGlobal.has(id));
     if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
     if (rest.length>0) {
-      const rp = tryPairAll(rest,false,rankOf)||tryPairAll(rest,true,rankOf);
+      const rp = tryPairAllLocal(rest,false,rankOf)||tryPairAllLocal(rest,true,rankOf);
       if (rp) rp.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
     }
   }
@@ -1294,10 +1299,15 @@ window.drawNextRoundPreview = async function() {
     return base;
   });
 
-  draftRound = { round: next, matches: roundData };
+  draftRound = { round: next, matches: roundData, kind: 'normal' };
   showSection('admin', null);
   renderDraftRoundPreview();
   toast(`Runde ${next} ausgelost – bitte prüfen & veröffentlichen`);
+};
+
+window.redrawDraft = function() {
+  if (draftRound?.kind === 'ausgleich') generateAusgleichsrunde();
+  else drawNextRoundPreview();
 };
 
 function renderDraftRoundPreview() {
@@ -1328,6 +1338,7 @@ function renderDraftRoundPreview() {
 
   let html = '<div class="card" style="border-color:var(--accent)">'
     + '<div class="card-title">🎲 Auslosung Runde ' + draftRound.round + ' – Vorschau (noch nicht auf den Handys sichtbar)</div>'
+    + (draftRound.note ? '<div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">' + draftRound.note + '</div>' : '')
     + (rematchCount
         ? '<div style="color:var(--red);font-weight:600;margin-bottom:.5rem">⚠️ ' + rematchCount + ' Rematch(es) in dieser Auslosung – bitte neu auslosen, bevor du veröffentlichst</div>'
         : '<div style="color:var(--green);font-weight:600;margin-bottom:.5rem">✅ Keine Rematches</div>')
@@ -1336,7 +1347,7 @@ function renderDraftRoundPreview() {
     + (rematchCount
         ? '<button class="btn btn-primary" disabled title="Erst veröffentlichbar, wenn keine Rematches mehr da sind">📲 Veröffentlichen (an Handys pushen)</button>'
         : '<button class="btn btn-primary" onclick="publishDraftRound()">📲 Veröffentlichen (an Handys pushen)</button>')
-    + '<button class="btn btn-ghost" onclick="drawNextRoundPreview()">🔄 Neu auslosen</button>'
+    + '<button class="btn btn-ghost" onclick="redrawDraft()">🔄 Neu auslosen</button>'
     + '<button class="btn btn-ghost" onclick="discardDraftRound()">✖ Verwerfen</button>'
     + (rematchCount
         ? '<button class="btn btn-danger btn-sm" onclick="publishDraftRound(true)">⚠ Trotzdem veröffentlichen (Rematch unvermeidbar)</button>'
@@ -1986,10 +1997,14 @@ window.fillRandomResults = async function() {
 };
 
 // ── Ausgleichsrunde ──
-window.generateAusgleichsrunde = async function() {
+// Nutzt jetzt dieselbe rangnahe Backtracking-Logik wie die normale Auslosung (tryPairAll)
+// und läuft über dieselbe Vorschau/Veröffentlichen-Stufe – vorher: eigene, schwächere
+// Paarungslogik ohne Rang-Bevorzugung, die sofort live schrieb.
+window.generateAusgleichsrunde = function() {
   if (!db) { toast('Nicht verbunden'); return; }
   const standings = calcStandings();
   const teamIds = standings.map(t => t.id);
+  const rankOf = new Map(standings.map((t,i) => [t.id, i]));
   const realGames = {};
   teamIds.forEach(id => realGames[id] = 0);
   Object.values(state.rounds).forEach(round => {
@@ -2005,38 +2020,31 @@ window.generateAusgleichsrunde = async function() {
   const needGame = teamIds.filter(id => realGames[id] < maxGames);
   if (!needGame.length) { toast('Alle Teams haben gleich viele Spiele'); return; }
   if (needGame.length % 2 !== 0) { toast(`⚠️ ${needGame.length} Teams mit Freirunde – ungerade Anzahl`); return; }
-  if (!confirm(`Ausgleichsrunde: Nur ${needGame.length} Teams spielen. Die anderen ${teamIds.length-needGame.length} spielen NICHT. Fortfahren?`)) return;
+
   const played = new Set();
   Object.values(state.rounds).forEach(round => {
     if (!Array.isArray(round)) return;
     round.forEach(m => { if (!m.bye) played.add([m.team1,m.team2].sort().join('_')); });
   });
   const hp = (a,b) => played.has([a,b].sort().join('_'));
-  const sorted = [...needGame].sort((a,b) => (standings.find(t=>t.id===b)?.pts||0)-(standings.find(t=>t.id===a)?.pts||0));
-  function tryPair(ids, allowRem) {
-    if (!ids.length) return [];
-    if (ids.length%2!==0) return null;
-    const paired = new Array(ids.length).fill(false); const res = [];
-    function bt(k) {
-      while(k<ids.length&&paired[k]) k++;
-      if(k>=ids.length) return true;
-      for(let j=k+1;j<ids.length;j++) {
-        if(paired[j]||(!allowRem&&hp(ids[k],ids[j]))) continue;
-        paired[k]=paired[j]=true; res.push([ids[k],ids[j]]);
-        if(bt(k+1)) return true;
-        res.pop(); paired[k]=paired[j]=false;
-      }
-      return false;
-    }
-    return bt(0) ? res : null;
-  }
-  const pairs = tryPair(sorted,false) || tryPair(sorted,true);
+
+  const sorted = [...needGame].sort((a,b) => (rankOf.get(a)??999) - (rankOf.get(b)??999));
+  const pairs = tryPairAll(sorted, hp, false, rankOf) || tryPairAll(sorted, hp, true, rankOf);
   if (!pairs) { toast('❌ Konnte keine Paarungen erstellen'); return; }
+
   const next = state.currentRound+1;
   const fc = parseInt(state.settings?.fieldCount)||15;
   const roundData = pairs.map(([a,b],i) => ({id:`r${next}m${i}`,team1:a,team2:b,field:(i%fc)+1}));
-  await fbUpdate('/tournament', {[`rounds/${next}`]:roundData, currentRound:next});
-  toast(`⚖️ Ausgleichsrunde ${next}: ${pairs.length} Partien`);
+
+  draftRound = {
+    round: next,
+    matches: roundData,
+    kind: 'ausgleich',
+    note: `⚖️ Ausgleichsrunde: nur ${needGame.length} von ${teamIds.length} Teams spielen (die mit weniger Spielen als das Maximum). Die anderen ${teamIds.length-needGame.length} pausieren diese Runde.`
+  };
+  showSection('admin', null);
+  renderDraftRoundPreview();
+  toast(`Ausgleichsrunde ${next} vorbereitet – bitte prüfen & veröffentlichen`);
 };
 
 
