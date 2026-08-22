@@ -321,8 +321,11 @@
 <main>
   <!-- PAARUNGEN -->
   <div id="sec-pairings" class="section active">
-    <div class="status-bar"><div class="dot"></div><span id="status-text">Verbinde...</span></div>
-    <div id="results-locked-banner" style="display:none;background:rgba(212,43,43,0.1);border:1px solid rgba(212,43,43,0.3);color:var(--red);border-radius:6px;padding:.5rem .75rem;font-size:.8rem;font-weight:600;margin-bottom:.75rem">🔒 Runde Abgeschlossen</div>
+    <div class="status-bar">
+      <div class="dot"></div><span id="status-text">Verbinde...</span>
+      <span id="status-lock-sep" style="display:none;color:var(--border)">·</span>
+      <span id="status-lock-text" style="display:none;color:var(--red);font-weight:700">🔒 Runde Abgeschlossen</span>
+    </div>
     <div id="round-nav" style="display:none;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem">
       <button class="btn btn-ghost btn-sm" onclick="navRound(-1)">◀ Zurück</button>
       <span id="round-nav-label" style="flex:1;text-align:center;font-size:.82rem;font-weight:600;color:var(--muted)">Runde –</span>
@@ -975,8 +978,10 @@ function renderAll() {
 
 function renderResultsLockUI() {
   const locked = !!state.settings?.resultsLocked;
-  const banner = document.getElementById('results-locked-banner');
-  if (banner) banner.style.display = locked ? 'block' : 'none';
+  const sep = document.getElementById('status-lock-sep');
+  const lockText = document.getElementById('status-lock-text');
+  if (sep) sep.style.display = locked ? 'inline' : 'none';
+  if (lockText) lockText.style.display = locked ? 'inline' : 'none';
 
   const btn = document.getElementById('btn-lock-results');
   if (btn) {
