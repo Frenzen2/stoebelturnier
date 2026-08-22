@@ -21,7 +21,7 @@
     --accent2: #a81f1f;
     --accent-glow: rgba(212,43,43,0.18);
     --text: #f0f0f0;
-    --muted: #888888;
+    --muted: #a2a7b8;
     --green: #27ae60;
     --red: #e74c3c;
     --blue: #2980b9;
@@ -110,7 +110,7 @@
   .result-tag.win  { background: rgba(46,204,113,.18); color: var(--green); }
   .result-tag.draw { background: rgba(52,152,219,.18); color: var(--blue); }
   .result-tag.loss { background: rgba(231,76,60,.18);  color: var(--red); }
-  .result-tag.open { background: rgba(122,127,154,.12); color: var(--muted); }
+  .result-tag.open { background: rgba(240,192,64,.16); color: var(--gold); }
   .bye-row { padding: 0.65rem 0.9rem; color: var(--muted); font-size: 0.84rem; font-style: italic; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.65rem; }
 
   /* ── Teams list ── */
@@ -1055,7 +1055,7 @@ function renderPairings() {
       </div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
         ${fieldHtml}
-        ${!hasResult?'<span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px;background:rgba(122,127,154,0.15);color:var(--muted)">OFFEN</span>':''}
+        ${!hasResult?'<span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px;background:rgba(240,192,64,0.16);color:var(--gold)">OFFEN</span>':''}
       </div>
       ${resultHtml}
     </div>`;
