@@ -104,7 +104,6 @@
   .pairing-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0.7rem 0.9rem; gap: 0.5rem; }
   .pairing-team { font-weight: 600; font-size: 0.88rem; }
   .pairing-team.right { text-align: right; }
-  .mine-label { font-size: 0.65rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
   .vs-badge { background: var(--surface2); color: var(--muted); font-size: 0.68rem; font-weight: 700; padding: 3px 7px; border-radius: 4px; letter-spacing: 1px; }
   .pairing-result { padding: 0.55rem 0.9rem; background: var(--surface2); display: flex; align-items: center; gap: 0.5rem; }
   .result-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; white-space: nowrap; }
@@ -114,23 +113,6 @@
   .result-tag.open { background: rgba(122,127,154,.12); color: var(--muted); }
   .bye-row { padding: 0.65rem 0.9rem; color: var(--muted); font-size: 0.84rem; font-style: italic; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.65rem; }
 
-  /* ── Standings ── */
-  .standings-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
-  .standings-table th { text-align: left; padding: 0.45rem 0.55rem; color: var(--muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
-  .standings-table th.num { text-align: right; }
-  .standings-table td { padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--border); }
-  .standings-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .standings-table tr:last-child td { border-bottom: none; }
-  .standings-table tr.highlight td { background: rgba(232,160,32,.06); }
-  .rank-cell { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
-  .rank-1 { color: var(--gold); text-shadow: 0 0 6px rgba(240,192,64,0.5); }
-  .rank-2 { color: #b0b8c8; }
-  .rank-3 { color: #c07a40; }
-  .pts-cell { font-weight: 700; color: var(--accent); font-size: 0.92rem; text-shadow: 0 0 6px rgba(212,43,43,0.3); }
-  .wl-w { color: var(--green); font-weight: 600; }
-  .wl-d { color: var(--blue); font-weight: 600; }
-  .wl-l { color: var(--red); font-weight: 600; }
-
   /* ── Teams list ── */
   .team-row { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
   .team-row:last-child { border-bottom: none; }
@@ -138,9 +120,7 @@
   .team-name-text { flex: 1; font-size: 0.88rem; }
   .pin-badge { font-size: 0.7rem; font-weight: 700; background: var(--surface2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; color: var(--muted); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 
-  /* ── Admin grid ── */
   @media (max-width: 580px) {
-    .admin-grid { grid-template-columns: 1fr; }
     .pairing-header { font-size: 0.78rem; }
   }
 
@@ -210,10 +190,6 @@
   /* ── Round progress bar ── */
   .progress-bar-wrap { background: var(--border); border-radius: 4px; height: 6px; margin-top: .4rem; overflow: hidden; }
   .progress-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .4s ease; }
-
-  /* ── Inline save confirm ── */
-  .save-confirm { display:none; font-size:.75rem; font-weight:700; color:var(--green); padding:.2rem .5rem; }
-  .save-confirm.show { display:inline; }
 
   /* ── Quick round button in pairings ── */
   .quick-round-bar {
@@ -301,7 +277,7 @@
     <div style="margin-top:.6rem">
       <div class="pin-skip" onclick="toggleAdminLogin()">⚙ Admin-Zugang</div>
     </div>
-    <div id="admin-login-row" style="display:none;margin-top:.75rem;display:none">
+    <div id="admin-login-row" style="display:none;margin-top:.75rem">
       <div class="inline-row" style="justify-content:center">
         <input type="password" id="overlay-admin-pw" placeholder="Admin-Passwort" style="max-width:180px;font-size:16px">
         <button class="btn btn-primary btn-sm" onclick="loginAsAdmin()">OK</button>
@@ -582,7 +558,7 @@ let state = {
   teams: {},       // id -> { name, pin }
   rounds: {},      // roundNum -> [ match ]
   currentRound: 0,
-  settings: { password: 'admin', title: 'Stöbelturnier 2025' }
+  settings: { password: 'admin', title: 'Stöbelturnier 2026' }
 };
 let session = {
   teamId: null,    // null = Gast
@@ -642,7 +618,6 @@ window.loginAsAdmin = function() {
     document.getElementById('admin-lock-card').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
     const navAn = document.getElementById('nav-analyse'); if (navAn) navAn.style.display = '';
-    const cfg = loadConfig();
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value = state.settings.fieldCount;
     renderAll();
     showSection('admin', null);
@@ -707,11 +682,6 @@ function checkPin() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Firebase
 // ─────────────────────────────────────────────────────────────────────────────
-function loadConfig() {
-  const r = localStorage.getItem('stoebel_fb_config');
-  return r ? JSON.parse(r) : null;
-}
-function saveConfig(cfg) { localStorage.setItem('stoebel_fb_config', JSON.stringify(cfg)); }
 function loadAdminPw() { return localStorage.getItem('stoebel_admin_pw') || 'admin'; }
 
 const FIREBASE_CONFIG = {
@@ -781,9 +751,6 @@ function calcStandings() {
             .sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins||a.name.localeCompare(b.name));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Swiss Pairing
-// ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // Swiss Pairing – Hybrid: Bracket (Runden 1-4) → Buchholz-gewichtet (ab Runde 5)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1290,7 +1257,7 @@ window.drawNextRoundPreview = async function() {
   const next = state.currentRound+1;
   const matches = generateSwissPairing();
   if (!matches) return;
-  const fieldCount = parseInt(state.settings?.fieldCount) || 6;
+  const fieldCount = parseInt(state.settings?.fieldCount) || 15;
   // Assign fields round-robin (only real matches, not byes)
   let fieldIdx = 0;
   const roundData = matches.map((m,i) => {
@@ -1684,11 +1651,6 @@ window.unlockAdmin = function() {
     const navAn2 = document.getElementById('nav-analyse'); if (navAn2) navAn2.style.display='';
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
     if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
-    // Firebase config collapsed by default (already configured)
-    const fbBody = document.getElementById('fb-config');
-    const fbArrow = document.getElementById('arrow-fb-config');
-    if (fbBody) { fbBody.classList.remove('open'); }
-    if (fbArrow) { fbArrow.classList.remove('open'); }
     renderAdminTeams();
     updateTeamsBadge();
   } else { toast('Falsches Passwort'); }
@@ -1851,7 +1813,7 @@ window.runSimulation = async function() {
         }
       }
 
-      // Simulate results – gleiche Struktur, die generateNextRound() nach Firebase schreibt
+      // Simulate results – gleiche Struktur, die drawNextRoundPreview() nach Firebase schreibt
       const roundData = matches.map((m,i) => {
         const base = {id:`r${r}m${i}`, ...m};
         if (!m.bye) { const [s1,s2] = randomStoebelResult(); base.score1=s1; base.score2=s2; }
