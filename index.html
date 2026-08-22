@@ -1101,6 +1101,7 @@ function renderPairings() {
       </div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
         ${fieldHtml}
+        <span class="field-chip-ghost">🎯 Anwurf: ${isT1 ? myName : oppName}</span>
         ${!hasResult?'<span class="result-tag open" style="margin-left:auto;font-size:.78rem;padding:4px 10px;background:rgba(240,192,64,0.16);color:var(--gold)">OFFEN</span>':''}
       </div>
       ${resultHtml}
@@ -1132,7 +1133,7 @@ function renderPairings() {
     const fieldHtml = m.field ? `<span class="field-chip-ghost">📍 Feld ${m.field}</span>` : '';
     return `<div class="pairing-card${isMine?' mine':''}">
       <div class="pairing-header">
-        <div><div class="pairing-team">${tn(m.team1)}</div>${tag1}</div>
+        <div><div class="pairing-team">${tn(m.team1)}</div><span class="field-chip-ghost" style="font-size:.65rem;padding:1px 5px;margin-right:3px">🎯 Anwurf</span>${tag1}</div>
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
           <div class="vs-badge">VS</div>
           ${fieldHtml}
