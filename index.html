@@ -2019,19 +2019,7 @@ window.generateAusgleichsrunde = function() {
   const maxGames = Math.max(...Object.values(realGames));
   const needGame = teamIds.filter(id => realGames[id] < maxGames);
   if (!needGame.length) { toast('Alle Teams haben gleich viele Spiele'); return; }
-
-  // Bei ungerader Anzahl: ein zusätzliches Team aus der "schon genug Spiele"-Gruppe
-  // dazunehmen (das schlechtestplatzierte davon), damit die Runde trotzdem stattfinden
-  // kann. Das ist häufig der Fall, weil bei ungerader Teamzahl über mehrere Runden
-  // meist eine ungerade Anzahl an Teams eine Freirunde hatte.
-  const pool = [...needGame];
-  let extraTeam = null;
-  if (pool.length % 2 !== 0) {
-    const notNeeding = teamIds.filter(id => !pool.includes(id));
-    extraTeam = [...notNeeding].sort((a,b) => (rankOf.get(b)??0)-(rankOf.get(a)??0))[0];
-    if (!extraTeam) { toast(`⚠️ ${pool.length} Teams mit Freirunde – ungerade Anzahl, kein Ausgleichs-Team verfügbar`); return; }
-    pool.push(extraTeam);
-  }
+  if (needGame.length % 2 !== 0) { toast(`⚠️ ${needGame.length} Teams mit Freirunde – ungerade Anzahl`); return; }
 
   const played = new Set();
   Object.values(state.rounds).forEach(round => {
@@ -2040,7 +2028,7 @@ window.generateAusgleichsrunde = function() {
   });
   const hp = (a,b) => played.has([a,b].sort().join('_'));
 
-  const sorted = [...pool].sort((a,b) => (rankOf.get(a)??999) - (rankOf.get(b)??999));
+  const sorted = [...needGame].sort((a,b) => (rankOf.get(a)??999) - (rankOf.get(b)??999));
   const pairs = tryPairAll(sorted, hp, false, rankOf) || tryPairAll(sorted, hp, true, rankOf);
   if (!pairs) { toast('❌ Konnte keine Paarungen erstellen'); return; }
 
@@ -2048,11 +2036,12 @@ window.generateAusgleichsrunde = function() {
   const fc = parseInt(state.settings?.fieldCount)||15;
   const roundData = pairs.map(([a,b],i) => ({id:`r${next}m${i}`,team1:a,team2:b,field:(i%fc)+1}));
 
-  const note = extraTeam
-    ? `⚖️ Ausgleichsrunde: ${needGame.length} Teams mit weniger Spielen + ${tn(extraTeam)} als Ausgleichs-Partner (ungerade Anzahl) = ${pool.length} von ${teamIds.length} Teams. Die anderen ${teamIds.length-pool.length} pausieren diese Runde.`
-    : `⚖️ Ausgleichsrunde: nur ${pool.length} von ${teamIds.length} Teams spielen (die mit weniger Spielen als das Maximum). Die anderen ${teamIds.length-pool.length} pausieren diese Runde.`;
-
-  draftRound = { round: next, matches: roundData, kind: 'ausgleich', note };
+  draftRound = {
+    round: next,
+    matches: roundData,
+    kind: 'ausgleich',
+    note: `⚖️ Ausgleichsrunde: nur ${needGame.length} von ${teamIds.length} Teams spielen (die mit weniger Spielen als das Maximum). Die anderen ${teamIds.length-needGame.length} pausieren diese Runde.`
+  };
   showSection('admin', null);
   renderDraftRoundPreview();
   toast(`Ausgleichsrunde ${next} vorbereitet – bitte prüfen & veröffentlichen`);
