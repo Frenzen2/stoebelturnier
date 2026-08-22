@@ -828,7 +828,10 @@ function generateSwissPairing() {
   }
 
   // ── Backtracking ──
-  function tryPairAll(ids, allowRematch) {
+  // rankOf (optional): bevorzugt bei mehreren gültigen Kandidaten die im Rang naheliegenden
+  // (verhindert, dass die Rematch-Vermeidung die "Beste gegen Beste"-Logik aufweicht).
+  // Zufall bleibt als Tie-Breaker unter gleich-nahen Kandidaten erhalten.
+  function tryPairAll(ids, allowRematch, rankOf) {
     if (!ids.length) return [];
     if (ids.length % 2 !== 0) return null;
     const paired = new Array(ids.length).fill(false);
@@ -841,6 +844,10 @@ function generateSwissPairing() {
       const ia = order[k]; const a = ids[ia];
       let cands = ids.map((_,j)=>j).filter(j => !paired[j] && j!==ia && (allowRematch||!hasPlayed(a,ids[j])));
       cands = shuffle(cands);
+      if (rankOf) {
+        const rankA = rankOf.get(a) ?? 0;
+        cands.sort((j1,j2) => Math.abs((rankOf.get(ids[j1])??0)-rankA) - Math.abs((rankOf.get(ids[j2])??0)-rankA));
+      }
       for (const ib of cands) {
         paired[ia]=paired[ib]=true; res.push([a,ids[ib]]);
         if (bt(k+1)) return true;
@@ -891,7 +898,7 @@ function generateSwissPairing() {
     // vorsortiert) – findet eine rematch-freie Lösung, wenn eine existiert. Nur falls das
     // scheitert, greift als Sicherheitsnetz der bisherige greedy Ansatz (identisch zu vorher).
     const orderedByRank = [...eligibleIds].sort((a,b) => (buchRankOf.get(a)??999)-(buchRankOf.get(b)??999));
-    const fullMatch = tryPairAll(orderedByRank, false);
+    const fullMatch = tryPairAll(orderedByRank, false, buchRankOf);
     if (fullMatch) {
       fullMatch.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
     } else {
@@ -901,7 +908,7 @@ function generateSwissPairing() {
       const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
       leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
       if (rest.length > 0) {
-        const rp = tryPairAll(rest, false) || tryPairAll(rest, true);
+        const rp = tryPairAll(rest, false, buchRankOf) || tryPairAll(rest, true, buchRankOf);
         if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
       }
     }
@@ -931,7 +938,7 @@ function generateSwissPairing() {
     const rest = eligibleIds.filter(id=>!pairedGlobal.has(id));
     if (carry && !pairedGlobal.has(carry) && !rest.includes(carry)) rest.push(carry);
     if (rest.length>0) {
-      const rp = tryPairAll(rest,false)||tryPairAll(rest,true);
+      const rp = tryPairAll(rest,false,rankOf)||tryPairAll(rest,true,rankOf);
       if (rp) rp.forEach(([a,b])=>{ finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
     }
   }
