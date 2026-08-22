@@ -231,12 +231,12 @@ async function init() {
   }
 }
 
-// ── Standings calc ──
+// ── Standings calc (Tiebreaker-Reihenfolge identisch zu index.html: Pkt -> Diff -> Buchholz -> Siege -> Name) ──
 function calcStandings() {
   const ids = Object.keys(state.teams);
   if (!ids.length) return [];
   const s = {};
-  ids.forEach(id => s[id] = {pts:0,wins:0,draws:0,losses:0,diff:0,played:0});
+  ids.forEach(id => s[id] = {pts:0,wins:0,draws:0,losses:0,diff:0,played:0,buchholz:0,opponents:[]});
   Object.values(state.rounds).forEach(round => {
     if (!Array.isArray(round)) return;
     round.forEach(m => {
@@ -244,14 +244,16 @@ function calcStandings() {
       if (m.score1===undefined||!s[m.team1]||!s[m.team2]) return;
       const [t1,t2,s1,s2] = [m.team1,m.team2,m.score1,m.score2];
       s[t1].played++; s[t2].played++;
+      s[t1].opponents.push(t2); s[t2].opponents.push(t1);
       s[t1].diff+=s1-s2; s[t2].diff+=s2-s1;
       if (s1>s2) { s[t1].pts+=2; s[t1].wins++; s[t2].losses++; }
       else if (s2>s1) { s[t2].pts+=2; s[t2].wins++; s[t1].losses++; }
       else { s[t1].pts++; s[t2].pts++; s[t1].draws++; s[t2].draws++; }
     });
   });
+  ids.forEach(id => { s[id].buchholz = s[id].opponents.reduce((sum,opp) => sum + (s[opp]?.pts||0), 0); });
   return ids.map(id=>({id,name:state.teams[id]?.name||id,...s[id]}))
-            .sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.wins-a.wins||a.name.localeCompare(b.name));
+            .sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins||a.name.localeCompare(b.name));
 }
 
 // ── Render pairings ──
@@ -414,9 +416,6 @@ function initSponsors() {
     slides.style.animation=`ss ${dur}s linear infinite`;
   }));
 }
-
-// ── Scale to screen ──
-window.toggleStandings = toggleStandings;
 
 // ── Init ──
 init();
