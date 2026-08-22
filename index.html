@@ -887,14 +887,23 @@ function generateSwissPairing() {
                       .map((id,i) => [id,i])
     );
 
-    const { pairs, leftover } = pairAdjacent(eligibleIds, buchRankOf, false);
-    pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+    // Zuerst vollständiges Backtracking auf dem GESAMTEN Pool versuchen (nach Buchholz-Rang
+    // vorsortiert) – findet eine rematch-freie Lösung, wenn eine existiert. Nur falls das
+    // scheitert, greift als Sicherheitsnetz der bisherige greedy Ansatz (identisch zu vorher).
+    const orderedByRank = [...eligibleIds].sort((a,b) => (buchRankOf.get(a)??999)-(buchRankOf.get(b)??999));
+    const fullMatch = tryPairAll(orderedByRank, false);
+    if (fullMatch) {
+      fullMatch.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+    } else {
+      const { pairs, leftover } = pairAdjacent(eligibleIds, buchRankOf, false);
+      pairs.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
 
-    const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
-    leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
-    if (rest.length > 0) {
-      const rp = tryPairAll(rest, false) || tryPairAll(rest, true);
-      if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+      const rest = eligibleIds.filter(id => !pairedGlobal.has(id));
+      leftover.forEach(id => { if (!rest.includes(id)) rest.push(id); });
+      if (rest.length > 0) {
+        const rp = tryPairAll(rest, false) || tryPairAll(rest, true);
+        if (rp) rp.forEach(([a,b]) => { finalPairs.push([a,b]); pairedGlobal.add(a); pairedGlobal.add(b); });
+      }
     }
 
   } else {
