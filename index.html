@@ -511,7 +511,7 @@
           <div><label class="label">Runden</label><input type="number" id="sim-rounds" value="13" min="2" max="20" style="width:70px"></div>
           <button class="btn btn-primary" onclick="runSimulation()">▶ Simulation starten</button>
         </div>
-        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft lokal – schreibt nichts in Firebase. Prüft Rematches, Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
+        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft lokal mit dem echten Pairing-Algorithmus – schreibt nichts in Firebase. Prüft Rematches, Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
         <div id="sim-output" style="display:none">
           <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
@@ -1761,201 +1761,107 @@ window.runSimulation = function() {
   const warn = msg => { log.push('⚠️  ' + msg); warnings++; };
   const err  = msg => { log.push('❌ ' + msg); errors++; };
 
-  out(`━━━ Simulation: ${numTeams} Teams, ${numRounds} Runden ━━━\n`);
+  out(`━━━ Simulation: ${numTeams} Teams, ${numRounds} Runden ━━━`);
+  out(`(nutzt dieselben Funktionen wie das Live-System: calcStandings() / generateSwissPairing())\n`);
 
   // Build local teams
   const simTeams = {};
   for (let i = 1; i <= numTeams; i++) simTeams[`t${i}`] = { name: `Team ${String(i).padStart(2,'0')}` };
-  const simRounds = {};
 
-  function simStandings() {
-    const ids = Object.keys(simTeams);
-    const s = {};
-    ids.forEach(id => s[id] = { pts:0, wins:0, draws:0, losses:0, diff:0, played:0, opponents:[] });
-    Object.values(simRounds).forEach(round => {
-      if (!Array.isArray(round)) return;
-      round.forEach(m => {
-        if (m.bye) { if (s[m.team1]) { s[m.team1].played+=1; } return; }
-        if (m.score1===undefined||!s[m.team1]||!s[m.team2]) return;
-        s[m.team1].opponents.push(m.team2); s[m.team2].opponents.push(m.team1);
-        s[m.team1].played+=1; s[m.team2].played+=1;
-        s[m.team1].diff+=m.score1-m.score2; s[m.team2].diff+=m.score2-m.score1;
-        if (m.score1>m.score2){ s[m.team1].pts+=2; s[m.team1].wins+=1; s[m.team2].losses+=1; }
-        else if (m.score2>m.score1){ s[m.team2].pts+=2; s[m.team2].wins+=1; s[m.team1].losses+=1; }
-        else { s[m.team1].pts+=1; s[m.team2].pts+=1; s[m.team1].draws+=1; s[m.team2].draws+=1; }
-      });
-    });
-    ids.forEach(id => { s[id].buchholz = s[id].opponents.reduce((sum,o)=>sum+(s[o]?.pts||0),0); });
-    return ids.map(id=>({id,...s[id]})).sort((a,b)=>b.pts-a.pts||b.diff-a.diff||b.buchholz-a.buchholz||b.wins-a.wins);
-  }
-
-  function simPairing(roundNum) {
-    const standings = simStandings();
-    const useBuchholz = roundNum >= HYBRID_SWITCH_ROUND;
-    const kp = (a,b) => [a,b].sort().join('_');
-    const sh = arr => { const a=arr.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
-    const playedSet = new Set();
-    const byeHist = new Map();
-    Object.entries(simRounds).forEach(([rn,round]) => {
-      if (!Array.isArray(round)) return;
-      round.forEach(m => {
-        if (m.bye) { byeHist.set(m.team1, Math.max(byeHist.get(m.team1)||0, parseInt(rn))); }
-        else { playedSet.add(kp(m.team1,m.team2)); }
-      });
-    });
-    const hp = (a,b) => playedSet.has(kp(a,b));
-
-    let eligibleIds = standings.map(t=>t.id);
-    let byeTeam = null;
-    if (eligibleIds.length%2!==0) {
-      const wf=[...eligibleIds].reverse();
-      byeTeam = wf.find(id=>!byeHist.has(id)) ?? wf.find(id=>byeHist.get(id)!==roundNum-1) ?? wf[0];
-      eligibleIds = eligibleIds.filter(id=>id!==byeTeam);
-    }
-
-    function pairAdj(ids, rankOf, allowRem) {
-      const ord=ids.slice().sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999));
-      const pairs=[]; const lo=[]; let i=0;
-      while(i<ord.length){
-        if(i===ord.length-1){lo.push(ord[i]);break;}
-        const a=ord[i],b=ord[i+1];
-        if(allowRem||!hp(a,b)){pairs.push([a,b]);i+=2;continue;}
-        if(i+3<ord.length){
-          const c=ord[i+2],d=ord[i+3];
-          if((!hp(a,c)||allowRem)&&(!hp(b,d)||allowRem)){pairs.push([a,c],[b,d]);i+=4;continue;}
-          if((!hp(a,d)||allowRem)&&(!hp(b,c)||allowRem)){pairs.push([a,d],[b,c]);i+=4;continue;}
-        }
-        lo.push(a);i++;
-      }
-      return {pairs,leftover:lo};
-    }
-    function tryAll(ids,allowRem){
-      if(!ids.length)return[];
-      if(ids.length%2!==0)return null;
-      const paired=new Array(ids.length).fill(false);
-      const res=[];
-      function bt(k){
-        while(k<ids.length&&paired[k])k++;
-        if(k>=ids.length)return true;
-        let cands=ids.map((_,j)=>j).filter(j=>!paired[j]&&j!==k&&(allowRem||!hp(ids[k],ids[j])));
-        cands=sh(cands);
-        for(const j of cands){paired[k]=paired[j]=true;res.push([ids[k],ids[j]]);if(bt(k+1))return true;res.pop();paired[k]=paired[j]=false;}
-        return false;
-      }
-      return bt(0)?res:null;
-    }
-
-    const finalPairs=[]; const pg=new Set();
-
-    if (useBuchholz) {
-      const maxPts=Math.max(...standings.map(t=>t.pts),1);
-      const maxBH=Math.max(...standings.map(t=>t.buchholz),1);
-      const scoreOf=new Map(standings.map(t=>[t.id,(t.pts/maxPts)*100+(t.buchholz/maxBH)*10]));
-      const bRank=new Map([...eligibleIds].sort((a,b)=>(scoreOf.get(b)||0)-(scoreOf.get(a)||0)).map((id,i)=>[id,i]));
-      const {pairs,leftover}=pairAdj(eligibleIds,bRank,false);
-      pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
-      const rest=eligibleIds.filter(id=>!pg.has(id));
-      leftover.forEach(id=>{if(!rest.includes(id))rest.push(id);});
-      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
-    } else {
-      const ptOf=new Map(standings.map(t=>[t.id,t.pts]));
-      const rankOf=new Map(standings.map((t,i)=>[t.id,i]));
-      const brackets=new Map();
-      eligibleIds.forEach(id=>{const p=ptOf.get(id)||0;if(!brackets.has(p))brackets.set(p,[]);brackets.get(p).push(id);});
-      const bpts=[...brackets.keys()].sort((a,b)=>b-a);
-      let carry=null;
-      for(const pts of bpts){
-        let ids=sh((brackets.get(pts)||[]).filter(id=>!pg.has(id)).sort((a,b)=>(rankOf.get(a)||999)-(rankOf.get(b)||999)));
-        if(carry!==null){ids=[carry,...ids];carry=null;}
-        if(!ids.length)continue;
-        const {pairs,leftover}=pairAdj(ids,rankOf,false);
-        pairs.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});
-        if(leftover.length>0)carry=leftover[0];
-      }
-      const rest=eligibleIds.filter(id=>!pg.has(id));
-      if(carry&&!pg.has(carry)&&!rest.includes(carry))rest.push(carry);
-      if(rest.length){const rp=tryAll(rest,false)||tryAll(rest,true);if(rp)rp.forEach(([a,b])=>{finalPairs.push([a,b]);pg.add(a);pg.add(b);});}
-    }
-
-    let rematchCount=0;
-    finalPairs.forEach(([a,b])=>{if(hp(a,b))rematchCount++;});
-    const matches=finalPairs.map(([a,b])=>({team1:a,team2:b}));
-    if(byeTeam)matches.push({team1:byeTeam,bye:true});
-    return {matches, rematchCount};
-  }
+  // Echten State kurz durch einen lokalen Simulations-State ersetzen, damit
+  // calcStandings()/generateSwissPairing() unveraendert (wie im Live-Betrieb) genutzt werden.
+  const realState = state;
+  state = { teams: simTeams, rounds: {}, currentRound: 0, settings: {} };
 
   const byeCount={}; let totalRematches=0;
 
-  for (let r=1;r<=numRounds;r++) {
-    const mode = r >= HYBRID_SWITCH_ROUND ? '📊 Buchholz' : '🏆 Bracket';
-    out(`\n── Runde ${r} [${mode}] ──`);
-    const {matches, rematchCount} = simPairing(r);
-    totalRematches += rematchCount;
-    if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
+  try {
+    for (let r=1;r<=numRounds;r++) {
+      const mode = r >= HYBRID_SWITCH_ROUND ? '📊 Buchholz' : '🏆 Bracket';
+      out(`\n── Runde ${r} [${mode}] ──`);
 
-    // Every team appears exactly once?
-    const seen=new Set(); let dupes=0;
-    matches.forEach(m => {
-      if (seen.has(m.team1)){ err(`${simTeams[m.team1].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team1);
-      if (!m.bye){ if (seen.has(m.team2)){ err(`${simTeams[m.team2].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team2); }
-    });
-    const missing=Object.keys(simTeams).filter(id=>!seen.has(id));
-    if (missing.length>0) err(`${missing.length} Teams fehlen in Runde ${r}`);
-    if (dupes===0&&missing.length===0) ok(`Alle ${numTeams} Teams korrekt zugeteilt`);
+      const playedBefore = new Set();
+      Object.values(state.rounds).forEach(round => {
+        round.forEach(m => { if (!m.bye && m.team2) playedBefore.add([m.team1,m.team2].sort().join('_')); });
+      });
 
-    // Bye
-    const byeM=matches.find(m=>m.bye);
-    if (numTeams%2!==0) {
-      if (!byeM) err(`Keine Freirunde obwohl ungerade Teamzahl!`);
-      else {
-        byeCount[byeM.team1]=(byeCount[byeM.team1]||0)+1;
-        if (byeCount[byeM.team1]>1) warn(`${simTeams[byeM.team1].name} hat ${byeCount[byeM.team1]}x Freirunde`);
-        else ok(`Freirunde: ${simTeams[byeM.team1].name}`);
+      const matches = generateSwissPairing();
+      if (!matches) { err(`Runde ${r}: Pairing fehlgeschlagen`); break; }
+
+      let rematchCount = 0;
+      matches.forEach(m => { if (!m.bye && playedBefore.has([m.team1,m.team2].sort().join('_'))) rematchCount++; });
+      totalRematches += rematchCount;
+      if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
+
+      // Every team appears exactly once?
+      const seen=new Set(); let dupes=0;
+      matches.forEach(m => {
+        if (seen.has(m.team1)){ err(`${simTeams[m.team1].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team1);
+        if (!m.bye){ if (seen.has(m.team2)){ err(`${simTeams[m.team2].name} doppelt in Runde ${r}`); dupes++; } seen.add(m.team2); }
+      });
+      const missing=Object.keys(simTeams).filter(id=>!seen.has(id));
+      if (missing.length>0) err(`${missing.length} Teams fehlen in Runde ${r}`);
+      if (dupes===0&&missing.length===0) ok(`Alle ${numTeams} Teams korrekt zugeteilt`);
+
+      // Bye
+      const byeM=matches.find(m=>m.bye);
+      if (numTeams%2!==0) {
+        if (!byeM) err(`Keine Freirunde obwohl ungerade Teamzahl!`);
+        else {
+          byeCount[byeM.team1]=(byeCount[byeM.team1]||0)+1;
+          if (byeCount[byeM.team1]>1) warn(`${simTeams[byeM.team1].name} hat ${byeCount[byeM.team1]}x Freirunde`);
+          else ok(`Freirunde: ${simTeams[byeM.team1].name}`);
+        }
       }
+
+      // Simulate results – gleiche Struktur, die generateNextRound() nach Firebase schreibt
+      const roundData = matches.map((m,i) => {
+        const base = {id:`r${r}m${i}`, ...m};
+        if (!m.bye) { base.score1=Math.floor(Math.random()*20); base.score2=Math.floor(Math.random()*20); }
+        return base;
+      });
+      state.rounds[r] = roundData;
+      state.currentRound = r;
+
+      // Points sanity
+      // Punkte dieser Runde (nicht kumulativ) - jede Partie vergibt genau 2 Punkte (Sieg 2:0 oder Unentsch. 1:1)
+      const matchCount = matches.filter(m=>!m.bye).length;
+      const roundPts = roundData.filter(m=>!m.bye).reduce((s,m)=>s+(m.score1>m.score2?2:m.score2>m.score1?2:2),0);
+      if (roundPts !== matchCount*2)
+        err(`Runde ${r}: Rundenpunkte ${roundPts} ≠ erwartet ${matchCount*2}`);
+      else ok(`Runde ${r}: ${matchCount} Partien, ${roundPts} Pkt vergeben ✓`);
     }
 
-    // Simulate results
-    simRounds[r] = matches.map((m,i)=>{
-      const base={id:`r${r}m${i}`,...m};
-      if (!m.bye){ base.score1=Math.floor(Math.random()*20); base.score2=Math.floor(Math.random()*20); }
-      return base;
+    // Abschlussprüfung
+    out(`\n━━━ Abschlussprüfung ━━━`);
+    const final = calcStandings();
+
+    // Differenz-Konsistenz prüfen
+    let diffOk=true;
+    final.forEach(t=>{
+      if (!Number.isFinite(t.diff)){err(`Diff-Fehler: ${simTeams[t.id].name}`);diffOk=false;}
+    });
+    if (diffOk) ok('Differenz-Wertung für alle Teams korrekt');
+
+    // Top 5
+    out(`\nFinal-Tabelle (Top 5):`);
+    final.slice(0,5).forEach((t,i)=>{
+      out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Diff: ${t.diff>=0?'+':''}${t.diff}  BH: ${t.buchholz}  Siege: ${t.wins}`);
     });
 
-    // Points sanity
-    // Punkte dieser Runde (nicht kumulativ) - jede Partie vergibt genau 2 Punkte (Sieg 2:0 oder Unentsch. 1:1)
-    const matchCount = matches.filter(m=>!m.bye).length;
-    const roundPts = simRounds[r].filter(m=>!m.bye).reduce((s,m)=>s+(m.score1>m.score2?2:m.score2>m.score1?2:2),0);
-    if (roundPts !== matchCount*2)
-      err(`Runde ${r}: Rundenpunkte ${roundPts} ≠ erwartet ${matchCount*2}`);
-    else ok(`Runde ${r}: ${matchCount} Partien, ${roundPts} Pkt vergeben ✓`);
+    out(`\nRematches gesamt: ${totalRematches}`);
+    if (totalRematches===0) ok('Keine Rematches!');
+    else if (totalRematches<=numRounds) ok(`${totalRematches} Rematch(es) – akzeptabel`);
+    else warn(`${totalRematches} Rematches – zu viele?`);
+
+    out(`\n━━━ Ergebnis: ${errors} Fehler · ${warnings} Warnungen ━━━`);
+    if (errors===0&&warnings===0) out('🏆 Alles perfekt!');
+    else if (errors===0) out('👍 Keine kritischen Fehler');
+    else out('🔴 Kritische Fehler – bitte melden!');
+  } finally {
+    // Echten State in jedem Fall wiederherstellen, auch bei Fehlern
+    state = realState;
   }
-
-  // Abschlussprüfung
-  out(`\n━━━ Abschlussprüfung ━━━`);
-  const final=simStandings();
-
-  // Differenz-Konsistenz prüfen
-  let diffOk=true;
-  final.forEach(t=>{
-    if (!Number.isFinite(t.diff)){err(`Diff-Fehler: ${simTeams[t.id].name}`);diffOk=false;}
-  });
-  if (diffOk) ok('Differenz-Wertung für alle Teams korrekt');
-
-  // Top 5
-  out(`\nFinal-Tabelle (Top 5):`);
-  final.slice(0,5).forEach((t,i)=>{
-    out(`  ${i+1}. ${simTeams[t.id].name.padEnd(12)} ${String(t.pts).padStart(3)} Pkt  Diff: ${t.diff>=0?'+':''}${t.diff}  BH: ${t.buchholz}  Siege: ${t.wins}`);
-  });
-
-  out(`\nRematches gesamt: ${totalRematches}`);
-  if (totalRematches===0) ok('Keine Rematches!');
-  else if (totalRematches<=numRounds) ok(`${totalRematches} Rematch(es) – akzeptabel`);
-  else warn(`${totalRematches} Rematches – zu viele?`);
-
-  out(`\n━━━ Ergebnis: ${errors} Fehler · ${warnings} Warnungen ━━━`);
-  if (errors===0&&warnings===0) out('🏆 Alles perfekt!');
-  else if (errors===0) out('👍 Keine kritischen Fehler');
-  else out('🔴 Kritische Fehler – bitte melden!');
 
   document.getElementById('sim-log').textContent=log.join('\n');
   document.getElementById('sim-output').style.display='block';
