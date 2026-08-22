@@ -511,7 +511,7 @@
           <div><label class="label">Runden</label><input type="number" id="sim-rounds" value="13" min="2" max="20" style="width:70px"></div>
           <button class="btn btn-primary" onclick="runSimulation()">▶ Simulation starten</button>
         </div>
-        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft lokal mit dem echten Pairing-Algorithmus – schreibt nichts in Firebase. Prüft Rematches, Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
+        <p style="font-size:.73rem;color:var(--muted);margin-bottom:.75rem">Läuft mit dem echten Pairing-Algorithmus und speichert das Ergebnis unter <code>/simulation</code> in Firebase (komplett getrennt von euren echten Turnierdaten unter <code>/tournament</code>). Prüft Rematches (inkl. welche Teams/Runde), Freirunden und Buchholz. Tipp: 41 Teams / 13 Runden = euer reales Szenario vom letzten Jahr.</p>
         <div id="sim-output" style="display:none">
           <div id="sim-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:360px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
@@ -1752,7 +1752,8 @@ function updateTeamsBadge() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Simulation & Robustness Test
 // ─────────────────────────────────────────────────────────────────────────────
-window.runSimulation = function() {
+window.runSimulation = async function() {
+  if (!db) { toast('Nicht verbunden'); return; }
   const numTeams  = parseInt(document.getElementById('sim-teams').value)  || 40;
   const numRounds = parseInt(document.getElementById('sim-rounds').value) || 6;
   const log = []; let errors = 0; let warnings = 0;
@@ -1774,24 +1775,32 @@ window.runSimulation = function() {
   state = { teams: simTeams, rounds: {}, currentRound: 0, settings: {} };
 
   const byeCount={}; let totalRematches=0;
+  const playedRound = new Map(); // pairKey -> Runde, in der zuerst gegeneinander gespielt wurde
 
   try {
     for (let r=1;r<=numRounds;r++) {
       const mode = r >= HYBRID_SWITCH_ROUND ? '📊 Buchholz' : '🏆 Bracket';
       out(`\n── Runde ${r} [${mode}] ──`);
 
-      const playedBefore = new Set();
-      Object.values(state.rounds).forEach(round => {
-        round.forEach(m => { if (!m.bye && m.team2) playedBefore.add([m.team1,m.team2].sort().join('_')); });
-      });
-
       const matches = generateSwissPairing();
       if (!matches) { err(`Runde ${r}: Pairing fehlgeschlagen`); break; }
 
-      let rematchCount = 0;
-      matches.forEach(m => { if (!m.bye && playedBefore.has([m.team1,m.team2].sort().join('_'))) rematchCount++; });
-      totalRematches += rematchCount;
-      if (rematchCount>0) warn(`${rematchCount} Rematch(es) in Runde ${r}`);
+      const rematchDetails = [];
+      matches.forEach(m => {
+        if (m.bye || !m.team2) return;
+        const key = [m.team1,m.team2].sort().join('_');
+        const firstRound = playedRound.get(key);
+        if (firstRound !== undefined) {
+          rematchDetails.push(`     ⚠ ${simTeams[m.team1].name} vs ${simTeams[m.team2].name} (schon in Runde ${firstRound})`);
+        } else {
+          playedRound.set(key, r);
+        }
+      });
+      totalRematches += rematchDetails.length;
+      if (rematchDetails.length) {
+        warn(`${rematchDetails.length} Rematch(es) in Runde ${r}`);
+        rematchDetails.forEach(d => out(d));
+      }
 
       // Every team appears exactly once?
       const seen=new Set(); let dupes=0;
@@ -1858,6 +1867,20 @@ window.runSimulation = function() {
     if (errors===0&&warnings===0) out('🏆 Alles perfekt!');
     else if (errors===0) out('👍 Keine kritischen Fehler');
     else out('🔴 Kritische Fehler – bitte melden!');
+
+    // In Firebase unter einem eigenen Pfad ablegen (nicht /tournament!), damit
+    // die Auslosung im Detail nachvollzogen/analysiert werden kann.
+    try {
+      await fbSet('/simulation', {
+        meta: { ranAt: Date.now(), numTeams, numRounds, totalRematches, errors, warnings },
+        teams: simTeams,
+        rounds: state.rounds,
+        currentRound: numRounds,
+      });
+      out(`\n📡 Simulationsdaten in Firebase gespeichert unter /simulation`);
+    } catch (e) {
+      out(`\n⚠ Konnte Simulationsdaten nicht speichern: ${e.message}`);
+    }
   } finally {
     // Echten State in jedem Fall wiederherstellen, auch bei Fehlern
     state = realState;
