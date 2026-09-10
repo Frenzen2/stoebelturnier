@@ -280,9 +280,9 @@ function renderPairings() {
   document.getElementById('open-count').textContent =
     open.length > 0 ? `· ${done.length}/${total} eingetragen` : `· Alle ${total} ✓`;
 
-  // Dynamic rows
+  // Dynamic rows (alle Karten inkl. Freirunde müssen ins Raster passen)
   const cols = 5;
-  const rows = Math.ceil(sorted.filter(m=>!m.bye).length / cols);
+  const rows = Math.ceil(sorted.length / cols);
   grid.style.gridTemplateRows = `repeat(${rows},1fr)`;
 
   grid.innerHTML = sorted.map(m => {
