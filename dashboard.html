@@ -371,9 +371,10 @@ function toggleStandings() {
   ov.style.transform       = `scale(${invScale})`;
   ov.style.left            = `${(-ml) * invScale}px`;
   ov.style.top             = `${(-mt) * invScale}px`;
-  // Width/height in scaled px = real screen size / bodyScale * invScale = real screen size
-  ov.style.width           = `${window.innerWidth / bodyScale}px`;
-  ov.style.height          = `${window.innerHeight / bodyScale}px`;
+  // Eigene Box in echten Bildschirm-Pixeln setzen; transform:scale(invScale) oben
+  // gleicht die von der (transformierten) body geerbte Skalierung wieder aus.
+  ov.style.width           = `${window.innerWidth}px`;
+  ov.style.height          = `${window.innerHeight}px`;
 }
 document.addEventListener('keydown', e => { if (e.key==='t'||e.key==='T') toggleStandings(); });
 if (new URLSearchParams(location.search).get('tabelle')==='1') toggleStandings();
@@ -440,8 +441,8 @@ function scaleToScreen() {
     ov.style.transform=`scale(${inv})`;
     ov.style.left=`${-ox*inv}px`;
     ov.style.top=`${-oy*inv}px`;
-    ov.style.width=`${window.innerWidth/s}px`;
-    ov.style.height=`${window.innerHeight/s}px`;
+    ov.style.width=`${window.innerWidth}px`;
+    ov.style.height=`${window.innerHeight}px`;
   }
 }
 scaleToScreen();

@@ -19,7 +19,6 @@
     --border: #333333;
     --accent: #d42b2b;
     --accent2: #a81f1f;
-    --accent-glow: rgba(212,43,43,0.18);
     --text: #f0f0f0;
     --muted: #a2a7b8;
     --green: #27ae60;
@@ -671,7 +670,6 @@ function updatePinDisplay() {
 }
 
 function checkPin() {
-  // Admin PIN = 'ADMIN' -> use admin password field, but here we use numeric admin PIN
   // Check against all team PINs
   const teams = Object.entries(state.teams);
   const match = teams.find(([id, t]) => t.pin === pinBuffer);
@@ -724,7 +722,6 @@ async function connectFirebase() {
 
   const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
   db = getDatabase(app);
-  window._db = db;
   setStatus('Verbunden ✓');
   const { ref: r, onValue: ov } = window._fb;
   ov(r(db, '/tournament'), snap => {
