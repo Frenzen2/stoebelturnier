@@ -632,7 +632,7 @@ window.toggleAdminLogin = function() {
 
 window.loginAsAdmin = function() {
   const pw = document.getElementById('overlay-admin-pw').value;
-  if (pw === loadAdminPw() || pw === (state.settings?.password || 'admin')) {
+  if (adminPwOk(pw)) {
     session.teamId = null;
     session.isAdmin = true;
     closePinOverlay();
@@ -704,7 +704,18 @@ function checkPin() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Firebase
 // ─────────────────────────────────────────────────────────────────────────────
-function loadAdminPw() { return localStorage.getItem('stoebel_admin_pw') || 'admin'; }
+function loadAdminPw() { return localStorage.getItem('stoebel_admin_pw') || ''; }
+
+// Sobald die Turnierdaten geladen sind, gilt ausschliesslich das dort hinterlegte
+// Passwort. Der lokal gemerkte Wert greift nur, solange noch keine Daten da sind
+// (z.B. Verbindung steht nicht), und 'admin' nur bei der Ersteinrichtung.
+function adminPwOk(pw) {
+  const configured = state.settings?.password;
+  if (configured) return pw === configured;
+  const remembered = loadAdminPw();
+  if (remembered) return pw === remembered;
+  return pw === 'admin';
+}
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBukGl8KprWShSKyIuK6l4rfHM8kabKbwk",
@@ -1713,7 +1724,7 @@ window.saveSettings = async function() {
 
 window.unlockAdmin = function() {
   const pw=document.getElementById('admin-pw-input').value;
-  if (pw===loadAdminPw()||pw===(state.settings?.password||'admin')) {
+  if (adminPwOk(pw)) {
     document.getElementById('admin-lock-card').style.display='none';
     document.getElementById('admin-panel').style.display='block';
     const navAn2 = document.getElementById('nav-analyse'); if (navAn2) navAn2.style.display='';
