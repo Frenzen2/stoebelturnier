@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "presence": {
+      ".read": true,
+      ".write": true
+    },
+
+    "simulation": {
+      ".read": true,
+      ".write": true
+    },
+
+    "tournament": {
+      ".read": true,
+      ".write": false,
+
+      "currentRound": {
+        ".write": true,
+        ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200"
+      },
+
+      "settings": {
+        ".write": true
+      },
+
+      "teams": {
+        ".write": true,
+        "$team": {
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+          },
+          "pin": {
+            ".validate": "newData.isString() && newData.val().length == 4"
+          }
+        }
+      },
+
+      "rounds": {
+        ".write": true,
+        "$runde": {
+          "$partie": {
+            "score1": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99"
+            },
+            "score2": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1676,7 +1676,10 @@ window.resetTournament = async function() {
   const word = 'ZURUECKSETZEN';
   const input = prompt(`⚠ Das löscht ALLE Teams, Runden und Ergebnisse unwiderruflich!\n\nTippe "${word}" um zu bestätigen:`);
   if (input !== word) { toast('Abgebrochen'); return; }
-  await fbSet('/tournament', { settings:state.settings, currentRound:0 });
+  // Bewusst als Update auf die Unterknoten statt als Set auf /tournament:
+  // die Datenbankregeln erlauben kein Schreiben auf den Turnierknoten als Ganzes,
+  // damit niemand mit einem einzigen Aufruf alles loeschen kann.
+  await fbUpdate('/tournament', { teams:null, rounds:null, currentRound:0 });
   toast('Turnier zurückgesetzt');
 };
 
