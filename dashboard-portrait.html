@@ -311,13 +311,15 @@ function renderPairings() {
 
   // Schrift an tatsächliche Kartenhöhe anpassen: viel Platz (wenige Felder) -> groß,
   // wenig Platz (viele Felder) -> kleiner, aber nie abgeschnitten.
+  // Werte fürs Hochformat: die Karten sind hier breiter und höher als im Querformat,
+  // entsprechend grösser skaliert (bei 20 Feldern rund 72px statt vorher 44px).
   requestAnimationFrame(() => {
     const card = grid.querySelector('.pc');
     if (!card) return;
     const h = card.clientHeight;
-    grid.style.setProperty('--pc-field-font', Math.max(38, Math.min(80, h*0.11)) + 'px');
-    grid.style.setProperty('--pc-team-font',  Math.max(44, Math.min(90, h*0.155)) + 'px');
-    grid.style.setProperty('--pc-score-font', Math.max(48, Math.min(96, h*0.17)) + 'px');
+    grid.style.setProperty('--pc-field-font', Math.max(42, Math.min(90,  h*0.15)) + 'px');
+    grid.style.setProperty('--pc-team-font',  Math.max(56, Math.min(100, h*0.26)) + 'px');
+    grid.style.setProperty('--pc-score-font', Math.max(60, Math.min(110, h*0.28)) + 'px');
   });
 }
 
