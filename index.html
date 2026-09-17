@@ -386,9 +386,9 @@
       <div class="card">
         <div class="collapsible-header" onclick="toggleCollapse('teams-panel')">
           <div class="card-title" style="margin-bottom:0">Teams &amp; PINs <span id="teams-count-badge" style="font-size:.7rem;color:var(--muted);font-family:Inter;font-weight:500;text-transform:none;letter-spacing:0"></span></div>
-          <span class="collapse-arrow open" id="arrow-teams-panel">▼</span>
+          <span class="collapse-arrow" id="arrow-teams-panel">▼</span>
         </div>
-        <div class="collapsible-body open" id="teams-panel">
+        <div class="collapsible-body" id="teams-panel">
           <div style="height:.75rem"></div>
           <div class="form-row">
             <div class="inline-row">
@@ -422,13 +422,23 @@
             <div style="font-size:.85rem;font-weight:600">Ergebniseingabe</div>
             <div style="font-size:.72rem;color:var(--muted)">Sperrt die Eingabe für alle Teams · Admin bleibt editierfähig</div>
           </div>
+          <div id="NumberofResultsCommited" style="font-size:.72rem;color:var(--muted)">0/0</div>
           <button class="btn btn-danger btn-sm" id="btn-lock-results" onclick="toggleResultsLock()">🔒 Ergebnisse sperren</button>
+        </div>
+
+        <div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+          <div>
+            <div style="font-size:.85rem;font-weight:600">Tabelle für Teams</div>
+            <div style="font-size:.72rem;color:var(--muted)">Blendet den Tab "Tabelle" für nicht-Admins aus.</div>
+          </div>
+          <button class="btn btn-danger btn-sm" id="btn-remove-table-tab" onclick="RemoveResultTable()">Tabelle Ausblenden</button>
         </div>
 
         <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
           <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.4rem">Beamer Dashboard</div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
             <a href="dashboard.html" target="_blank" class="btn btn-ghost btn-sm">📺 Dashboard öffnen</a>
+            <a href="dashboard-portrait.html" target="_blank" class="btn btn-ghost btn-sm">📺 Dashboard öffnen (Portrait)</a>
             <a href="dashboard.html?tabelle=1" target="_blank" class="btn btn-ghost btn-sm">🏆 Dashboard + Tabelle</a>
           </div>
         </div>
@@ -580,6 +590,7 @@ let db = null;
 let state = {
   teams: {},       // id -> { name, pin }
   rounds: {},      // roundNum -> [ match ]
+  hasSubmittedResults: [],
   currentRound: 0,
   settings: { password: 'admin', title: 'Stöbelturnier 2026' }
 };
@@ -1015,9 +1026,23 @@ function renderAll() {
   renderTeamsList();
   renderAdminTeams();
   renderRoundStatus();
+  updateTableTabVisibility();
   updateQuickBar();
   updateTeamsBadge();
+  renderNumberofResultsCommited();
   if (document.getElementById('sec-analyse')?.classList.contains('active')) renderAnalyse();
+}
+
+function renderNumberofResultsCommited() {
+  const numberofResultsCommited = document.getElementById('NumberofResultsCommited');
+  if (!numberofResultsCommited) return;
+
+  const currentRound = state.rounds[state.currentRound] || [];
+  const total = currentRound.filter(m => !m.bye).length;
+  const count = currentRound.filter(m => !m.bye && m.score1 !== undefined && m.score2 !== undefined).length;
+
+  state.hasSubmittedResults = currentRound.map(m => !m.bye && m.score1 !== undefined && m.score2 !== undefined);
+  numberofResultsCommited.textContent = count + "/" + total;
 }
 
 function renderResultsLockUI() {
@@ -1041,6 +1066,33 @@ window.toggleResultsLock = async function() {
   await fbUpdate('/tournament/settings', { resultsLocked: !locked });
   toast(locked ? '🔓 Ergebnisse entsperrt' : '🔒 Ergebnisse gesperrt – keine Änderungen mehr möglich');
 };
+
+window.RemoveResultTable = async function() {
+  if (!db || !session.isAdmin) return;
+  const hidden = !!state.settings?.tableTabHidden;
+  await fbSet('/tournament/settings/tableTabHidden', !hidden);
+  state.settings = { ...state.settings, tableTabHidden: !hidden };
+  updateTableTabVisibility();
+  toast(!hidden ? 'Tab "Tabelle" für Teams ausgeblendet' : 'Tab "Tabelle" wieder eingeblendet');
+}
+
+function updateTableTabVisibility() {
+  const tableButton = document.querySelector('nav button[onclick*="standings"]');
+  const tableSection = document.getElementById('sec-standings');
+  const hiddenForTeams = !!state.settings?.tableTabHidden && !session.isAdmin;
+  if (tableButton) tableButton.style.display = hiddenForTeams ? 'none' : '';
+
+  if (hiddenForTeams && tableSection?.classList.contains('active')) {
+    showSection('pairings', null);
+  }
+
+  const button = document.getElementById('btn-remove-table-tab');
+  if (button) {
+    button.textContent = state.settings?.tableTabHidden ? 'Tabelle Anzeigen' : 'Tabelle Entfernen';
+    button.classList.toggle('btn-danger', !state.settings?.tableTabHidden);
+    button.classList.toggle('btn-primary', !!state.settings?.tableTabHidden);
+  }
+}
 
 function renderRoundStatus() {
   const btn = document.getElementById('btn-next-round');
@@ -1707,6 +1759,7 @@ window.submitResult = async function() {
   const idx=round.findIndex(m=>m.id===currentMatchId);
   if (idx<0) return;
   round[idx]={...round[idx],score1:s1,score2:s2};
+  state.hasSubmittedResults = round.map(m => !m.bye && m.score1 !== undefined && m.score2 !== undefined);
   await fbSet(`/tournament/rounds/${currentRoundNum}`,round);
   closeModal();
   toast('✅ Ergebnis gespeichert');
@@ -1734,6 +1787,7 @@ window.unlockAdmin = function() {
     if (state.settings?.fieldCount) document.getElementById('cfg-fields').value=state.settings.fieldCount;
     if (state.settings?.title) document.getElementById('cfg-title').value=state.settings.title;
     renderAdminTeams();
+    updateTableTabVisibility();
     updateTeamsBadge();
   } else { toast('Falsches Passwort'); }
 };
