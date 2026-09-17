@@ -966,7 +966,10 @@ function generateSwissPairing() {
   } else {
     // ══ MODUS A: Klassisches Bracket-Pairing (Runden 1-4) ══
     const ptOf = new Map(standings.map(t => [t.id, t.pts]));
-    const rankOf = new Map(standings.map((t,i) => [t.id, i]));
+    // Die erste Runde darf nicht von der alphabetischen Tie-Break-Reihenfolge
+    // der noch punktgleichen Teams abhängen.
+    const initialOrder = nextRound === 1 ? shuffle(standings.map(t => t.id)) : standings.map(t => t.id);
+    const rankOf = new Map(initialOrder.map((id,i) => [id, i]));
     const brackets = new Map();
     eligibleIds.forEach(id => {
       const pts = ptOf.get(id)??0;
@@ -1389,11 +1392,20 @@ window.drawNextRoundPreview = async function() {
   const matches = generateSwissPairing();
   if (!matches) return;
   const fieldCount = parseInt(state.settings?.fieldCount) || 15;
-  // Assign fields round-robin (only real matches, not byes)
-  let fieldIdx = 0;
+  // Assign fields in randomized match order so the highest-ranked teams do not
+  // systematically receive the first fields.
+  const realMatchIndexes = shuffle(
+    matches.map((match, index) => match.bye ? null : index).filter(index => index !== null)
+  );
+  const fieldByMatchIndex = new Map(
+    realMatchIndexes.map((matchIndex, shuffledIndex) => [
+      matchIndex,
+      (shuffledIndex % fieldCount) + 1
+    ])
+  );
   const roundData = matches.map((m,i) => {
     const base = {id:`r${next}m${i}`,...m};
-    if (!m.bye) { base.field = (fieldIdx % fieldCount) + 1; fieldIdx++; }
+    if (!m.bye) base.field = fieldByMatchIndex.get(i);
     return base;
   });
 
