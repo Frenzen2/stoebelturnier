@@ -272,11 +272,21 @@ function renderPairings() {
     return;
   }
 
-  const byes  = round.filter(m => m.bye);
-  const open  = round.filter(m => !m.bye && m.score1===undefined);
-  const done  = round.filter(m => !m.bye && m.score1!==undefined);
-  const sorted = [...byes, ...open, ...done];
+  // Display bye/free-round matches first, then all regular matches by field order.
+  const sorted = round
+    .map((match, index) => ({ match, index }))
+    .sort((a, b) => {
+      if (a.match.bye && b.match.bye) return a.index - b.index;
+      if (a.match.bye) return -1;
+      if (b.match.bye) return 1;
+      return (Number(a.match.field) || Number.MAX_SAFE_INTEGER)
+        - (Number(b.match.field) || Number.MAX_SAFE_INTEGER)
+        || a.index - b.index;
+    })
+    .map(({ match }) => match);
 
+  const open = sorted.filter(m => !m.bye && m.score1 === undefined);
+  const done = sorted.filter(m => !m.bye && m.score1 !== undefined);
   const total = open.length + done.length;
   document.getElementById('open-count').textContent =
     open.length > 0 ? `· ${done.length}/${total} eingetragen` : `· Alle ${total} ✓`;
