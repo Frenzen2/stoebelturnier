@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-1953';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2023';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-09-1953';
+const APP_VERSION = '2026-10-09-2023';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -80,9 +80,10 @@ const S = {
   months: {},          // 'YYYY-MM' → { days: { 'YYYY-MM-DD': { uid: code } } }
   marks: {},           // 'YYYY-MM' → { days: { date: { uid: vonUid } } } – aus Excel übernommene Vertretungen/Tausche
   monthWaiters: {},    // 'YYYY-MM' → Promise (erster Snapshot)
-  swaps: [], vacations: [],
+  swaps: [], vacations: [], wishes: [],
   winStart: null,       // Tausche, Abwesenheiten, Vertretungen werden erst ab diesem Datum geladen
   winUnsub: [],
+  winReady: Promise.resolve(),
   swapParts: {},
   covers: [],          // Urlaubsvertretungen: offene bzw. zugeteilte Dienste
   view: viewFromHash(location.hash),
@@ -113,6 +114,27 @@ const daysOfMonth = (y, m) => {
   return Array.from({ length: n }, (_, i) => `${y}-${pad(m)}-${pad(i + 1)}`);
 };
 const isWeekend = s => [0, 6].includes(parseIso(s).getDay());
+
+// Gesetzliche Feiertage Österreich (inkl. Ostern-abhängiger Feiertage)
+const HOLIDAYS = {};
+function holidaysOf(y) {
+  if (HOLIDAYS[y]) return HOLIDAYS[y];
+  // Ostersonntag nach Gauß/Meeus
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const easter = `${y}-${pad(Math.floor((h + l - 7 * m + 114) / 31))}-${pad(((h + l - 7 * m + 114) % 31) + 1)}`;
+  return (HOLIDAYS[y] = {
+    [`${y}-01-01`]: 'Neujahr', [`${y}-01-06`]: 'Heilige Drei Könige',
+    [addDays(easter, 1)]: 'Ostermontag', [`${y}-05-01`]: 'Staatsfeiertag',
+    [addDays(easter, 39)]: 'Christi Himmelfahrt', [addDays(easter, 50)]: 'Pfingstmontag',
+    [addDays(easter, 60)]: 'Fronleichnam', [`${y}-08-15`]: 'Mariä Himmelfahrt',
+    [`${y}-10-26`]: 'Nationalfeiertag', [`${y}-11-01`]: 'Allerheiligen',
+    [`${y}-12-08`]: 'Mariä Empfängnis', [`${y}-12-25`]: 'Christtag', [`${y}-12-26`]: 'Stefanitag',
+  });
+}
+const holidayName = s => holidaysOf(+s.slice(0, 4))[s] || '';
+const isOffDay = s => isWeekend(s) || !!holidayName(s);   // Wochenende oder Feiertag
 const userName = uid => S.usersById[uid]?.name || 'Unbekannt';
 const personColor = uid => S.usersById[uid]?.color || null;
 const isAdmin = () => S.me?.role === 'admin';
@@ -226,7 +248,12 @@ function cellLook(uid, code, vac, fromUid) {
   if (code && fromUid !== undefined) {
     return { bg: '#111827', fg: personColor(fromUid) || '#fff', text: code, dark: true };
   }
-  if (code) return { bg: typeOf(codeParts(code)[0])?.color || '#e5e7eb', fg: '', text: code, ph: isPlaceholder(codeParts(code)[0]) };
+  if (code) {
+    // Weiß = "keine Farbe" – dann bleibt die Markierung für Wochenende/Feiertag sichtbar
+    const tc = typeOf(codeParts(code)[0])?.color;
+    const bg = /^#?(fff|ffffff)$/i.test(tc || '') ? '' : tc || '#e5e7eb';
+    return { bg, fg: '', text: code, ph: isPlaceholder(codeParts(code)[0]) };
+  }
   return { bg: '', fg: '', text: '' };
 }
 
@@ -240,6 +267,11 @@ function openCovers() {
 function claimableCovers() {
   if (isAdmin()) return [];   // Admins teilen offene Dienste in der Verwaltung zu
   return openCovers().filter(c => c.absentUid !== S.uid && !vacationOn(c.date, S.uid));
+}
+
+// Wunschfrei (unverbindlich, z. B. für die Sommerurlaubsplanung)
+function wishOn(date, uid) {
+  return S.wishes.find(w => w.uid === uid && w.from <= date && w.to >= date);
 }
 
 function vacationOn(date, uid) {
@@ -304,7 +336,7 @@ function stopListeners() {
   S.unsub.forEach(u => u());
   S.unsub = [];
   S.months = {}; S.monthWaiters = {}; S.marks = {};
-  S.swaps = []; S.vacations = []; S.covers = []; S.users = []; S.usersById = {};
+  S.swaps = []; S.vacations = []; S.covers = []; S.wishes = []; S.users = []; S.usersById = {};
   S.dataStarted = false;
   S.winUnsub.forEach(u => u()); S.winUnsub = []; S.winStart = null; S.swapParts = {};
 }
@@ -377,25 +409,35 @@ function startData() {
 // sonst würde jedes Öffnen der App z. B. alle Urlaube des ganzen Jahres lesen).
 function ensureWindow(mk) {
   const start = `${mk}-01`;
-  if (!S.dataStarted || (S.winStart && S.winStart <= start)) return;
+  if (!S.dataStarted || (S.winStart && S.winStart <= start)) return S.winReady;
   S.winStart = start;
   S.winUnsub.forEach(u => u());
+  // winReady: erfüllt, sobald alle Abfragen das erste Mal geantwortet haben (z. B. für den Excel-Export)
+  let pending = 5, resolveReady;
+  S.winReady = new Promise(r => { resolveReady = r; });
+  const first = fn => { let seen = false; const done = () => { if (!seen) { seen = true; if (--pending === 0) resolveReady(); } };
+    return [snap => { fn(snap); done(); }, e => { done(); fail(e); }]; };
   S.winUnsub = [
     // Zwei einfache Abfragen statt einer ODER-Abfrage – die bräuchte in Firestore einen eigenen Index
-    ...['dateFrom', 'dateTo'].map(field => onSnapshot(query(collection(db, 'swaps'), where(field, '>=', start)), snap => {
+    ...['dateFrom', 'dateTo'].map(field => onSnapshot(query(collection(db, 'swaps'), where(field, '>=', start)), ...first(snap => {
       S.swapParts[field] = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
       S.swaps = [...new Map([...(S.swapParts.dateFrom || []), ...(S.swapParts.dateTo || [])].map(x => [x.id, x])).values()];
       render();
-    }, fail)),
-    onSnapshot(query(collection(db, 'coverages'), where('date', '>=', start)), snap => {
+    }))),
+    onSnapshot(query(collection(db, 'coverages'), where('date', '>=', start)), ...first(snap => {
       S.covers = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
       render();
-    }, fail),
-    onSnapshot(query(collection(db, 'vacations'), where('to', '>=', start)), snap => {
+    })),
+    onSnapshot(query(collection(db, 'vacations'), where('to', '>=', start)), ...first(snap => {
       S.vacations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       render();
-    }, fail),
+    })),
+    onSnapshot(query(collection(db, 'wishes'), where('to', '>=', start)), ...first(snap => {
+      S.wishes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      render();
+    })),
   ];
+  return S.winReady;
 }
 
 // ── Navigation & Aktionen ─────────────────────────────────────────────────────
@@ -482,6 +524,12 @@ const actions = {
   },
   'open-day': el => openClaimDialog(el.dataset.date),
   'cover-undo': el => undoCover(el.dataset.id),
+  'wish-new': () => openWishDialog(today()),
+  'wish-delete': el => deleteWish(el.dataset.id),
+  'wish-grant': el => {
+    const w = S.wishes.find(x => x.id === el.dataset.id);
+    if (w) openVacationDialog(w.uid, w.from, { to: w.to, wishId: w.id });
+  },
   'todo-more': () => { S.todoAll = true; render(); },
   'ics': () => openCalendarDialog().catch(fail),
   'cal-copy': async () => {
@@ -493,7 +541,7 @@ const actions = {
     await openCalendarDialog(true);
     toast('Neuer Link erzeugt.');
   },
-  'export-plan': () => exportMonth(true),
+  'export-plan': () => openExportDialog(),
   'export-template': () => exportMonth(false),
   'user-new': () => openUserDialog(null),
   'user-edit': el => openUserDialog(el.dataset.uid),
@@ -536,6 +584,7 @@ function openMenu() {
     <div class="list">
       ${pushConfigured() ? `<button type="button" class="btn" data-action="push-toggle" data-close style="text-align:left">${pushActive() ? '🔔 Benachrichtigungen sind an' : '🔕 Benachrichtigungen einschalten'}</button>` : ''}
       <button type="button" class="btn" data-action="ics" data-close style="text-align:left">📆 Kalender-Abo (Handy/Outlook)</button>
+      <button type="button" class="btn" data-action="export-plan" data-close style="text-align:left">📊 Excel-Export</button>
       <button type="button" class="btn" data-action="pwreset-self" data-close style="text-align:left">🔑 Passwort ändern (Link per E-Mail)</button>
       ${isAdmin() ? '<button type="button" class="btn" data-action="goto-admin" style="text-align:left">⚙️ Verwaltung</button>' : ''}
       <button type="button" class="btn danger" data-action="logout" data-close style="text-align:left">Abmelden</button>
@@ -630,6 +679,7 @@ function renderWeek() {
     const { day, touched, from } = effectiveDay(d, ev);
     const groups = new Map();
     const absent = [];
+    const wishes = users.filter(u => !vacationOn(d, u.id) && wishOn(d, u.id));
     for (const u of users) {
       const vac = vacationOn(d, u.id);
       if (vac) { absent.push([u, vac]); continue; }
@@ -655,9 +705,12 @@ function renderWeek() {
         const look = cellLook(u.id, day[u.id] || '', v);
         return nameBtn(u, ` (${esc(v.type)}${day[u.id] ? ` statt ${esc(day[u.id])}` : ''})`, look);
       }).join('')}</div></div>`);
+    if (wishes.length) rows.push(`<div class="wk-row"><span class="chip wish-chip" title="Wunsch: frei">☆</span>
+      <div class="wk-names">${wishes.map(u => `<span class="wk-wish" title="${esc(wishOn(d, u.id).note || 'Wunsch: frei')}">${esc(shortName(u.name))}</span>`).join('')}</div></div>`);
     const mine = vacationOn(d, S.uid)?.type || day[S.uid] || '';
-    return `<div class="wk-day ${isWeekend(d) ? 'we' : ''} ${d === t ? 'today' : ''}">
-      <div class="wk-head">${fmtShort(d)}${d === t ? ' <span class="status pending">heute</span>' : ''}
+    const hol = holidayName(d);
+    return `<div class="wk-day ${isOffDay(d) ? 'we' : ''} ${d === t ? 'today' : ''}">
+      <div class="wk-head">${fmtShort(d)}${d === t ? ' <span class="status pending">heute</span>' : ''}${hol ? ` <span class="hol-tag">${esc(hol)}</span>` : ''}
         ${isAdmin() ? '' : `<span class="wk-me">Du: ${mine ? esc(mine) : 'frei'}</span>`}</div>
       ${rows.join('') || '<p class="muted" style="margin:0">Noch kein Plan für diesen Tag.</p>'}
     </div>`;
@@ -684,7 +737,8 @@ function renderMonth() {
 
   const head = dates.map(d => {
     const dt = parseIso(d);
-    return `<th class="${isWeekend(d) ? 'we' : ''} ${d === t ? 'today' : ''}">${WD[dt.getDay()]}<br>${dt.getDate()}</th>`;
+    const hol = holidayName(d);
+    return `<th class="${isOffDay(d) ? 'we' : ''} ${hol ? 'hol' : ''} ${d === t ? 'today' : ''}" ${hol ? `title="${esc(hol)}"` : ''}>${WD[dt.getDay()]}<br>${dt.getDate()}</th>`;
   }).join('');
 
   const body = users.map(u => {
@@ -693,11 +747,13 @@ function renderMonth() {
       const code = eff[d].day[u.id] || '';
       const touchedHere = eff[d].touched.has(u.id) && code && !vac;
       const look = cellLook(u.id, code, vac, touchedHere ? (eff[d].from.get(u.id) ?? null) : undefined);
-      const cls = ['cell', isWeekend(d) ? 'we' : '', d === t ? 'today' : '', vac ? 'vac' : '', look.ph ? 'ph' : '',
+      const wish = !vac && wishOn(d, u.id);
+      const cls = ['cell', isOffDay(d) ? 'we' : '', d === t ? 'today' : '', vac ? 'vac' : '', look.ph ? 'ph' : '', wish ? 'wish' : '',
         touchedHere && !personColor(eff[d].from.get(u.id)) ? 'swapped' : ''].join(' ');
       const style = look.bg || look.fg ? `style="${look.bg ? `background:${look.bg};` : ''}${look.fg ? `color:${look.fg};` : ''}"` : '';
       const title = `${u.name} · ${fmt(d)} · ${vac ? `${VAC_TYPES[vac.type]}${vac.note ? ` (${vac.note})` : ''}${code ? ` – eigentlich ${code}` : ''}` : codeLabel(code)}`
-        + (touchedHere ? ` · ${eff[d].touched.get(u.id)}` : '');
+        + (touchedHere ? ` · ${eff[d].touched.get(u.id)}` : '')
+        + (wish ? ` · ☆ Wunsch: frei${wish.note ? ` (${wish.note})` : ''}` : '') + (holidayName(d) ? ` · ${holidayName(d)}` : '');
       return `<td class="${cls}" ${style} data-action="cell" data-date="${d}" data-uid="${esc(u.id)}" title="${esc(title)}">${esc(look.text)}</td>`;
     }).join('');
     const pc = personColor(u.id);
@@ -710,7 +766,7 @@ function renderMonth() {
   for (const c of S.covers) if (c.status === 'open' && c.kind !== 'release' && c.date.startsWith(mk)) (openByDate[c.date] ??= []).push(c);
   const openRow = Object.keys(openByDate).length ? `<tr class="openrow"><td class="name" title="Dienste ohne Vertretung">⚠ Offen</td>${dates.map(d => {
     const list = openByDate[d] || [];
-    if (!list.length) return `<td class="${isWeekend(d) ? 'we' : ''}"></td>`;
+    if (!list.length) return `<td class="${isOffDay(d) ? 'we' : ''}"></td>`;
     const title = list.map(c => `${c.code} von ${userName(c.absentUid)}`).join(', ');
     return `<td class="cell open" data-action="open-day" data-date="${d}" title="Offen: ${esc(title)} – zum Übernehmen klicken">${esc(list.map(c => c.code).join(' '))}</td>`;
   }).join('')}</tr>` : '';
@@ -719,14 +775,16 @@ function renderMonth() {
   const foot = S.types.map(tp => `<tr><td class="name muted">${esc(tp.code)} – ${esc(tp.label)}</td>${dates.map(d => {
     const n = users.filter(u => !vacationOn(d, u.id)
       && codeParts(eff[d].day[u.id]).some(c => c.toUpperCase() === tp.code.toUpperCase())).length;
-    return `<td class="${isWeekend(d) ? 'we' : ''}">${n || ''}</td>`;
+    return `<td class="${isOffDay(d) ? 'we' : ''}">${n || ''}</td>`;
   }).join('')}</tr>`).join('');
 
   const legend = S.types.map(tp => `<span>${chip(tp.code)} ${esc(tp.label)}${tp.placeholder ? ' (Platzhalter)' : ''} ${tp.start ? esc(`${tp.start}–${tp.end}`) : ''}</span>`).join('')
     + `<span><span class="chip" style="background:var(--vac)">U</span> Urlaub/ZA/FB – in der Farbe der Person</span>`
     + `<span><span class="chip" style="background:#dc2626;color:#fff">K</span> Krankenstand</span>`
     + `<span><span class="chip" style="background:#111827;color:#00b0f0">F</span> übernommen/getauscht – Schrift in der Farbe der Person, deren Dienst es war</span>`
-    + `<span><span class="chip" style="background:#fee2e2;color:#b91c1c">F</span> offener Dienst</span>`;
+    + `<span><span class="chip" style="background:#fee2e2;color:#b91c1c">F</span> offener Dienst</span>`
+    + `<span><span class="chip wish-chip">☆</span> Wunsch: frei (unverbindlich)</span>`
+    + `<span><span class="chip" style="background:var(--weekend);color:#b91c1c">26</span> Feiertag</span>`;
 
   return `${monthNav()}
     ${loaded && !Object.keys(S.months[mk].days || {}).length ? `<div class="warn" style="margin-bottom:12px">Für ${MONTHS[m - 1]} ist noch kein Grundplan hinterlegt.${isAdmin() ? ' Unter „Verwaltung“ kannst du ihn als CSV/Excel hochladen.' : ''}</div>` : ''}
@@ -773,7 +831,8 @@ function renderMine() {
     </div>
     <div class="list">${rows || '<p class="muted">Keine Schichten in den nächsten 2 Monaten.</p>'}</div>
   </div>
-  ${renderMyAbsences()}`;
+  ${renderMyAbsences()}
+  ${renderMyWishes()}`;
 }
 
 function swapLine(s) {
@@ -785,7 +844,7 @@ function swapLine(s) {
 
 function countWorkdays(from, to, year) {
   let n = 0;
-  for (let d = from; d <= to; d = addDays(d, 1)) if (d.startsWith(String(year)) && !isWeekend(d)) n++;
+  for (let d = from; d <= to; d = addDays(d, 1)) if (d.startsWith(String(year)) && !isOffDay(d)) n++;
   return n;
 }
 
@@ -814,7 +873,8 @@ function openInfoDialog(date, uid) {
 function openOwnCellDialog(date) {
   const { day } = effectiveDay(date);
   const vac = vacationOn(date, S.uid);
-  openDialog(`<h2>${fmt(date)}</h2>
+  const wish = wishOn(date, S.uid);
+  openDialog(`<h2>${fmt(date)}${holidayName(date) ? ` <span class="hol-tag">${esc(holidayName(date))}</span>` : ''}</h2>
     <p>Deine Schicht: ${vac ? `<span class="chip" style="background:var(--vac)">${esc(vac.type)}</span> ${esc(VAC_TYPES[vac.type])}
       ${fmt(vac.from)}${vac.to !== vac.from ? ` – ${fmt(vac.to)}` : ''}` : chip(day[S.uid])}</p>
     <div class="actions">
@@ -822,12 +882,94 @@ function openOwnCellDialog(date) {
       ${vac ? '<button type="button" class="btn danger" id="dVacDel">Abwesenheit löschen</button>'
         : '<button type="button" class="btn" id="dVac">Abwesend (Urlaub/ZA/Krank)</button>'}
       ${realCode(day[S.uid]) && !vac ? '<button type="button" class="btn" id="dRel">Dienst abgeben</button>' : ''}
+      ${vac ? '' : wish ? '<button type="button" class="btn" id="dWishDel">☆ Wunschfrei löschen</button>'
+        : '<button type="button" class="btn" id="dWish" title="Unverbindlicher Wunsch, z. B. für die Urlaubsplanung">☆ Wunschfrei</button>'}
       <button type="button" class="btn primary" id="dSwap">Tausch anfragen</button>
     </div>`);
   if ($('#dVac')) $('#dVac').onclick = () => openVacationDialog(S.uid, date);
   if ($('#dVacDel')) $('#dVacDel').onclick = () => { $('#dlg').close(); deleteVacation(vac.id).catch(fail); };
   if ($('#dRel')) $('#dRel').onclick = () => { $('#dlg').close(); releaseShift(date).catch(fail); };
+  if ($('#dWish')) $('#dWish').onclick = () => openWishDialog(date);
+  if ($('#dWishDel')) $('#dWishDel').onclick = () => { $('#dlg').close(); deleteWish(wish.id).catch(fail); };
   $('#dSwap').onclick = () => openSwapDialog(date, S.uid, null, date);
+}
+
+// ── Wunschfrei ────────────────────────────────────────────────────────────────
+// Unverbindlich: die Teamleitung sieht die Wünsche und plant danach (Urlaub eintragen oder Dienst zuteilen).
+
+function openWishDialog(date) {
+  openDialog(`<h2>☆ Wunschfrei</h2>
+    <p class="muted" style="margin-top:-4px">Unverbindlicher Wunsch, z. B. für die Sommerurlaubsplanung. Die Teamleitung sieht ihn im Plan
+      und trägt bei Zusage den Urlaub ein – sonst kann sie dir an dem Tag trotzdem einen Dienst zuteilen.</p>
+    <div class="row">
+      <label>Von<input type="date" id="wFrom" value="${date}" required></label>
+      <label>Bis<input type="date" id="wTo" value="${date}" required></label>
+    </div>
+    <label style="margin-top:8px">Notiz (optional, z. B. „Urlaub Kroatien“ oder „1. Wahl“)<input id="wNote" maxlength="200"></label>
+    <div class="actions">
+      <button type="button" class="btn" data-close>Abbrechen</button>
+      <button type="submit" class="btn primary">Wunsch speichern</button>
+    </div>`, async () => {
+    const from = $('#wFrom').value, to = $('#wTo').value;
+    if (!from || !to || to < from) { toast('„Bis“ liegt vor „Von“.', true); return false; }
+    if ((parseIso(to) - parseIso(from)) / 86400000 > 92) { toast('Bitte maximal ca. 3 Monate auf einmal.', true); return false; }
+    if (S.wishes.some(w => w.uid === S.uid && w.from <= to && w.to >= from)) {
+      toast('Überschneidet sich mit einem bestehenden Wunsch.', true); return false;
+    }
+    const data = { uid: S.uid, from, to, createdAt: serverTimestamp() };
+    const note = $('#wNote').value.trim();
+    if (note) data.note = note;
+    await addDoc(collection(db, 'wishes'), data);
+    toast('Wunsch gespeichert.');
+  });
+}
+
+async function deleteWish(id) {
+  const w = S.wishes.find(x => x.id === id);
+  if (!w || !confirm(`Wunschfrei ${fmt(w.from)}${w.to !== w.from ? ` – ${fmt(w.to)}` : ''}${w.uid !== S.uid ? ` von ${userName(w.uid)}` : ''} löschen?`)) return;
+  await deleteDoc(doc(db, 'wishes', id));
+  toast('Wunsch gelöscht.');
+}
+
+function wishRange(w) { return `${fmt(w.from)}${w.to !== w.from ? ` – ${fmt(w.to)}` : ''}`; }
+
+// Meine Wünsche
+function renderMyWishes() {
+  const t = today();
+  const mine = S.wishes.filter(w => w.uid === S.uid && w.to >= t).sort((a, b) => a.from.localeCompare(b.from));
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">☆ Wunschfrei</h2>
+      <button class="btn" data-action="wish-new">+ Wunsch</button>
+    </div>
+    <p class="muted">Unverbindliche Wünsche (z. B. Sommerurlaub). Die Teamleitung plant danach.</p>
+    <div class="list">${mine.map(w => `<div class="item"><div class="grow"><span class="chip wish-chip">☆</span> ${wishRange(w)}
+      ${w.note ? `<span class="muted"> · ${esc(w.note)}</span>` : ''}</div>
+      <button class="btn small danger" data-action="wish-delete" data-id="${w.id}">Löschen</button></div>`).join('') || '<p class="muted">Keine Wünsche eingetragen.</p>'}</div>
+  </div>`;
+}
+
+// Verwaltung: alle Wünsche mit Überschneidungen
+function renderWishOverview() {
+  const t = today();
+  const list = S.wishes.filter(w => w.to >= t).sort((a, b) => a.from.localeCompare(b.from) || userName(a.uid).localeCompare(userName(b.uid)));
+  const items = list.map(w => {
+    const others = [
+      ...S.wishes.filter(o => o.id !== w.id && o.uid !== w.uid && o.from <= w.to && o.to >= w.from).map(o => `${userName(o.uid)} (Wunsch)`),
+      ...S.vacations.filter(v => v.uid !== w.uid && v.from <= w.to && v.to >= w.from).map(v => `${userName(v.uid)} (${v.type})`),
+    ];
+    const granted = S.vacations.some(v => v.uid === w.uid && v.from <= w.from && v.to >= w.to);
+    return `<div class="item"><div class="grow"><strong>${esc(userName(w.uid))}</strong> · ${wishRange(w)}
+        ${w.note ? `<span class="muted"> · ${esc(w.note)}</span>` : ''}
+        ${others.length ? `<div class="muted" style="font-size:.85rem">gleichzeitig: ${esc([...new Set(others)].join(', '))}</div>` : ''}
+        ${granted ? '<div style="font-size:.85rem;color:#047857">✓ Abwesenheit bereits eingetragen</div>' : ''}</div>
+      ${granted ? '' : `<button class="btn small primary" data-action="wish-grant" data-id="${w.id}">Als Urlaub eintragen</button>`}
+      <button class="btn small danger" data-action="wish-delete" data-id="${w.id}">Löschen</button></div>`;
+  }).join('');
+  return `<div class="card"><h2>☆ Wunschfrei (${list.length})</h2>
+    <p class="muted">Wünsche der Mitarbeiter, z. B. für die Sommerurlaubsplanung. „Als Urlaub eintragen“ öffnet den Urlaubsdialog
+      (mit Vertretungen) und entfernt danach den Wunsch. Nicht zugesagte Wünsche einfach löschen – Dienste kannst du trotzdem zuteilen.</p>
+    <div class="list">${items || '<p class="muted">Keine offenen Wünsche.</p>'}</div></div>`;
 }
 
 // ── Dialog-Grundgerüst ────────────────────────────────────────────────────────
@@ -943,13 +1085,13 @@ async function decideSwap(id, status) {
 
 // ── Urlaub ────────────────────────────────────────────────────────────────────
 
-function openVacationDialog(uid, date) {
+function openVacationDialog(uid, date, opts = {}) {
   openDialog(`<h2>Abwesenheit eintragen</h2>
     ${isAdmin() ? `<label>Mitarbeiter<select id="vUid">${visibleUsers().map(u =>
       `<option value="${esc(u.id)}" ${u.id === uid ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>` : ''}
     <div class="row" style="margin-top:8px">
       <label>Von<input type="date" id="vFrom" value="${date}" required></label>
-      <label>Bis<input type="date" id="vTo" value="${date}" required></label>
+      <label>Bis<input type="date" id="vTo" value="${opts.to || date}" required></label>
       <label>Art<select id="vType">${Object.entries(VAC_TYPES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
     </div>
     <label style="margin-top:8px">Notiz (optional)<input id="vNote" maxlength="200"></label>
@@ -999,6 +1141,8 @@ function openVacationDialog(uid, date) {
     toast(shifts.length
       ? `Eingetragen. ${assigned} Dienst(e) zugeteilt, ${open} offen.`
       : 'Eingetragen.');
+    // Aus einem Wunschfrei-Eintrag übernommen → Wunsch ist erledigt
+    if (opts.wishId) await deleteDoc(doc(db, 'wishes', opts.wishId)).catch(() => {});
   });
 
   const coverList = async () => {
@@ -1333,7 +1477,7 @@ function renderAdmin() {
         <label>Datei<input type="file" id="importFile" accept=".csv,.xlsx,.xls,.ods,.txt"></label>
         <label style="flex:0 1 120px">Jahr (falls Datum ohne Jahr)<input type="number" id="importYear" value="${S.cur.y}" min="2020" max="2100"></label>
         <button class="btn" data-action="export-template">⬇ Vorlage ${MONTHS[S.cur.m - 1]} ${S.cur.y}</button>
-        <button class="btn" data-action="export-plan">⬇ Aktueller Plan als Excel</button>
+        <button class="btn" data-action="export-plan">📊 Plan als Excel (mit Farben)</button>
       </div>
       ${importPreview}
     </div>
@@ -1495,6 +1639,167 @@ function exportMonth(effective) {
   const wb = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(wb, ws, `${pad(m)}-${y}`);
   window.XLSX.writeFile(wb, `${effective ? 'schichtplan' : 'vorlage-grundplan'}-${y}-${pad(m)}.xlsx`);
+}
+
+// ── Excel-Export mit Farben (wie die bisherige Excel) ─────────────────────────
+// ExcelJS wird erst beim ersten Export geladen.
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = Object.assign(document.createElement('script'), { src, onload: resolve, onerror: () => reject(new Error('Laden fehlgeschlagen: ' + src)) });
+    document.head.append(el);
+  });
+}
+
+function openExportDialog() {
+  const { y, m } = S.cur;
+  openDialog(`<h2>📊 Excel-Export</h2>
+    <p class="muted" style="margin-top:-4px">Der aktuelle Plan inkl. Tauschen, Übernahmen und Abwesenheiten – in den gewohnten Farben.
+      Zusätzlich Blätter mit allen Abwesenheiten${isAdmin() ? ' und Wunschfrei-Einträgen' : ''}.</p>
+    <div class="list">
+      <button type="button" class="btn primary" id="xMonth" style="text-align:left">${MONTHS[m - 1]} ${y}</button>
+      <button type="button" class="btn" id="xYear" style="text-align:left">Ganzes Jahr ${y} (ein Blatt pro Monat)</button>
+    </div>
+    <div class="actions"><button type="button" class="btn" data-close>Schließen</button></div>`);
+  const go = months => async () => {
+    $('#xMonth').disabled = $('#xYear').disabled = true;
+    try { await exportExcel(y, months); $('#dlg').close(); } catch (e) { fail(e); $('#xMonth').disabled = $('#xYear').disabled = false; }
+  };
+  $('#xMonth').onclick = go([m]);
+  $('#xYear').onclick = go(Array.from({ length: 12 }, (_, i) => i + 1));
+}
+
+// '#abc' / '#aabbcc' / 'var(--vac)' → 'FFAABBCC' (ExcelJS)
+function argb(c) {
+  if (!c) return null;
+  if (c.startsWith('var(')) return 'FFFDE68A';
+  let h = c.replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map(x => x + x).join('');
+  return /^[0-9a-f]{6}$/i.test(h) ? `FF${h.toUpperCase()}` : null;
+}
+
+// Datum für Excel (ExcelJS rechnet in UTC – sonst wäre es in Österreich um einen Tag verschoben)
+const xlDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+
+async function exportExcel(y, months) {
+  toast('Excel wird erstellt …');
+  if (!window.ExcelJS) await loadScript('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js');
+  await Promise.all([ensureWindow(monthKey(y, months[0])), ...months.map(m => ensureMonth(monthKey(y, m)))]);
+  const ev = planEvents();
+  const users = visibleUsers();
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = 'Schichtplan';
+  const fill = c => (argb(c) ? { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(c) } } : undefined);
+  const thin = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+  const border = { top: thin, left: thin, bottom: thin, right: thin };
+  const OFF = '#eef0f3', HOL = '#fee2e2';
+
+  for (const m of months) {
+    const dates = daysOfMonth(y, m);
+    const ws = wb.addWorksheet(`${MONTHS[m - 1].slice(0, 3)} ${y}`, { views: [{ state: 'frozen', xSplit: 1, ySplit: 2 }] });
+    ws.getColumn(1).width = 24;
+    dates.forEach((_, i) => { ws.getColumn(i + 2).width = 5.5; });
+    ws.getCell(1, 1).value = `Schichtplan ${MONTHS[m - 1]} ${y}`;
+    ws.getCell(1, 1).font = { bold: true, size: 14 };
+    // Kopfzeile
+    const head = ws.getRow(2);
+    head.getCell(1).value = 'Mitarbeiter';
+    dates.forEach((d, i) => {
+      const c = head.getCell(i + 2);
+      c.value = `${WD[parseIso(d).getDay()]}\n${parseIso(d).getDate()}`;
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      if (holidayName(d)) { c.fill = fill(HOL); c.font = { bold: true, color: { argb: 'FFB91C1C' } }; c.note = holidayName(d); }
+      else if (isWeekend(d)) c.fill = fill(OFF);
+    });
+    head.height = 30;
+    head.eachCell(c => { c.border = border; if (!c.font) c.font = { bold: true }; });
+
+    const eff = Object.fromEntries(dates.map(d => [d, effectiveDay(d, ev)]));
+    users.forEach((u, r) => {
+      const row = ws.getRow(r + 3);
+      row.getCell(1).value = u.name;
+      if (personColor(u.id)) row.getCell(1).border = { ...border, left: { style: 'thick', color: { argb: argb(personColor(u.id)) || 'FF000000' } } };
+      else row.getCell(1).border = border;
+      dates.forEach((d, i) => {
+        const vac = vacationOn(d, u.id);
+        const code = eff[d].day[u.id] || '';
+        const touched = eff[d].touched.has(u.id) && code && !vac;
+        const look = cellLook(u.id, code, vac, touched ? (eff[d].from.get(u.id) ?? null) : undefined);
+        const c = row.getCell(i + 2);
+        c.value = look.text || null;
+        c.alignment = { horizontal: 'center' };
+        c.border = border;
+        const bg = look.bg || (isOffDay(d) ? (holidayName(d) ? HOL : OFF) : '');
+        if (fill(bg)) c.fill = fill(bg);
+        c.font = { bold: true, ...(argb(look.fg) ? { color: { argb: argb(look.fg) } } : {}), ...(look.ph ? { italic: true, bold: false } : {}) };
+        const notes = [vac ? `${VAC_TYPES[vac.type]}${vac.note ? `: ${vac.note}` : ''}` : '', touched ? eff[d].touched.get(u.id) : '',
+          isAdmin() && !vac && wishOn(d, u.id) ? `Wunsch: frei${wishOn(d, u.id).note ? ` (${wishOn(d, u.id).note})` : ''}` : ''].filter(Boolean);
+        if (notes.length) c.note = notes.join('\n');
+      });
+    });
+
+    // Besetzung pro Dienst
+    let r = users.length + 4;
+    for (const tp of S.types) {
+      const row = ws.getRow(r++);
+      row.getCell(1).value = `${tp.code} – ${tp.label}`;
+      row.getCell(1).font = { color: { argb: 'FF6B7280' } };
+      dates.forEach((d, i) => {
+        const n = users.filter(u => !vacationOn(d, u.id) && codeParts(eff[d].day[u.id]).some(c => c.toUpperCase() === tp.code.toUpperCase())).length;
+        const c = row.getCell(i + 2);
+        c.value = n || null; c.alignment = { horizontal: 'center' }; c.font = { color: { argb: 'FF6B7280' } };
+      });
+    }
+    // Legende
+    r++;
+    const legend = [['U', '', 'Urlaub/ZA/FB – in der Farbe der Person (bei hinterlegter Farbe steht der eigentliche Dienst)'],
+      ['K', '#dc2626', 'Krankenstand'], ['F', '#111827', 'übernommen/getauscht – Schrift in der Farbe der Person, deren Dienst es war']];
+    for (const [t, bg, text] of legend) {
+      const row = ws.getRow(r++);
+      row.getCell(2).value = t; row.getCell(2).alignment = { horizontal: 'center' };
+      row.getCell(2).fill = fill(bg || 'var(--vac)');
+      row.getCell(2).font = { bold: true, color: { argb: bg ? 'FFFFFFFF' : 'FF111827' } };
+      row.getCell(3).value = text;
+    }
+  }
+
+  // Abwesenheiten im Zeitraum
+  const from = `${monthKey(y, months[0])}-01`, to = daysOfMonth(y, months[months.length - 1]).pop();
+  const abs = wb.addWorksheet('Abwesenheiten', { views: [{ state: 'frozen', ySplit: 1 }] });
+  abs.columns = [{ header: 'Mitarbeiter', width: 24 }, { header: 'Art', width: 16 }, { header: 'Von', width: 12 },
+    { header: 'Bis', width: 12 }, { header: 'Arbeitstage', width: 12 }, { header: 'Notiz', width: 40 }];
+  abs.getRow(1).font = { bold: true };
+  S.vacations.filter(v => v.from <= to && v.to >= from && S.usersById[v.uid])
+    .sort((a, b) => userName(a.uid).localeCompare(userName(b.uid), 'de') || a.from.localeCompare(b.from))
+    .forEach(v => {
+      const row = abs.addRow([userName(v.uid), VAC_TYPES[v.type] || v.type, xlDate(v.from), xlDate(v.to), countWorkdays(v.from, v.to, y), v.note || '']);
+      row.getCell(3).numFmt = row.getCell(4).numFmt = 'dd.mm.yyyy';
+      const bg = v.type === 'K' ? '#dc2626' : personColor(v.uid);
+      if (fill(bg)) row.getCell(1).fill = fill(bg);
+      if (v.type === 'K') row.getCell(1).font = { color: { argb: 'FFFFFFFF' } };
+    });
+
+  // Wunschfrei (nur Admins – für die Urlaubsplanung)
+  if (isAdmin()) {
+    const wsW = wb.addWorksheet('Wunschfrei', { views: [{ state: 'frozen', ySplit: 1 }] });
+    wsW.columns = [{ header: 'Mitarbeiter', width: 24 }, { header: 'Von', width: 12 }, { header: 'Bis', width: 12 }, { header: 'Notiz', width: 40 }];
+    wsW.getRow(1).font = { bold: true };
+    S.wishes.filter(w => w.from <= to && w.to >= from).sort((a, b) => a.from.localeCompare(b.from))
+      .forEach(w => {
+        const row = wsW.addRow([userName(w.uid), xlDate(w.from), xlDate(w.to), w.note || '']);
+        row.getCell(2).numFmt = row.getCell(3).numFmt = 'dd.mm.yyyy';
+      });
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: months.length === 1 ? `schichtplan-${y}-${pad(months[0])}.xlsx` : `schichtplan-${y}.xlsx`,
+  });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Excel-Datei erstellt.');
 }
 
 function openAdminCellDialog(date, uid) {
@@ -1803,7 +2108,7 @@ function renderMyAbsences() {
       <h2 style="margin:0">Meine Abwesenheiten</h2>
       <button class="btn primary" data-action="vac-new">+ Urlaub / ZA / Krank</button>
     </div>
-    <p class="muted">${y}: ${sum(['U'])} Tage Urlaub · ${sum(['ZA'])} Tage ZA · ${sum(['K'])} Tage krank (Mo–Fr)</p>
+    <p class="muted">${y}: ${sum(['U'])} Tage Urlaub · ${sum(['ZA'])} Tage ZA · ${sum(['K'])} Tage krank (Mo–Fr ohne Feiertage)</p>
     <div class="list">${coming.map(item).join('') || '<p class="muted">Nichts geplant.</p>'}</div>
     ${past.length ? `<details style="margin-top:10px"><summary class="muted">Vergangene anzeigen</summary><div class="list" style="margin-top:8px">${past.map(item).join('')}</div></details>` : ''}
   </div>`;
@@ -1833,6 +2138,7 @@ function renderTeamOverview() {
   const item = (x, buttons) => `<div class="item"><div class="grow">${swapLine(x)}</div>
     <span class="status ${x.status}">${SWAP_STATUS[x.status] || esc(x.status)}</span>${buttons}</div>`;
   return `${renderOpen()}
+    ${renderWishOverview()}
     <div class="card"><h2>Tausche</h2>
       <h3>Offene Anfragen (${pending.length})</h3><div class="list">
       ${pending.map(x => item(x, `<button class="btn small" data-action="swap-cancel" data-id="${x.id}">Verwerfen</button>`)).join('') || '<p class="muted">Keine.</p>'}</div>
@@ -1840,7 +2146,7 @@ function renderTeamOverview() {
       ${history.map(x => item(x, x.status === 'accepted' ? `<button class="btn small danger" data-action="swap-revert" data-id="${x.id}">Rückgängig</button>` : '')).join('') || '<p class="muted">Noch keine Tausche.</p>'}
       </div></details>
     </div>
-    <div class="card"><h2>Abwesenheitstage ${y} (Mo–Fr)</h2>
+    <div class="card"><h2>Abwesenheitstage ${y} (Mo–Fr ohne Feiertage)</h2>
       <div style="overflow-x:auto"><table class="simple"><thead><tr><th>Mitarbeiter</th><th>Urlaub</th><th>ZA</th><th>Krank</th></tr></thead><tbody>${stats}</tbody></table></div>
       <p class="muted">Aus der Excel übernommene Abwesenheiten zählen als Urlaub (dort war Urlaub/ZA nicht unterschieden).</p>
     </div>`;

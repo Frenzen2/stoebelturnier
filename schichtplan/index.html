@@ -84,6 +84,14 @@ table.plan { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
 .plan td.open { background: #fee2e2; color: #b91c1c; }
 .plan tr.openrow .name { color: #b91c1c; background: #fff5f5; }
 .plan td.swapped { position: relative; }
+/* Feiertag */
+.plan th.hol { color: #b91c1c; }
+.hol-tag { font-size: .75rem; font-weight: 600; color: #b91c1c; background: #fee2e2; border-radius: 6px; padding: 1px 6px; }
+/* Wunschfrei: kleiner Stern in der Zelle */
+.plan td.wish { position: relative; }
+.plan td.wish::before { content: "☆"; position: absolute; top: 0; left: 2px; font-size: .65rem; color: #7c3aed; font-weight: 700; }
+.wish-chip { background: #ede9fe; color: #7c3aed; }
+.wk-wish { font-size: .85rem; color: #6d28d9; background: #f5f3ff; border-radius: 6px; padding: 2px 6px; }
 .plan td.swapped::after { content: ""; position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .plan tfoot td { font-size: .72rem; color: var(--muted); height: auto; padding: 3px 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: .82rem; color: var(--muted); }
@@ -229,6 +237,7 @@ details summary { cursor: pointer; }
       <span class="spacer"></span>
       <span class="who muted" id="whoami"></span>
       <button class="btn small" data-action="push-toggle" id="pushBtn" title="Push-Benachrichtigungen">🔔</button>
+      <button class="btn small desktop-only" data-action="export-plan" title="Plan als Excel herunterladen">📊 Excel</button>
       <button class="btn small desktop-only" data-action="pwreset-self" title="Passwort-Link per E-Mail">Passwort ändern</button>
       <button class="btn small desktop-only" data-action="logout">Abmelden</button>
       <button class="btn small mobile-only" data-action="menu" aria-label="Menü">☰</button>
@@ -251,6 +260,6 @@ details summary { cursor: pointer; }
 <div id="toast" class="hidden"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-<script type="module" src="app.js?v=2026-10-09-1953"></script>
+<script type="module" src="app.js?v=2026-10-09-2023"></script>
 </body>
 </html>

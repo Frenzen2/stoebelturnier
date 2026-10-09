@@ -85,6 +85,17 @@ in der Zelle, Verlauf im Tab „Tausch“). Ein neuer Upload überschreibt keine
 2. Unter **Schichtarten** die Codes, Zeiten und Farben anpassen.
 3. Unter **Grundplan hochladen** die Datei auswählen, die Vorschau prüfen und importieren.
 
+## Feiertage, Wunschfrei, Excel-Export
+
+- **Feiertage (Österreich)** werden automatisch berechnet (inkl. Ostermontag, Pfingstmontag, Fronleichnam …),
+  im Plan rot markiert und bei den Abwesenheitstagen nicht als Arbeitstag gezählt.
+- **Wunschfrei:** Mitarbeiter tippen auf die eigene Schicht → **☆ Wunschfrei** (oder unter „Meine“ → **+ Wunsch**).
+  Unverbindlich, z. B. für die Sommerurlaubsplanung. Im Plan als ☆ sichtbar. Admins sehen unter „Verwaltung“ alle Wünsche
+  mit Überschneidungen und können sie mit **Als Urlaub eintragen** zusagen (der Wunsch wird dann entfernt)
+  oder löschen – Dienste lassen sich trotzdem zuteilen.
+- **Excel-Export** (☰ → 📊 bzw. „📊 Excel“): Monat oder ganzes Jahr, in den gewohnten Farben, mit Blättern
+  „Abwesenheiten“ (inkl. Arbeitstage) und – für Admins – „Wunschfrei“.
+
 ## Kalender-Abo
 
 Unter ☰ → **📆 Kalender-Abo** bekommt jede Person einen persönlichen Link. Damit erscheinen die eigenen Dienste

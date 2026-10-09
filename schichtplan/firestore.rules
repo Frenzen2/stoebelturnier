@@ -166,6 +166,20 @@ service cloud.firestore {
             && (resource.data.get('kind', 'vacation') != 'release' || resource.data.status == 'open')));
     }
 
+    // Wunschfrei (unverbindlich): nur für sich selbst eintragen; löschen: selbst oder Admin
+    match /wishes/{id} {
+      allow read: if isMember();
+      allow create: if isMember() && !isAdmin()
+        && request.resource.data.keys().hasOnly(['uid', 'from', 'to', 'note', 'createdAt'])
+        && request.resource.data.keys().hasAll(['uid', 'from', 'to', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && isDate(request.resource.data.from) && isDate(request.resource.data.to)
+        && request.resource.data.from <= request.resource.data.to
+        && (!('note' in request.resource.data) || shortText(request.resource.data.note, 200))
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isMember() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
     // Kalender-Abo: geheimer Link pro Person (Dokument-ID = Token). Nur eigene sichtbar/löschbar.
     // Den Kalender selbst liefert die Cloud Function "calendar" (meta/ und calCache/ schreibt nur sie).
     match /calTokens/{token} {
