@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-1901';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-1953';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-09-1901';
+const APP_VERSION = '2026-10-09-1953';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -1270,7 +1270,7 @@ async function openCalendarDialog(renew = false) {
       <p><strong>Outlook:</strong> Kalender → „Kalender hinzufügen“ → „Aus dem Internet abonnieren“ → Link einfügen.</p>
     </details>
     <p class="muted" style="font-size:.85rem">Wer diesen Link hat, sieht deine Dienste – bitte nicht weitergeben.
-      Zeitraum: 2 Wochen zurück bis 4 Monate voraus.</p>
+      Zeitraum: 1 Monat zurück bis 12 Monate voraus.</p>
     <div class="actions">
       <button type="button" class="btn danger" data-action="cal-renew">Neuen Link erzeugen</button>
       <button type="button" class="btn" data-close>Schließen</button>

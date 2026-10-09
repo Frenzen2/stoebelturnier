@@ -88,7 +88,7 @@ in der Zelle, Verlauf im Tab „Tausch“). Ein neuer Upload überschreibt keine
 ## Kalender-Abo
 
 Unter ☰ → **📆 Kalender-Abo** bekommt jede Person einen persönlichen Link. Damit erscheinen die eigenen Dienste
-(2 Wochen zurück bis 4 Monate voraus, Abwesenheiten als ganztägige Termine) im Apple-, Google- oder Outlook-Kalender.
+(1 Monat zurück bis 12 Monate voraus, Abwesenheiten als ganztägige Termine) im Apple-, Google- oder Outlook-Kalender.
 Tausche, Übernahmen und Urlaube werden automatisch nachgezogen – je nach Kalender-App etwa stündlich bis alle paar Stunden.
 
 - Läuft über die Cloud Function `calendar` – wird mit dem Deploy unten automatisch eingerichtet (Blaze-Tarif).

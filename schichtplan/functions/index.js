@@ -111,8 +111,9 @@ export const onCoverDeleted = onDocumentDeleted('coverages/{id}', async event =>
 // und nur neu berechnet, wenn sich seit dem letzten Mal etwas geändert hat (meta/calendar.version)
 // oder ein neuer Tag begonnen hat.
 
-const RANGE_BACK = 14;     // Tage zurück
-const RANGE_AHEAD = 120;   // Tage voraus
+const RANGE_BACK = 31;     // Tage zurück (1 Monat)
+const RANGE_AHEAD = 365;   // Tage voraus (12 Monate)
+const RANGE_KEY = `${RANGE_BACK}/${RANGE_AHEAD}`;   // ändert sich der Zeitraum, wird der Zwischenspeicher neu berechnet
 
 const viennaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna' }).format(new Date());
 
@@ -151,7 +152,7 @@ async function buildAllCalendars(version, day) {
     const data = u.data();
     if (data.active === false) continue;
     out[u.id] = buildIcs({ uid: u.id, name: data.name, dates, planFor, vacations, types, stamp });
-    batch.set(db.doc(`calCache/${u.id}`), { version, day, ics: out[u.id] });
+    batch.set(db.doc(`calCache/${u.id}`), { version, day, range: RANGE_KEY, ics: out[u.id] });
   }
   await batch.commit();
   return out;
@@ -167,7 +168,7 @@ export const calendar = onRequest({ invoker: 'public', memory: '256MiB', timeout
   const [meta, cache] = await Promise.all([db.doc('meta/calendar').get(), db.doc(`calCache/${uid}`).get()]);
   const version = meta.data()?.version ?? 0;
   let ics;
-  if (cache.exists && cache.data().version === version && cache.data().day === day) ics = cache.data().ics;
+  if (cache.exists && cache.data().version === version && cache.data().day === day && cache.data().range === RANGE_KEY) ics = cache.data().ics;
   else ics = (await buildAllCalendars(version, day))[uid];
   if (!ics) { res.status(404).send('Kein aktives Profil.'); return; }
   res.set('Content-Type', 'text/calendar; charset=utf-8');
