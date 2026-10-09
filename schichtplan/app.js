@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2025';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2039';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-09-2025';
+const APP_VERSION = '2026-10-09-2039';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -524,7 +524,7 @@ const actions = {
   },
   'open-day': el => openClaimDialog(el.dataset.date),
   'cover-undo': el => undoCover(el.dataset.id),
-  'wish-new': () => openWishDialog(today()),
+  'wish-new': () => (isAdmin() ? toast('Admins sind nicht im Dienstrad – Wunschfrei ist für Mitarbeiter.', true) : openWishDialog(today())),
   'wish-delete': el => deleteWish(el.dataset.id),
   'wish-grant': el => {
     const w = S.wishes.find(x => x.id === el.dataset.id);
@@ -938,6 +938,7 @@ function wishRange(w) { return `${fmt(w.from)}${w.to !== w.from ? ` – ${fmt(w.
 
 // Meine Wünsche
 function renderMyWishes() {
+  if (isAdmin()) return '';   // Admins sind nicht im Dienstrad
   const t = today();
   const mine = S.wishes.filter(w => w.uid === S.uid && w.to >= t).sort((a, b) => a.from.localeCompare(b.from));
   return `<div class="card">
