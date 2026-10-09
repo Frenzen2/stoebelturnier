@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2023';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2025';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-09-2023';
+const APP_VERSION = '2026-10-09-2025';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -415,8 +415,8 @@ function ensureWindow(mk) {
   // winReady: erfüllt, sobald alle Abfragen das erste Mal geantwortet haben (z. B. für den Excel-Export)
   let pending = 5, resolveReady;
   S.winReady = new Promise(r => { resolveReady = r; });
-  const first = fn => { let seen = false; const done = () => { if (!seen) { seen = true; if (--pending === 0) resolveReady(); } };
-    return [snap => { fn(snap); done(); }, e => { done(); fail(e); }]; };
+  const first = (fn, onError = fail) => { let seen = false; const done = () => { if (!seen) { seen = true; if (--pending === 0) resolveReady(); } };
+    return [snap => { fn(snap); done(); }, e => { done(); onError(e); }]; };
   S.winUnsub = [
     // Zwei einfache Abfragen statt einer ODER-Abfrage – die bräuchte in Firestore einen eigenen Index
     ...['dateFrom', 'dateTo'].map(field => onSnapshot(query(collection(db, 'swaps'), where(field, '>=', start)), ...first(snap => {
@@ -435,7 +435,7 @@ function ensureWindow(mk) {
     onSnapshot(query(collection(db, 'wishes'), where('to', '>=', start)), ...first(snap => {
       S.wishes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       render();
-    })),
+    }, e => console.warn('Wunschfrei nicht lesbar (Sicherheitsregeln schon veröffentlicht?)', e))),
   ];
   return S.winReady;
 }
@@ -919,7 +919,10 @@ function openWishDialog(date) {
     const data = { uid: S.uid, from, to, createdAt: serverTimestamp() };
     const note = $('#wNote').value.trim();
     if (note) data.note = note;
-    await addDoc(collection(db, 'wishes'), data);
+    try { await addDoc(collection(db, 'wishes'), data); } catch (e) {
+      if (e.code === 'permission-denied') { toast('Wunschfrei ist noch nicht freigeschaltet – bitte die Teamleitung, die Sicherheitsregeln zu veröffentlichen.', true); return false; }
+      throw e;
+    }
     toast('Wunsch gespeichert.');
   });
 }
