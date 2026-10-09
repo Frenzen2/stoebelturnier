@@ -1,0 +1,212 @@
+rules_version = '2';
+
+// Sicherheitsregeln für die Schichtplan-App.
+// In der Firebase-Konsole unter Firestore Database → Regeln einfügen und "Veröffentlichen".
+//
+// Grundprinzip:
+//  - Nur angemeldete Personen MIT aktivem Profil in /users/{uid} sehen irgendetwas.
+//    (Wer sich selbst einen Firebase-Account anlegt, hat ohne Profil keinen Zugriff.)
+//  - Den Grundplan, Schichtarten und Mitarbeiter ändern nur Admins.
+//  - Tausch-Anfragen: nur im eigenen Namen anlegen; annehmen/ablehnen nur die
+//    angefragte Person; zurückziehen nur die anfragende Person.
+//  - Urlaub: nur für sich selbst eintragen/löschen (Admins für alle).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function profile() { return get(userPath(request.auth.uid)).data; }
+    function isMember() {
+      return signedIn() && exists(userPath(request.auth.uid)) && profile().active == true;
+    }
+    function isAdmin() { return isMember() && profile().role == 'admin'; }
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    // Admins (Teamleitung) sind nicht im Dienstrad: kein Tauschen, Übernehmen oder Vertreten
+    function inRota(uid) { return exists(userPath(uid)) && get(userPath(uid)).data.role != 'admin'; }
+    function shortText(v, max) { return v is string && v.size() <= max; }
+
+    match /users/{uid} {
+      // Eigenes Profil immer lesbar (damit "deaktiviert" angezeigt werden kann)
+      allow read: if isMember() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if isAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.role in ['admin', 'employee']
+        && request.resource.data.active is bool
+        // Admins können sich nicht selbst aussperren
+        && (uid != request.auth.uid
+            || (request.resource.data.role == 'admin' && request.resource.data.active == true));
+      allow delete: if isAdmin() && uid != request.auth.uid;
+    }
+
+    // Schichtarten u. ä.
+    match /config/{docId} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // Aus der bisherigen Excel übernommene Markierungen (wer hat von wem übernommen), je Monat
+    match /marks/{month} {
+      allow read: if isMember();
+      allow write: if isAdmin() && month.matches('^[0-9]{4}-[0-9]{2}$');
+    }
+
+    // Grundplan, ein Dokument pro Monat: /plan/2026-10 { days: { "2026-10-01": { uid: "F" } } }
+    match /plan/{month} {
+      allow read: if isMember();
+      allow write: if isAdmin() && month.matches('^[0-9]{4}-[0-9]{2}$');
+    }
+
+    match /swaps/{id} {
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(
+             ['from', 'to', 'dateFrom', 'dateTo', 'fromCode', 'toCode', 'note', 'status', 'createdAt'])
+        && request.resource.data.keys().hasAll(
+             ['from', 'to', 'dateFrom', 'dateTo', 'fromCode', 'toCode', 'status', 'createdAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to != request.auth.uid
+        && !isAdmin()
+        && inRota(request.resource.data.to)
+        && isDate(request.resource.data.dateFrom)
+        && isDate(request.resource.data.dateTo)
+        && shortText(request.resource.data.fromCode, 10)
+        && shortText(request.resource.data.toCode, 10)
+        && (!('note' in request.resource.data) || shortText(request.resource.data.note, 300))
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isMember()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy'])
+        && request.resource.data.decidedAt == request.time
+        && request.resource.data.decidedBy == request.auth.uid
+        && (
+          (resource.data.status == 'pending'
+            && request.auth.uid == resource.data.to
+            && request.resource.data.status in ['accepted', 'rejected'])
+          || (resource.data.status == 'pending'
+            && request.auth.uid == resource.data.from
+            && request.resource.data.status == 'cancelled')
+          // Admin darf entscheiden und angenommene Tausche rückgängig machen
+          || (isAdmin() && request.resource.data.status in ['accepted', 'rejected', 'cancelled', 'reverted'])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // Offene Dienste. Zwei Arten:
+    //  - Urlaubsvertretung: ein Dokument pro betroffenem Dienst, ID = <urlaubsId>_<datum>
+    //  - kind 'release': jemand gibt einen eigenen Dienst ab, ID = rel_<uid>_<datum>_<zeit>
+    // status 'open' = noch niemand übernommen, 'assigned' = assignee übernimmt den Dienst.
+    match /coverages/{id} {
+      function vacPath(vid) { return /databases/$(database)/documents/vacations/$(vid); }
+      function c() { return request.resource.data; }
+
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && c().keys().hasOnly(['kind', 'vacationId', 'date', 'code', 'absentUid', 'status', 'assignee',
+                               'createdAt', 'createdBy', 'assignedAt', 'assignedBy'])
+        && c().keys().hasAll(['vacationId', 'date', 'code', 'absentUid', 'status', 'assignee', 'createdAt', 'createdBy'])
+        && c().createdBy == request.auth.uid
+        && c().createdAt == request.time
+        && isDate(c().date)
+        && shortText(c().code, 10) && c().code.size() > 0
+        && (
+          // a) Urlaubsvertretung – im selben Batch wie der Urlaub, nur für eigenen Urlaub (Admin: alle)
+          (!('kind' in c())
+            && c().vacationId is string
+            && id == c().vacationId + '_' + c().date
+            && (c().absentUid == request.auth.uid || isAdmin())
+            && existsAfter(vacPath(c().vacationId))
+            && getAfter(vacPath(c().vacationId)).data.uid == c().absentUid
+            && getAfter(vacPath(c().vacationId)).data.from <= c().date
+            && getAfter(vacPath(c().vacationId)).data.to >= c().date
+            && ((c().status == 'open' && c().assignee == null)
+                || (c().status == 'assigned'
+                    && c().assignee is string
+                    && c().assignee != c().absentUid
+                    && inRota(c().assignee)
+                    && c().assignedAt == request.time
+                    && c().assignedBy == request.auth.uid)))
+          // b) Eigenen Dienst abgeben – nur im eigenen Namen, startet immer offen
+          || (c().kind == 'release'
+            && c().vacationId == null
+            && c().absentUid == request.auth.uid
+            && !isAdmin()
+            && id.matches('rel_' + request.auth.uid + '_' + c().date + '_[0-9]+')
+            && c().status == 'open'
+            && c().assignee == null)
+        );
+
+      // Übernehmen: nur offene Dienste, nur für sich selbst (jede/r außer der abgebenden Person)
+      // → wer zuerst kommt, bekommt ihn.
+      // Admins dürfen zuteilen, umverteilen oder wieder öffnen.
+      allow update: if isMember()
+        && c().diff(resource.data).affectedKeys().hasOnly(['status', 'assignee', 'assignedAt', 'assignedBy'])
+        && c().assignedAt == request.time
+        && c().assignedBy == request.auth.uid
+        && (
+          (resource.data.status == 'open'
+            && c().status == 'assigned'
+            && c().assignee == request.auth.uid
+            && c().assignee != resource.data.absentUid
+            && !isAdmin())
+          || (isAdmin()
+            && ((c().status == 'open' && c().assignee == null)
+                || (c().status == 'assigned' && c().assignee is string
+                    && c().assignee != resource.data.absentUid && inRota(c().assignee))))
+        );
+
+      // Löschen: Urlaubsvertretungen zusammen mit dem Urlaub; abgegebene Dienste nur solange noch offen
+      allow delete: if isMember() && (isAdmin()
+        || (resource.data.absentUid == request.auth.uid
+            && (resource.data.get('kind', 'vacation') != 'release' || resource.data.status == 'open')));
+    }
+
+    // Kalender-Abo: geheimer Link pro Person (Dokument-ID = Token). Nur eigene sichtbar/löschbar.
+    // Den Kalender selbst liefert die Cloud Function "calendar" (meta/ und calCache/ schreibt nur sie).
+    match /calTokens/{token} {
+      allow read, delete: if isMember() && resource.data.uid == request.auth.uid;
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && token.matches('^[a-f0-9]{40}$');
+    }
+
+    // Geräte-Tokens für Push. Dokument-ID = Token; nur eigene Tokens lesbar/löschbar.
+    // Überschreiben ist erlaubt, damit ein Gerät nach Benutzerwechsel dem neuen Login gehört
+    // (dafür muss man den Token kennen, also das Gerät in der Hand haben).
+    match /pushTokens/{token} {
+      allow read, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt', 'device'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && shortText(request.resource.data.device, 200)
+        && token.size() < 400;
+    }
+
+    match /vacations/{id} {
+      allow read: if isMember();
+
+      allow create: if isMember()
+        && (request.resource.data.uid == request.auth.uid || isAdmin())
+        && exists(userPath(request.resource.data.uid))
+        && request.resource.data.keys().hasOnly(['uid', 'from', 'to', 'type', 'note', 'createdAt', 'createdBy'])
+        && request.resource.data.keys().hasAll(['uid', 'from', 'to', 'type', 'createdAt', 'createdBy'])
+        && isDate(request.resource.data.from)
+        && isDate(request.resource.data.to)
+        && request.resource.data.from <= request.resource.data.to
+        && request.resource.data.type in ['U', 'ZA', 'K', 'FB']
+        && (!('note' in request.resource.data) || shortText(request.resource.data.note, 200))
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow delete: if isMember() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Schichtplan</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Schichtplan">
+<style>
+:root {
+  --bg: #f4f5f7; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6ea;
+  --accent: #2563eb; --accent-soft: #e8efff; --danger: #dc2626; --ok: #16a34a;
+  --weekend: #f1f2f5; --today: #fff7d6; --mine: #eef5ff; --vac: #fde68a;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+button, input, select, textarea { font: inherit; }
+.hidden { display: none !important; }
+
+/* Login */
+.center { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login-card { background: var(--card); padding: 28px; border-radius: 14px; width: 100%; max-width: 360px; box-shadow: 0 6px 30px rgba(0,0,0,.08); }
+.login-card h1 { margin: 0 0 4px; font-size: 1.4rem; }
+
+/* Layout */
+header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; max-width: 1400px; margin: 0 auto; }
+.brand { font-weight: 700; }
+.spacer { flex: 1; }
+nav { display: flex; gap: 4px; padding: 0 12px; max-width: 1400px; margin: 0 auto; overflow-x: auto; }
+nav button { background: none; border: 0; padding: 10px 12px; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
+nav button.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: .72rem; text-align: center; margin-left: 4px; }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.card h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.card h3 { margin: 16px 0 8px; font-size: 1rem; }
+.muted { color: var(--muted); font-size: .88rem; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.row > label { flex: 1 1 160px; }
+label { display: block; font-size: .85rem; color: var(--muted); }
+label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 3px; }
+input, select, textarea { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+input[type=color] { padding: 2px; height: 36px; width: 48px; }
+.btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: #f7f8fa; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+a.btn { display: block; text-decoration: none; color: var(--text); }
+a.btn.primary { color: #fff; }
+.btn.danger { color: var(--danger); }
+.btn.ok { color: var(--ok); }
+.btn.small { padding: 4px 9px; font-size: .85rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+.error { color: var(--danger); font-size: .88rem; min-height: 1.2em; }
+
+/* Monatsnavigation */
+.monthnav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.monthnav h2 { margin: 0; min-width: 170px; text-align: center; font-size: 1.15rem; }
+
+/* Plan-Tabelle */
+.plan-wrap { overflow-x: auto; border-radius: var(--radius); background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+table.plan { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
+.plan th, .plan td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); text-align: center; padding: 0; min-width: 36px; height: 34px; }
+.plan thead th { position: sticky; top: 0; background: #fafbfc; font-weight: 600; font-size: .75rem; padding: 4px 2px; z-index: 2; }
+.plan .name { position: sticky; left: 0; background: var(--card); text-align: left; padding: 0 10px; min-width: 140px; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; font-weight: 500; }
+.plan thead .name { z-index: 3; background: #fafbfc; }
+.plan .we { background: var(--weekend); }
+.plan .today { box-shadow: inset 0 0 0 2px #f59e0b; }
+.plan tr.mine .name { background: var(--mine); color: var(--accent); }
+.plan td.cell { cursor: pointer; font-weight: 600; }
+.plan td.cell:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.plan td.vac { background: var(--vac); color: #92400e; }
+/* Abwesend: Farbe der Person, schraffiert – so klar von einem normalen Dienst zu unterscheiden */
+.plan td.vac { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.55) 0 3px, transparent 3px 7px) !important; }
+/* Platzhalter (z. B. TD1): Dienst noch nicht zugeteilt */
+.plan td.ph { color: #4b5563; font-style: italic; font-weight: 500; }
+.plan td.open { background: #fee2e2; color: #b91c1c; }
+.plan tr.openrow .name { color: #b91c1c; background: #fff5f5; }
+.plan td.swapped { position: relative; }
+.plan td.swapped::after { content: ""; position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.plan tfoot td { font-size: .72rem; color: var(--muted); height: auto; padding: 3px 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: .82rem; color: var(--muted); }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 6px; font-weight: 600; font-size: .8rem; color: #111; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+
+/* Listen */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; flex-wrap: wrap; }
+.item .grow { flex: 1 1 220px; }
+.status { font-size: .78rem; padding: 2px 8px; border-radius: 10px; background: #eef0f3; }
+.status.pending { background: #fef3c7; color: #92400e; }
+.status.accepted { background: #dcfce7; color: #166534; }
+.status.rejected, .status.cancelled, .status.reverted { background: #f3f4f6; color: #6b7280; }
+table.simple { width: 100%; border-collapse: collapse; font-size: .9rem; }
+table.simple th, table.simple td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.simple th { color: var(--muted); font-weight: 500; font-size: .8rem; }
+.inactive { opacity: .5; }
+
+/* Dialog */
+dialog { max-height: 90vh; overflow: auto; border: 0; border-radius: 14px; padding: 0; width: min(520px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(15, 23, 42, .45); }
+.dlg { padding: 20px; }
+/* Knöpfe in Dialogen dürfen umbrechen – sonst wird der Dialog auf schmalen Handys zu breit */
+dialog { overflow-x: hidden; }
+.dlg .btn { white-space: normal; max-width: 100%; }
+.dlg .list .btn { width: 100%; }
+.dlg h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.dlg .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.preview { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: .9rem; }
+.warn { background: #fef3c7; color: #92400e; border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: .88rem; }
+
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 18px; border-radius: 10px; z-index: 100; font-size: .9rem; max-width: calc(100vw - 32px); }
+#toast.err { background: var(--danger); }
+
+/* Wochenansicht */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg .btn { border: 0; border-radius: 0; }
+.seg .btn.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.week { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 10px; }
+.wk-day, .wk-row { min-width: 0; }
+.wk-day { background: var(--card); border-radius: var(--radius); padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.wk-day.we { background: #fafafb; }
+.wk-day.today { box-shadow: 0 0 0 2px #f59e0b; }
+.wk-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 700; }
+.wk-me { margin-left: auto; font-weight: 500; font-size: .85rem; color: var(--accent); }
+.wk-row { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; border-top: 1px solid var(--line); }
+.wk-row:first-of-type { border-top: 0; }
+.wk-row > .chip { min-width: 28px; text-align: center; margin-top: 3px; }
+.wk-names { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.wk-name { background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; cursor: pointer; color: var(--text); font-size: .92rem; }
+.wk-name:hover { border-color: var(--line); }
+.wk-name.me { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.wk-name .dot { color: var(--accent); }
+.wk-open { color: #b91c1c; }
+.wk-names.one { flex-wrap: nowrap; min-width: 0; }
+.wk-names.one .wk-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nm-short { display: none; }
+@media (max-width: 600px) { .wk-names.one .nm-long { display: none; } .wk-names.one .nm-short { display: inline; } }
+.card.todo { border-left: 4px solid var(--accent); }
+.card.todo .item { padding: 8px 10px; }
+details summary { cursor: pointer; }
+.mobile-only { display: none !important; }
+#bottomnav { display: none; }
+
+@media (max-width: 700px) {
+  main { padding: 10px 10px calc(84px + env(safe-area-inset-bottom)); }
+  .bar { padding: 8px 12px; gap: 8px; }
+  .bar .who { display: none; }
+  .desktop-only, #tabs { display: none !important; }
+  .mobile-only { display: inline-block !important; }
+  .plan .name { min-width: 92px; max-width: 110px; padding: 0 6px; }
+  /* iPhone zoomt bei Schrift < 16px in Eingabefelder hinein */
+  input, select, textarea { font-size: 16px; }
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 36px; padding: 6px 12px; }
+  /* Zeile 1: ‹ Titel ›   Zeile 2: Heute + Woche/Monat */
+  .monthnav { row-gap: 6px; }
+  .monthnav h2 { flex: 1 1 calc(100% - 120px); min-width: 0; order: 1; font-size: 1rem; white-space: nowrap; }
+  .monthnav [data-action=month-prev] { order: 0; }
+  .monthnav [data-action=month-next] { order: 2; }
+  .monthnav [data-action=month-today] { order: 3; }
+  .monthnav .seg { order: 4; margin-left: auto; }
+  .wk-day { scroll-margin-top: 70px; }
+  .dlg .actions .btn { flex: 1 1 45%; }
+  /* "Schließen/Abbrechen" am Handy immer zuletzt */
+  .dlg .actions [data-close] { order: 9; }
+  .week { grid-template-columns: minmax(0, 1fr); }
+  .wk-name { padding: 5px 8px; font-size: 1rem; }
+  #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  #bottomnav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+  #bottomnav button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; position: relative;
+    background: none; border: 0; padding: 6px 0; font-size: .7rem; color: var(--muted); cursor: pointer;
+  }
+  #bottomnav .ico { font-size: 1.35rem; line-height: 1.2; filter: grayscale(1); opacity: .7; }
+  #bottomnav button.active { color: var(--accent); font-weight: 600; }
+  #bottomnav button.active .ico { filter: none; opacity: 1; }
+  #bottomnav .bn-badge .badge { position: absolute; top: 2px; left: 55%; margin: 0; }
+  dialog { width: calc(100vw - 16px); max-height: 85vh; }
+  .item { padding: 10px; }
+}
+@media print {
+  header, .monthnav .btn, .noprint { display: none !important; }
+  body { background: #fff; }
+  .plan-wrap { box-shadow: none; overflow: visible; }
+}
+</style>
+</head>
+<body>
+
+<section id="login" class="center hidden">
+  <form class="login-card" id="loginForm">
+    <h1>Schichtplan</h1>
+    <p class="muted" style="margin:0 0 18px">Bitte mit deinem Firmen-Account anmelden.</p>
+    <label>E-Mail<input type="email" id="loginEmail" autocomplete="username" required></label>
+    <label style="margin-top:10px">Passwort<input type="password" id="loginPw" autocomplete="current-password" required></label>
+    <p class="error" id="loginErr"></p>
+    <button class="btn primary" style="width:100%" type="submit">Anmelden</button>
+    <p style="text-align:center;margin:14px 0 0"><a href="#" id="forgotLink" class="muted">Passwort vergessen / erstmalig setzen</a></p>
+  </form>
+</section>
+
+<section id="noAccess" class="center hidden">
+  <div style="width:100%;display:grid;place-items:center">
+    <div class="login-card">
+      <h1 id="noAccessTitle">Verbinde …</h1>
+      <p id="noAccessMsg"></p>
+      <p class="muted">Deine Benutzer-ID (für den Admin):<br><code id="noAccessUid" style="user-select:all"></code></p>
+      <button class="btn" onclick="location.reload()">Neu laden</button>
+      <button class="btn" data-action="logout">Abmelden</button>
+    </div>
+  </div>
+</section>
+
+<section id="app" class="hidden">
+  <header>
+    <div class="bar">
+      <span class="brand">📅 Schichtplan</span>
+      <span class="spacer"></span>
+      <span class="who muted" id="whoami"></span>
+      <button class="btn small" data-action="push-toggle" id="pushBtn" title="Push-Benachrichtigungen">🔔</button>
+      <button class="btn small desktop-only" data-action="pwreset-self" title="Passwort-Link per E-Mail">Passwort ändern</button>
+      <button class="btn small desktop-only" data-action="logout">Abmelden</button>
+      <button class="btn small mobile-only" data-action="menu" aria-label="Menü">☰</button>
+    </div>
+    <nav id="tabs">
+      <button data-view="plan">Plan</button>
+      <button data-view="mine">Meine <span id="todoBadge" data-badge="todo"></span></button>
+      <button data-view="admin" class="admin-only">Verwaltung</button>
+    </nav>
+  </header>
+  <main id="view"></main>
+  <!-- Handy: Leiste unten -->
+  <nav id="bottomnav" aria-label="Navigation">
+    <button data-view="plan"><span class="ico">📅</span>Plan</button>
+    <button data-view="mine"><span class="ico">👤</span>Meine<span class="bn-badge" data-badge="todo"></span></button>
+  </nav>
+</section>
+
+<dialog id="dlg"><form method="dialog" class="dlg" id="dlgBody"></form></dialog>
+<div id="toast" class="hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+<script type="module" src="app.js?v=2026-10-09-1901"></script>
+</body>
+</html>
