@@ -146,6 +146,26 @@ dialog { overflow-x: hidden; }
 .wk-name.me { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .wk-name .dot { color: var(--accent); }
 .wk-open { color: #b91c1c; }
+/* Wochenansicht: Streifen "Meine Woche" */
+.ws-card { padding: 10px 10px 12px; margin-bottom: 10px; }
+.ws-title { font-weight: 700; font-size: .9rem; margin: 0 4px 8px; }
+.ws-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.ws-day { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 7px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; font: inherit; color: var(--text); min-width: 0; }
+.ws-day.off { background: var(--weekend); }
+.ws-day.today { border-color: #f59e0b; box-shadow: inset 0 0 0 1px #f59e0b; }
+.ws-day.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+.ws-wd { font-size: .72rem; color: var(--muted); }
+.ws-day.hol .ws-wd, .ws-day.hol .ws-dt { color: #b91c1c; }
+.ws-dt { font-size: .8rem; font-weight: 600; }
+.ws-code { margin-top: 2px; min-width: 30px; max-width: 100%; padding: 3px 2px; border-radius: 6px; font-weight: 700; font-size: .85rem;
+  line-height: 1.1; text-align: center; overflow-wrap: anywhere; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.ws-code.ph { font-style: italic; font-weight: 500; color: #4b5563; }
+.ws-code.vac { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.55) 0 3px, transparent 3px 7px); }
+.ws-flag { position: absolute; top: 2px; right: 3px; font-size: .65rem; font-weight: 800; color: #b91c1c; }
+.ws-flag.wish { color: #7c3aed; }
+.week.single { grid-template-columns: minmax(0, 1fr); }
+button.wk-me { background: none; border: 0; padding: 2px 4px; cursor: pointer; font-family: inherit; }
 .wk-names.one { flex-wrap: nowrap; min-width: 0; }
 .wk-names.one .wk-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nm-short { display: none; }
@@ -260,6 +280,6 @@ details summary { cursor: pointer; }
 <div id="toast" class="hidden"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-<script type="module" src="app.js?v=2026-10-09-2039"></script>
+<script type="module" src="app.js?v=2026-10-10-0736"></script>
 </body>
 </html>

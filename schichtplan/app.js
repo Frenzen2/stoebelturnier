@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-09-2039';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-10-0736';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-09-2039';
+const APP_VERSION = '2026-10-10-0736';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -90,7 +90,8 @@ const S = {
   cur: (() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; })(),
   // Handy: Wochenansicht, sonst Monatstabelle
   planMode: matchMedia('(max-width: 700px)').matches ? 'week' : 'month',
-  weekStart: null,      // Montag der angezeigten Woche (YYYY-MM-DD)
+  weekStart: null,
+  weekSel: null,        // Wochenansicht: ausgewählter Tag      // Montag der angezeigten Woche (YYYY-MM-DD)
   scrollToday: true,    // Wochenansicht: einmalig zum heutigen Tag scrollen
   unsub: [],
   dataStarted: false,
@@ -459,7 +460,7 @@ for (const navEl of [$('#tabs'), $('#bottomnav')]) {
 const mondayOf = date => { const d = parseIso(date); return addDays(date, -((d.getDay() + 6) % 7)); };
 // Handy: Woche beginnt heute (dann ist "heute" ganz oben, ohne Springen); sonst ab Montag
 const isPhone = () => matchMedia('(max-width: 700px)').matches;
-const weekStartFor = date => (isPhone() ? date : mondayOf(date));
+const weekStartFor = date => mondayOf(date);   // Woche immer Mo–So (mit KW)
 
 // Antippen einer Benachrichtigung öffnet z. B. …/#swaps
 window.addEventListener('hashchange', () => {
@@ -482,7 +483,7 @@ const actions = {
   'month-next': () => { if (S.planMode === 'week') shiftWeek(1); else shiftMonth(1); },
   'month-today': () => {
     const d = new Date(); S.cur = { y: d.getFullYear(), m: d.getMonth() + 1 }; S.weekStart = weekStartFor(today());
-    S.scrollToday = true; render();
+    S.weekSel = today(); S.scrollToday = true; render();
   },
   'plan-mode': el => {
     S.planMode = el.dataset.mode;
@@ -523,6 +524,7 @@ const actions = {
     toast('Angebot zurückgezogen.');
   },
   'open-day': el => openClaimDialog(el.dataset.date),
+  'week-sel': el => { S.weekSel = el.dataset.date; render(); },
   'cover-undo': el => undoCover(el.dataset.id),
   'wish-new': () => (isAdmin() ? toast('Admins sind nicht im Dienstrad – Wunschfrei ist für Mitarbeiter.', true) : openWishDialog(today())),
   'wish-delete': el => deleteWish(el.dataset.id),
@@ -572,6 +574,7 @@ document.addEventListener('click', async e => {
 
 function shiftWeek(delta) {
   S.weekStart = addDays(S.weekStart, 7 * delta);
+  if (S.weekSel) S.weekSel = addDays(S.weekSel, 7 * delta);   // gleicher Wochentag in der neuen Woche
   const [y, m] = addDays(S.weekStart, 3).split('-').map(Number);
   S.cur = { y, m };
   render();
@@ -625,7 +628,7 @@ function render() {
   if (S.view === 'plan') {
     v.innerHTML = renderPlan();
     // Handy: in der Wochenansicht gleich zum heutigen Tag springen (nur bei Navigation, nicht bei Live-Updates)
-    if (S.planMode === 'week') S.scrollToday = false;
+    if (S.planMode === 'week') { S.scrollToday = false; bindWeekSwipe(); }
     // Monatstabelle: heutige Spalte ins Bild schieben
     const th = S.scrollToday && S.planMode === 'month' && v.querySelector('.plan thead th.today');
     if (th) {
@@ -666,16 +669,9 @@ function monthNav() {
 // "Anna Muster" → "A. Muster" (Wochenansicht am Handy, damit ein Dienst in eine Zeile passt)
 const shortName = n => { const p = String(n).trim().split(/\s+/); return p.length > 1 ? `${p[0][0]}. ${p.slice(1).join(' ')}` : n; };
 
-// Wochenansicht (vor allem fürs Handy): pro Tag eine Karte, gruppiert nach Dienst
-function renderWeek() {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(S.weekStart, i));
-  [...new Set(days.map(d => d.slice(0, 7)))].forEach(ensureMonth);
-  const ev = planEvents();
-  const users = visibleUsers();
-  const t = today();
+// Wochenansicht: oben „Meine Woche“ (7 Tage auf einen Blick), darunter das Team am gewählten Tag
+function dayCard(d, ev, users, t) {
   const typeOrder = c => { const i = S.types.findIndex(tp => tp.code.toUpperCase() === c.toUpperCase()); return i < 0 ? 99 : i; };
-
-  const cards = days.map(d => {
     const { day, touched, from } = effectiveDay(d, ev);
     const groups = new Map();
     const absent = [];
@@ -711,13 +707,64 @@ function renderWeek() {
     const hol = holidayName(d);
     return `<div class="wk-day ${isOffDay(d) ? 'we' : ''} ${d === t ? 'today' : ''}">
       <div class="wk-head">${fmtShort(d)}${d === t ? ' <span class="status pending">heute</span>' : ''}${hol ? ` <span class="hol-tag">${esc(hol)}</span>` : ''}
-        ${isAdmin() ? '' : `<span class="wk-me">Du: ${mine ? esc(mine) : 'frei'}</span>`}</div>
+        ${isAdmin() ? '' : `<button class="wk-me" data-action="cell" data-date="${d}" data-uid="${esc(S.uid)}" title="Deine Schicht: tauschen, abgeben, Urlaub …">Du: ${mine ? esc(mine) : 'frei'} ›</button>`}</div>
       ${rows.join('') || '<p class="muted" style="margin:0">Noch kein Plan für diesen Tag.</p>'}
     </div>`;
+}
+
+function renderWeek() {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(S.weekStart, i));
+  [...new Set(days.map(d => d.slice(0, 7)))].forEach(ensureMonth);
+  const ev = planEvents();
+  const users = visibleUsers();
+  const t = today();
+  if (!days.includes(S.weekSel)) S.weekSel = days.includes(t) ? t : days[0];
+
+  const strip = days.map(d => {
+    const dt = parseIso(d);
+    const vac = vacationOn(d, S.uid);
+    const eff = effectiveDay(d, ev);
+    const code = eff.day[S.uid] || '';
+    const touched = eff.touched.has(S.uid) && code && !vac;
+    const look = isAdmin() ? { text: '' } : cellLook(S.uid, code, vac, touched ? (eff.from.get(S.uid) ?? null) : undefined);
+    const text = isAdmin() ? '' : (vac ? (vac.type === 'K' ? 'K' : vac.type) : code) || '·';
+    const style = !isAdmin() && (look.bg || look.fg) ? `style="${look.bg ? `background:${look.bg};` : ''}${look.fg ? `color:${look.fg};` : ''}"` : '';
+    const open = S.covers.some(c => c.date === d && c.status === 'open' && c.kind !== 'release' && c.absentUid !== S.uid);
+    const wish = !isAdmin() && !vac && wishOn(d, S.uid);
+    const hol = holidayName(d);
+    return `<button class="ws-day ${d === S.weekSel ? 'sel' : ''} ${d === t ? 'today' : ''} ${isOffDay(d) ? 'off' : ''} ${hol ? 'hol' : ''}"
+        data-action="week-sel" data-date="${d}" title="${esc([fmt(d), hol].filter(Boolean).join(' · '))}">
+      <span class="ws-wd">${WD[dt.getDay()]}</span><span class="ws-dt">${dt.getDate()}.</span>
+      ${isAdmin() ? '' : `<span class="ws-code ${vac ? 'vac' : ''} ${look.ph ? 'ph' : ''}" ${style}>${esc(text.replace(/\+/g, '+\u200b'))}</span>`}
+      ${open ? '<span class="ws-flag" title="offener Dienst">!</span>' : wish ? '<span class="ws-flag wish" title="Wunsch: frei">☆</span>' : ''}
+    </button>`;
   }).join('');
 
-  return `${monthNav()}<div class="week">${cards}</div>
-    <p class="muted noprint">Tipp: Auf <strong>deinen</strong> Namen tippen → tauschen, abgeben oder Urlaub eintragen. ● = getauscht/übernommen.</p>`;
+  return `${monthNav()}
+    <div class="card ws-card">
+      <div class="ws-title">${isAdmin() ? 'Woche' : 'Meine Woche'} <span class="muted">· Tag antippen</span></div>
+      <div class="ws-strip">${strip}</div>
+    </div>
+    <div class="week single" id="wkDay">${dayCard(S.weekSel, ev, users, t)}</div>
+    <p class="muted noprint">Tipp: Auf <strong>deinen</strong> Namen oder „Du: …“ tippen → tauschen, abgeben, Urlaub oder Wunschfrei. Wischen wechselt den Tag. ● = getauscht/übernommen.</p>`;
+}
+
+// Wochenansicht: auf der Tageskarte nach links/rechts wischen → nächster/vorheriger Tag
+function bindWeekSwipe() {
+  const el = $('#wkDay');
+  if (!el) return;
+  let x0 = null, y0 = null;
+  el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
+    const next = addDays(S.weekSel, dx < 0 ? 1 : -1);
+    const ws = mondayOf(next);
+    if (ws !== S.weekStart) { S.weekSel = next; shiftWeek(ws > S.weekStart ? 1 : -1); S.weekSel = next; render(); }
+    else { S.weekSel = next; render(); }
+  }, { passive: true });
 }
 
 function renderPlan() {
