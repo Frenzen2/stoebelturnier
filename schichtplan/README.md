@@ -85,6 +85,21 @@ in der Zelle, Verlauf im Tab „Tausch“). Ein neuer Upload überschreibt keine
 2. Unter **Schichtarten** die Codes, Zeiten und Farben anpassen.
 3. Unter **Grundplan hochladen** die Datei auswählen, die Vorschau prüfen und importieren.
 
+## E-Mail-Adressen umstellen (z. B. beim Ausrollen)
+
+Login-E-Mail und Profil lassen sich mit `tools/emails_umstellen.mjs` in einem Schritt ändern – die Benutzer-ID bleibt,
+Plan, Urlaube, Tausche und Kalender-Abos bleiben also erhalten. In der Cloud Shell:
+
+```bash
+cd schichtplan && git pull && cd functions && npm install && cd ..
+# liste.csv: pro Zeile „bisherige E-Mail oder Name;neue E-Mail“
+node tools/emails_umstellen.mjs liste.csv                         # Vorschau, ändert nichts
+node tools/emails_umstellen.mjs liste.csv --ausfuehren --einladen # ändern + Link zum Passwort-Setzen schicken
+```
+
+Meldet das Skript einen Fehler mit „quota project“ oder „credential“: einmal
+`gcloud auth application-default login` und `gcloud auth application-default set-quota-project ragschicht` ausführen.
+
 ## Feiertage, Wunschfrei, Excel-Export
 
 - **Feiertage (Österreich)** werden automatisch berechnet (inkl. Ostermontag, Pfingstmontag, Fronleichnam …),
