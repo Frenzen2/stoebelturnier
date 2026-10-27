@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-10-0736';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-27-1640';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-10-0736';
+const APP_VERSION = '2026-10-27-1640';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -2009,7 +2009,10 @@ function renderTakeover() {
       ${mapped.length < j.people.length ? '<div class="warn">Nicht gefundene Personen zuerst unter „Mitarbeiter anlegen“ anlegen (Nachname muss passen) und die Datei dann erneut wählen.</div>' : ''}
       <label style="margin-top:10px;display:flex;gap:8px;align-items:center;color:var(--text)">
         <input type="checkbox" id="takeoverWipe" checked style="width:auto"> Bestehende Abwesenheiten dieser Personen im Zeitraum vorher löschen (empfohlen, verhindert Doppelte)</label>
-      <div class="warn">Überschreibt im Zeitraum den Plan dieser Personen, setzt ihre Farben und die Schichtarten (F, S, N, TD1–TD3).</div>
+      <label style="margin-top:6px;display:flex;gap:8px;align-items:center;color:var(--text)">
+        <input type="checkbox" id="takeoverClean" style="width:auto"> Tausche, abgegebene/übernommene Dienste und Wunschfrei aus der App im Zeitraum löschen
+        (vor dem Scharfschalten: Testdaten entfernen – im Echtbetrieb <strong>nicht</strong> anhaken)</label>
+      <div class="warn">Überschreibt im Zeitraum den Plan dieser Personen und setzt ihre Farben. Eingestellte Schichtarten (Bezeichnung, Zeiten, Farben) bleiben erhalten – nur fehlende werden ergänzt.</div>
       <div class="actions"><button class="btn" data-action="takeover-cancel">Abbrechen</button>
         <button class="btn primary" data-action="takeover-run" ${mapped.length ? '' : 'disabled'}>Jetzt übernehmen</button></div>
     </div>`;
@@ -2047,15 +2050,20 @@ async function commitInChunks(ops, size = 400) {
 async function runTakeover() {
   const { j, map } = S.takeover;
   const wipe = $('#takeoverWipe')?.checked;
+  const clean = $('#takeoverClean')?.checked;
   const dates = Object.keys(j.plan).sort();
   const first = dates[0], last = dates[dates.length - 1];
   const uids = new Set(Object.values(map).filter(Boolean));
-  if (!confirm(`Übernahme für ${uids.size} Personen, ${fmt(first)} – ${fmt(last)} jetzt durchführen?`)) return;
+  if (!confirm(`Übernahme für ${uids.size} Personen, ${fmt(first)} – ${fmt(last)} jetzt durchführen?`
+    + (clean ? '\n\nAchtung: Tausche, abgegebene/übernommene Dienste und Wunschfrei-Einträge im Zeitraum werden gelöscht.' : ''))) return;
   toast('Übernahme läuft …');
+  // Abwesenheiten/Tausche/Vertretungen ab Beginn des Zeitraums geladen haben (zum Ersetzen bzw. Löschen)
+  await ensureWindow(first.slice(0, 7));
 
-  // 1. Schichtarten: aus der Datei, bestehende andere Codes bleiben erhalten
-  const codes = new Set(j.types.map(t => t.code));
-  await setDoc(doc(db, 'config', 'shiftTypes'), { types: [...j.types, ...S.types.filter(t => !codes.has(t.code))] });
+  // 1. Schichtarten: eingestellte bleiben unverändert (Bezeichnung, Zeiten, Farben), nur fehlende Codes kommen dazu
+  const have = new Set(S.types.map(t => t.code.toUpperCase()));
+  const missingTypes = j.types.filter(t => !have.has(t.code.toUpperCase()));
+  if (missingTypes.length) await setDoc(doc(db, 'config', 'shiftTypes'), { types: [...S.types, ...missingTypes] });
 
   // 2. Personenfarben
   await commitInChunks(j.people.filter(p => map[p.key]).map(p => b => b.update(doc(db, 'users', map[p.key]), { color: p.color })));
@@ -2097,6 +2105,22 @@ async function runTakeover() {
     ]);
   }
 
+  // 5b. Testdaten aus der App im Zeitraum entfernen (Tausche, Vertretungen/Abgaben, Wunschfrei)
+  let cleaned = 0;
+  if (clean) {
+    const inRange = d => d >= first && d <= last;
+    const ops = [
+      ...S.swaps.filter(x => (uids.has(x.from) || uids.has(x.to)) && (inRange(x.dateFrom) || inRange(x.dateTo)))
+        .map(x => b => b.delete(doc(db, 'swaps', x.id))),
+      ...S.covers.filter(c => inRange(c.date) && (uids.has(c.absentUid) || uids.has(c.assignee)))
+        .map(c => b => b.delete(doc(db, 'coverages', c.id))),
+      ...S.wishes.filter(w => uids.has(w.uid) && w.from <= last && w.to >= first)
+        .map(w => b => b.delete(doc(db, 'wishes', w.id))),
+    ];
+    cleaned = ops.length;
+    await commitInChunks(ops);
+  }
+
   // 6. Abwesenheiten anlegen
   await commitInChunks(j.absences.filter(a => map[a.person]).map(a => b => {
     const data = { uid: map[a.person], from: a.from, to: a.to, type: a.type, createdAt: serverTimestamp(), createdBy: S.uid };
@@ -2105,7 +2129,7 @@ async function runTakeover() {
   }));
 
   S.takeover = null;
-  toast(`Übernahme abgeschlossen: ${Object.keys(byMonth).length} Monate, ${j.absences.length} Abwesenheiten.`);
+  toast(`Übernahme abgeschlossen: ${Object.keys(byMonth).length} Monate, ${j.absences.length} Abwesenheiten${clean ? `, ${cleaned} App-Einträge entfernt` : ''}.`);
   goto('plan');
 }
 
