@@ -58,6 +58,7 @@ const shiftList = covers => covers.map(c => `${fmtDate(c.date)} ${c.code}`).join
 // covers: die mit dem Urlaub angelegten Vertretungen
 // candidates(date) → uids, die den Dienst übernehmen könnten (alle Aktiven, die nicht abwesend sind)
 export function vacationCreated(v, name, adminIds, covers = [], candidates = () => []) {
+  if (v.imported) return [];   // aus der Excel übernommen → keine Benachrichtigungen
   const range = v.from === v.to ? fmtDate(v.from) : `${fmtDate(v.from)} – ${fmtDate(v.to)}`;
   const label = VAC[v.type] || v.type;
   const open = covers.filter(c => c.status === 'open').sort((a, b) => a.date.localeCompare(b.date));
@@ -94,6 +95,7 @@ export function vacationCreated(v, name, adminIds, covers = [], candidates = () 
 
 // Jemand gibt einen eigenen Dienst ab → alle anderen, die an dem Tag nicht abwesend sind
 export function releaseCreated(c, name, candidateIds) {
+  if (c.imported) return [];
   return candidateIds.filter(uid => uid !== c.absentUid).map(to => ({
     to, title: `${name(c.absentUid)} gibt einen Dienst ab`, body: `${fmtDate(c.date)} ${c.code} · übernehmen?`, view: 'open',
   }));
@@ -122,6 +124,7 @@ export function coverUpdated(before, after, name) {
 
 // Urlaub gelöscht → Vertretung entfällt
 export function coverDeleted(c, name) {
+  if (c.imported) return [];   // z. B. beim erneuten Einlesen der Excel
   if (c.status !== 'assigned' || !c.assignee) return [];
   return [{ to: c.assignee, title: `Übernommener Dienst von ${name(c.absentUid)} entfällt`, body: `${fmtDate(c.date)} ${c.code} – wurde zurückgenommen`, view: 'mine' }];
 }

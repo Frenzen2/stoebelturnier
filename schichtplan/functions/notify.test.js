@@ -97,3 +97,9 @@ test('Abgegebener Dienst übernommen → abgebende Person', () => {
   const out = coverUpdated(before, { ...before, status: 'assigned', assignee: 'anna', assignedBy: 'anna' }, name);
   assert.deepEqual(out.map(m => [m.to, m.title, m.view]), [['ben', 'Anna übernimmt deinen Dienst', 'mine']]);
 });
+
+test('Aus der Excel übernommen → keine Nachrichten', () => {
+  assert.deepEqual(vacationCreated({ uid: 'anna', from: '2026-10-05', to: '2026-10-06', type: 'U', createdBy: 'chef', imported: true }, name, ['chef']), []);
+  assert.deepEqual(releaseCreated({ absentUid: 'ben', date: '2026-10-16', code: 'S', imported: true }, name, ['anna', 'chef']), []);
+  assert.deepEqual(coverDeleted({ date: '2026-10-16', code: 'F', absentUid: 'anna', status: 'assigned', assignee: 'ben', imported: true }, name), []);
+});

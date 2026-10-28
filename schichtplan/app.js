@@ -13,10 +13,10 @@ import {
   getMessaging, getToken, deleteToken, onMessage, isSupported,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
 import { FIREBASE_CONFIG, VAPID_KEY } from './firebase-config.js';
-import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-27-1640';
+import { readRows, interpretRows, buildMatcher, pad } from './import.js?v=2026-10-28-1613';
 
 // Versionsnummer: muss mit version.json und index.html übereinstimmen (tools/version.sh)
-const APP_VERSION = '2026-10-27-1640';
+const APP_VERSION = '2026-10-28-1613';
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -224,8 +224,9 @@ function effectiveDay(date, events = planEvents()) {
     } else if (e.date === date) {
       if (e.coverKind === 'release') {
         day[e.absentUid] = removeCode(day[e.absentUid], e.code);
-        touched.set(e.absentUid, `abgegeben an ${userName(e.assignee)}`);
-        touched.set(e.assignee, `übernommen von ${userName(e.absentUid)}`);
+        // pair: zwei Übernahmen in Gegenrichtung = Tausch (aus der Excel-Übernahme)
+        touched.set(e.absentUid, e.pair ? `getauscht mit ${userName(e.assignee)}` : `abgegeben an ${userName(e.assignee)}`);
+        touched.set(e.assignee, e.pair ? `getauscht mit ${userName(e.absentUid)}` : `übernommen von ${userName(e.absentUid)}`);
       } else {
         touched.set(e.assignee, `Vertretung für ${userName(e.absentUid)}`);
       }
@@ -2001,7 +2002,15 @@ function renderTakeover() {
     preview = `<div class="preview" style="margin-top:12px">
       <strong>Vorschau: ${esc(j.source || '')}</strong><br>
       Zeitraum: ${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}<br>
-      Abwesenheiten: ${cnt('U')} × Urlaub/ZA, ${cnt('K')} × Krank, ${cnt('FB')} × Fortbildung · Markierte Übernahmen/Tausche: ${marks}
+      Abwesenheiten: ${cnt('U')} × Urlaub/ZA, ${cnt('K')} × Krank, ${cnt('FB')} × Fortbildung${marks ? ` · Markierte Übernahmen/Tausche: ${marks}` : ''}
+      ${j.events ? (() => {
+        const ev = j.events.filter(e => map[e.from] && map[e.to]);
+        const pairs = new Set(ev.filter(e => e.pair).map(e => e.pair)).size;
+        return `<div style="margin-top:6px"><strong>Mit Urplan</strong> (${fmt(j.urplanRange[0])} – ${fmt(j.urplanRange[1])}): Grundplan = Urplan, Änderungen werden angelegt als
+          ${ev.filter(e => e.kind === 'vacation').length} × Vertretung, ${pairs} × Tausch, ${ev.filter(e => e.kind === 'release' && !e.pair).length} × Übernahme.</div>
+          ${j.review?.length ? `<details style="margin-top:6px"><summary class="warn" style="display:inline">Prüfliste: ${j.review.length} Tag(e) bleiben wie in der Excel</summary>
+            <ul style="margin:6px 0 0;font-size:.85rem">${j.review.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}`;
+      })() : ''}
       <table class="simple" style="margin-top:8px"><thead><tr><th>In der Excel</th><th>In der App</th><th>Farbe</th></tr></thead><tbody>
       ${j.people.map(p => `<tr><td>${esc(p.key)}</td><td>${map[p.key] ? esc(userName(map[p.key])) : '<span style="color:var(--danger)">✗ nicht gefunden – wird übersprungen</span>'}</td>
         <td><span class="chip" style="background:${esc(p.color)}">&nbsp;&nbsp;</span></td></tr>`).join('')}
@@ -2010,8 +2019,9 @@ function renderTakeover() {
       <label style="margin-top:10px;display:flex;gap:8px;align-items:center;color:var(--text)">
         <input type="checkbox" id="takeoverWipe" checked style="width:auto"> Bestehende Abwesenheiten dieser Personen im Zeitraum vorher löschen (empfohlen, verhindert Doppelte)</label>
       <label style="margin-top:6px;display:flex;gap:8px;align-items:center;color:var(--text)">
-        <input type="checkbox" id="takeoverClean" style="width:auto"> Tausche, abgegebene/übernommene Dienste und Wunschfrei aus der App im Zeitraum löschen
+        <input type="checkbox" id="takeoverClean" ${j.events ? 'checked' : ''} style="width:auto"> Tausche, abgegebene/übernommene Dienste und Wunschfrei aus der App im Zeitraum löschen
         (vor dem Scharfschalten: Testdaten entfernen – im Echtbetrieb <strong>nicht</strong> anhaken)</label>
+      ${j.events ? '<div class="warn">Diese Datei enthält die Änderungen gegenüber dem Urplan. Tausche/Übernahmen, die in der App <em>und</em> in der Excel stehen, würden sonst doppelt angewendet – deshalb ist das Löschen vorausgewählt. Früher importierte Einträge werden in jedem Fall ersetzt.</div>' : ''}
       <div class="warn">Überschreibt im Zeitraum den Plan dieser Personen und setzt ihre Farben. Eingestellte Schichtarten (Bezeichnung, Zeiten, Farben) bleiben erhalten – nur fehlende werden ergänzt.</div>
       <div class="actions"><button class="btn" data-action="takeover-cancel">Abbrechen</button>
         <button class="btn primary" data-action="takeover-run" ${mapped.length ? '' : 'disabled'}>Jetzt übernehmen</button></div>
@@ -2121,15 +2131,39 @@ async function runTakeover() {
     await commitInChunks(ops);
   }
 
-  // 6. Abwesenheiten anlegen
+  // 5c. Früher importierte Vertretungen/Übernahmen im Zeitraum immer ersetzen (sonst doppelt)
+  await commitInChunks(S.covers.filter(c => c.imported && c.date >= first && c.date <= last)
+    .map(c => b => b.delete(doc(db, 'coverages', c.id))));
+
+  // 6. Abwesenheiten anlegen (Kennzeichen "imported" → keine Push-Nachrichten)
+  const vacRefs = [];
   await commitInChunks(j.absences.filter(a => map[a.person]).map(a => b => {
-    const data = { uid: map[a.person], from: a.from, to: a.to, type: a.type, createdAt: serverTimestamp(), createdBy: S.uid };
+    const data = { uid: map[a.person], from: a.from, to: a.to, type: a.type, createdAt: serverTimestamp(), createdBy: S.uid, imported: true };
     if (a.note) data.note = String(a.note).slice(0, 200);
-    b.set(doc(collection(db, 'vacations')), data);
+    const ref = doc(collection(db, 'vacations'));
+    vacRefs.push({ ...a, uid: data.uid, id: ref.id });
+    b.set(ref, data);
   }));
 
+  // 7. Mit Urplan: Änderungen als Vertretung / Übernahme / Tausch anlegen
+  let nEvents = 0;
+  if (j.events) {
+    const ops = j.events.filter(e => map[e.from] && map[e.to]).map((e, i) => b => {
+      const vac = e.kind === 'vacation' ? vacRefs.find(v => v.uid === map[e.from] && v.from <= e.date && v.to >= e.date) : null;
+      b.set(doc(db, 'coverages', `imp_${e.date}_${String(i).padStart(4, '0')}`), {   // ID-Reihenfolge = Reihenfolge der Ereignisse
+        kind: e.kind, vacationId: vac?.id || null, date: e.date, code: e.code,
+        absentUid: map[e.from], status: 'assigned', assignee: map[e.to],
+        createdAt: serverTimestamp(), createdBy: S.uid, assignedAt: serverTimestamp(), assignedBy: S.uid,
+        imported: true, pair: e.pair || null,
+      });
+    });
+    nEvents = ops.length;
+    // kleine Pakete: die Sicherheitsregeln dürfen je Paket nur 20 Profile nachschlagen
+    await commitInChunks(ops, 15);
+  }
+
   S.takeover = null;
-  toast(`Übernahme abgeschlossen: ${Object.keys(byMonth).length} Monate, ${j.absences.length} Abwesenheiten${clean ? `, ${cleaned} App-Einträge entfernt` : ''}.`);
+  toast(`Übernahme abgeschlossen: ${Object.keys(byMonth).length} Monate, ${j.absences.length} Abwesenheiten${nEvents ? `, ${nEvents} Änderungen gegenüber dem Urplan` : ''}${clean ? `, ${cleaned} App-Einträge entfernt` : ''}.`);
   goto('plan');
 }
 

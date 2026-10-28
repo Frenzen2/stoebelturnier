@@ -22,7 +22,8 @@ service cloud.firestore {
     function isAdmin() { return isMember() && profile().role == 'admin'; }
     function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
     // Admins (Teamleitung) sind nicht im Dienstrad: kein Tauschen, Übernehmen oder Vertreten
-    function inRota(uid) { return exists(userPath(uid)) && get(userPath(uid)).data.role != 'admin'; }
+    // (ein einziger get(): fehlt das Profil, schlägt die Regel fehl → verweigert)
+    function inRota(uid) { return get(userPath(uid)).data.role != 'admin'; }
     function shortText(v, max) { return v is string && v.size() <= max; }
 
     match /users/{uid} {
@@ -108,7 +109,7 @@ service cloud.firestore {
 
       allow create: if isMember()
         && c().keys().hasOnly(['kind', 'vacationId', 'date', 'code', 'absentUid', 'status', 'assignee',
-                               'createdAt', 'createdBy', 'assignedAt', 'assignedBy'])
+                               'createdAt', 'createdBy', 'assignedAt', 'assignedBy', 'imported', 'pair'])
         && c().keys().hasAll(['vacationId', 'date', 'code', 'absentUid', 'status', 'assignee', 'createdAt', 'createdBy'])
         && c().createdBy == request.auth.uid
         && c().createdAt == request.time
@@ -116,7 +117,7 @@ service cloud.firestore {
         && shortText(c().code, 10) && c().code.size() > 0
         && (
           // a) Urlaubsvertretung – im selben Batch wie der Urlaub, nur für eigenen Urlaub (Admin: alle)
-          (!('kind' in c())
+          (!('kind' in c()) && !('imported' in c()) && !('pair' in c())
             && c().vacationId is string
             && id == c().vacationId + '_' + c().date
             && (c().absentUid == request.auth.uid || isAdmin())
@@ -131,8 +132,18 @@ service cloud.firestore {
                     && inRota(c().assignee)
                     && c().assignedAt == request.time
                     && c().assignedBy == request.auth.uid)))
+          // c) Übernahme aus der bisherigen Excel (Admin): Vertretung bzw. Übernahme, bereits vergeben.
+          //    "pair" verbindet zwei Übernahmen in Gegenrichtung zu einem Tausch.
+          || (isAdmin() && c().get('imported', false) == true
+            && c().kind in ['vacation', 'release']
+            && (c().vacationId == null || c().vacationId is string)
+            && c().absentUid is string
+            && c().status == 'assigned'
+            && c().assignee is string && c().assignee != c().absentUid && inRota(c().assignee)
+            && c().assignedAt == request.time && c().assignedBy == request.auth.uid
+            && (!('pair' in c()) || c().pair == null || shortText(c().pair, 40)))
           // b) Eigenen Dienst abgeben – nur im eigenen Namen, startet immer offen
-          || (c().kind == 'release'
+          || (c().kind == 'release' && !('imported' in c()) && !('pair' in c())
             && c().vacationId == null
             && c().absentUid == request.auth.uid
             && !isAdmin()
@@ -210,8 +221,9 @@ service cloud.firestore {
       allow create: if isMember()
         && (request.resource.data.uid == request.auth.uid || isAdmin())
         && exists(userPath(request.resource.data.uid))
-        && request.resource.data.keys().hasOnly(['uid', 'from', 'to', 'type', 'note', 'createdAt', 'createdBy'])
+        && request.resource.data.keys().hasOnly(['uid', 'from', 'to', 'type', 'note', 'createdAt', 'createdBy', 'imported'])
         && request.resource.data.keys().hasAll(['uid', 'from', 'to', 'type', 'createdAt', 'createdBy'])
+        && (!('imported' in request.resource.data) || (request.resource.data.imported == true && isAdmin()))
         && isDate(request.resource.data.from)
         && isDate(request.resource.data.to)
         && request.resource.data.from <= request.resource.data.to

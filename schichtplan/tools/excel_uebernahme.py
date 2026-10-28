@@ -10,6 +10,9 @@ Farb-Logik der bisherigen Excel:
                                       (Vertretung oder Tausch)
 
 Aufruf:  python3 excel_uebernahme.py Schichtplan.xlsx uebernahme.json
+         python3 excel_uebernahme.py Schichtplan.xlsx uebernahme.json --urplan Urplan2026.xlsx --urplan Urplan2027.xlsx
+         → mit Urplan: der Urplan wird Grundplan, jede Änderung wird Vertretung/Übernahme/Tausch
+           (siehe urplan_abgleich.py)
 Benötigt: pip install openpyxl
 """
 import sys, re, json, colorsys, datetime
@@ -43,7 +46,7 @@ def code_of(text):
     return None
 
 
-def main(src, dst):
+def main(src, dst, urplan_files=()):
     wb = openpyxl.load_workbook(src)
     ws = wb.worksheets[0]
 
@@ -197,6 +200,12 @@ def main(src, dst):
         'types': SHIFT_TYPES,
         'plan': plan, 'absences': absences, 'marks': marks,
     }
+    abgleich_stats = review = None
+    if urplan_files:
+        from urplan_abgleich import read_urplan, abgleich
+        urplan = read_urplan(urplan_files, code_of)
+        abgleich_stats, review = abgleich(out, urplan)
+
     with open(dst, 'w', encoding='utf-8') as fh:
         json.dump(out, fh, ensure_ascii=False, indent=0)
 
@@ -208,7 +217,17 @@ def main(src, dst):
     print('Abwesenheiten (Zeiträume):', dict(by))
     if unknown_mark:
         print('Übernommen, Schriftfarbe keiner Person zuordenbar:', dict(unknown_mark))
+    if abgleich_stats is not None:
+        print(f'\nAbgleich mit Urplan ({out["urplanRange"][0]} – {out["urplanRange"][1]}):')
+        for k, v in abgleich_stats.items():
+            print(f'  {v:5}  {k}')
+        if review:
+            print('\nPrüfliste (diese Tage bleiben wie in der Excel, bitte kontrollieren):')
+            print('\n'.join('  ' + r for r in review))
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    args = sys.argv[1:]
+    urplans = [args[i + 1] for i, a in enumerate(args) if a == '--urplan']
+    files = [a for i, a in enumerate(args) if a != '--urplan' and (i == 0 or args[i - 1] != '--urplan')]
+    main(files[0], files[1], urplans)

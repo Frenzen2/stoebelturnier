@@ -85,6 +85,26 @@ in der Zelle, Verlauf im Tab „Tausch“). Ein neuer Upload überschreibt keine
 2. Unter **Schichtarten** die Codes, Zeiten und Farben anpassen.
 3. Unter **Grundplan hochladen** die Datei auswählen, die Vorschau prüfen und importieren.
 
+## Übernahme mit Urplan (Änderungen als Tausch/Vertretung/Übernahme)
+
+Mit Urplan wird der Urplan zum Grundplan, und jede farbige Änderung der aktuellen Excel wird so angelegt,
+wie die App sie im Betrieb anlegen würde:
+
+```bash
+python3 tools/excel_uebernahme.py Aktuell.xlsx uebernahme.json --urplan Urplan2026.xlsx --urplan Urplan2027.xlsx
+```
+
+| Änderung in der Excel | In der App |
+|---|---|
+| F/S/N einer abwesenden Person macht jemand anderes (oft TD) | Vertretung |
+| F/S/N einer anwesenden Person macht jemand anderes | Übernahme |
+| zwei Übernahmen in Gegenrichtung – am selben Tag oder im Tauschbereich (letzte reguläre F/S/N-Schicht bis zur nächsten) | Tausch |
+
+TD-Dienste sind für Vertretungen gedacht: wer mit TD übernimmt, hat danach nur den übernommenen Dienst.
+Jeder Tag wird nachgerechnet; stimmt das Ergebnis nicht exakt mit der Excel überein, bleibt der Tag wie in der Excel
+und steht auf der **Prüfliste** (Ausgabe des Skripts und Vorschau in der App). Importierte Einträge lösen keine
+Push-Nachrichten aus und werden beim erneuten Einlesen ersetzt.
+
 ## E-Mail-Adressen umstellen (z. B. beim Ausrollen)
 
 Login-E-Mail und Profil lassen sich mit `tools/emails_umstellen.mjs` in einem Schritt ändern – die Benutzer-ID bleibt,

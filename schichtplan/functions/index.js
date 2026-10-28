@@ -77,6 +77,7 @@ async function candidatesLoader(users) {
 }
 
 export const onVacationCreated = onDocumentCreated('vacations/{id}', async event => {
+  if (event.data.data().imported) return;   // aus der Excel übernommen → keine Nachrichten (spart auch Lesevorgänge)
   const users = await loadUsers();
   const admins = [...users].filter(([, u]) => u.role === 'admin' && u.active !== false).map(([id]) => id);
   // Vertretungen werden im selben Schreibvorgang wie der Urlaub angelegt
@@ -89,7 +90,7 @@ export const onVacationCreated = onDocumentCreated('vacations/{id}', async event
 // Dienst abgeben (Urlaubsvertretungen laufen über onVacationCreated)
 export const onCoverCreated = onDocumentCreated('coverages/{id}', async event => {
   const c = event.data.data();
-  if (c.kind !== 'release') return;
+  if (c.kind !== 'release' || c.imported) return;   // importierte Einträge: keine Nachrichten
   const users = await loadUsers();
   const candidates = await candidatesLoader(users);
   await send(releaseCreated(c, nameFrom(users), candidates(c.date)), users);
@@ -101,6 +102,7 @@ export const onCoverUpdated = onDocumentUpdated('coverages/{id}', async event =>
 });
 
 export const onCoverDeleted = onDocumentDeleted('coverages/{id}', async event => {
+  if (event.data.data().imported) return;
   const users = await loadUsers();
   await send(coverDeleted(event.data.data(), nameFrom(users)), users);
 });
