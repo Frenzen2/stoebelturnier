@@ -159,6 +159,12 @@ details.filter[open] > summary::before { content: "▾ "; }
   table.t.karten tr.click:hover td, table.t.karten tr.sel td { background: none; }
 }
 
+.belege { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.beleg { display: flex; align-items: center; gap: 8px; margin-top: 4px; word-break: break-all; }
+.beleg a { color: var(--accent); text-decoration: none; flex: 1 1 auto; min-width: 0; }
+.beleg span, .beleg .btn { flex: none; white-space: nowrap; }
+.row > label.btn.upl, label.btn.upl { display: inline-block; flex: 0 0 auto; margin: 0; color: var(--text); font-size: .85rem; }
+
 #print { display: none; }
 @media print {
   body { background: #fff; font-size: 11pt; }
@@ -241,6 +247,7 @@ details.filter[open] > summary::before { content: "▾ "; }
 <div id="print"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
 <script type="module" src="app.js?v=2026-11-07"></script>
 </body>
 </html>

@@ -9,6 +9,9 @@ import {
   collection, doc, onSnapshot, query, where, orderBy, limit, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   writeBatch, serverTimestamp, deleteField,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  getStorage, connectStorageEmulator, ref as sRef, uploadBytes, getDownloadURL, getBlob, deleteObject,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
 import { FIREBASE_CONFIG } from './firebase-config.js';
 import {
   fmt, eur, parseAmount, parseDate, deDate, norm, decodeText, parseCsv, detectColumns, applyMapping,
@@ -34,13 +37,15 @@ if (!CONFIGURED && !USE_EMULATOR) {
   $('#setup').classList.remove('hidden');
   throw new Error('firebase-config.js ist noch nicht ausgefüllt.');
 }
-const app = initializeApp(USE_EMULATOR ? { ...FIREBASE_CONFIG, apiKey: FIREBASE_CONFIG.apiKey || 'demo', projectId: 'demo-kassenbuch' } : FIREBASE_CONFIG);
+const app = initializeApp(USE_EMULATOR ? { ...FIREBASE_CONFIG, apiKey: FIREBASE_CONFIG.apiKey || 'demo', projectId: 'demo-kassenbuch', storageBucket: 'demo-kassenbuch.appspot.com' } : FIREBASE_CONFIG);
 const auth = getAuth(app);
 const db = initializeFirestore(app, USE_EMULATOR ? {} : { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 if (USE_EMULATOR) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
+const storage = getStorage(app);
+if (USE_EMULATOR) connectStorageEmulator(storage, '127.0.0.1', 9199);
 
 // ── Zustand ──────────────────────────────────────────────────────────────────
 
@@ -454,6 +459,8 @@ function gefiltert() {
     if (f.kat && f.kat !== '__none' && !ps.some(p => p.kategorie === f.kat)) return false;
     if (f.ver === '__any' && !ps.some(p => p.veranstaltung)) return false;
     if (f.ver && f.ver !== '__any' && !ps.some(p => p.veranstaltung === f.ver)) return false;
+    if (f.beleg === 'mit' && !b.belege?.length) return false;
+    if (f.beleg === 'ohne' && b.belege?.length) return false;
     if (q && !norm(`${b.text} ${b.notiz || ''} ${b.beleg || ''} ${fmt(b.betrag)} ${deDate(b.datum)}`).includes(q)) return false;
     return true;
   });
@@ -474,7 +481,7 @@ function viewBuchungen() {
   const edit = canBook() && !locked();
   const sel = [...S.sel].filter(id => list.some(b => b.id === id));
   const aktiv = [f.konto && kontoById(f.konto)?.name, f.kat && (f.kat === '__none' ? 'unkontiert' : katById(f.kat)?.name), f.ver && (f.ver === '__any' ? 'mit Fest' : verById(f.ver)?.name),
-    f.richtung && (f.richtung === '+' ? 'Einnahmen' : 'Ausgaben'), f.q && `„${f.q}“`].filter(Boolean);
+    f.richtung && (f.richtung === '+' ? 'Einnahmen' : 'Ausgaben'), f.beleg && (f.beleg === 'ohne' ? 'ohne Beleg' : 'mit Beleg'), f.q && `„${f.q}“`].filter(Boolean);
   const filterOffen = S.filterOffen ?? window.innerWidth > 700;
   $('#view').innerHTML = `
     <div class="card">
@@ -485,6 +492,7 @@ function viewBuchungen() {
           ${S.kategorien.filter(k => !f.konto || !k.konto || k.konto === f.konto).map(k => `<option value="${esc(k.id)}" ${k.id === f.kat ? 'selected' : ''}>${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</option>`).join('')}</select></label>
         <label>Veranstaltung<select id="fVer"><option value="">alle</option><option value="__any" ${f.ver === '__any' ? 'selected' : ''}>nur mit Veranstaltung</option>
           ${S.veranstaltungen.map(v => `<option value="${esc(v.id)}" ${v.id === f.ver ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
+        <label>Beleg<select id="fBeleg"><option value="">alle</option><option value="ohne" ${f.beleg === 'ohne' ? 'selected' : ''}>📎 ohne Beleg</option><option value="mit" ${f.beleg === 'mit' ? 'selected' : ''}>📎 mit Beleg</option></select></label>
         <label>Richtung<select id="fRicht"><option value="">alle</option><option value="+" ${f.richtung === '+' ? 'selected' : ''}>Einnahmen</option><option value="-" ${f.richtung === '-' ? 'selected' : ''}>Ausgaben</option></select></label>
         <label class="grow">Suche<input id="fQ" value="${esc(f.q)}" placeholder="Text, Betrag, Beleg …"></label>
       </div></details>
@@ -513,7 +521,7 @@ function viewBuchungen() {
             <td class="r small muted k-weg">${S.belegNr.get(b.id) || ''}</td>
             <td class="nowrap k-b">${deDate(b.datum)}<span class="nur-klein muted small" style="font-weight:400"> · Nr. ${S.belegNr.get(b.id) || ''} · ${esc(kontoById(b.konto)?.name || b.konto)}</span></td>
             <td class="nowrap small k-weg">${esc(kontoById(b.konto)?.name || b.konto)}</td>
-            <td class="text k-voll">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
+            <td class="text k-voll">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}${b.belege?.length ? ` <span class="chip" title="Belege">📎 ${b.belege.length}</span>` : ''}</td>
             <td class="k-zeile">${katLabel(b)}</td>
             <td class="small k-zeile">${vs.join(' ')}</td>
             <td class="small k-weg">${esc(b.beleg || '')}</td>
@@ -528,6 +536,7 @@ function viewBuchungen() {
   $('#fKat').addEventListener('change', e => setF('kat', e.target.value));
   $('#fVer').addEventListener('change', e => setF('ver', e.target.value));
   $('#fRicht').addEventListener('change', e => setF('richtung', e.target.value));
+  $('#fBeleg').addEventListener('change', e => setF('beleg', e.target.value));
   $('#fQ').addEventListener('input', e => {
     S.filter.q = e.target.value;
     clearTimeout(viewBuchungen.t);
@@ -584,6 +593,107 @@ function download(name, text, type = 'text/csv;charset=utf-8') {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// ── Belege (PDF/Fotos in Firebase Storage) ───────────────────────────────────
+//
+// Dateien liegen unter belege/{jahr}/buchung/{buchungId}/… bzw. belege/{jahr}/posten/{veranstaltung}/{postenId}/…
+// Am Dokument steht die Liste belege: [{ id, name, pfad, typ, groesse, am, von }].
+
+const MAX_BELEG = 15 * 1024 * 1024;
+const dateiName = n => norm(n).replace(/[^a-z0-9._-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(-80) || 'beleg';
+/** lesbarer Name für Ordner/Dateien im ZIP (Groß/Klein und Umlaute bleiben) */
+const lesbar = t => String(t || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().replace(/\s+/g, '_').slice(0, 50) || 'Beleg';
+const groesse = n => n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+
+/** Fotos vom Handy verkleinern (max. 2000 px, JPEG) – spart Speicher und Zeit beim Hochladen. */
+async function verkleinern(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 700 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const f = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * f); c.height = Math.round(bmp.height * f);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+    return blob && blob.size < file.size ? new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
+  } catch { return file; }
+}
+
+async function belegOeffnen(x) {
+  const w = window.open('', '_blank');   // sofort öffnen, sonst blockiert der Browser das Fenster
+  try {
+    const url = await getDownloadURL(sRef(storage, x.pfad));
+    if (w) w.location.href = url; else location.href = url;
+  } catch (e) { w?.close(); fail(e); }
+}
+
+/**
+ * Belegbereich in einem Dialog. opts: { basis, liste, edit, speichern?: async liste => … }
+ * Ohne speichern (neues Dokument) werden Dateien beim Abbrechen wieder gelöscht.
+ */
+function belegeBox(sel, opts) {
+  let liste = [...(opts.liste || [])];
+  const neu = [];
+  let fertig = false;
+  const draw = () => {
+    const box = $(sel);
+    if (!box) return;
+    box.innerHTML = `<div class="belege"><div class="muted small">Belege (PDF oder Foto)</div>
+      ${liste.map((x, i) => `<div class="beleg"><a href="#" data-bo="${i}">📎 ${esc(x.name)}</a> <span class="muted small">${groesse(x.groesse || 0)}</span>
+        ${opts.edit ? `<button type="button" class="btn small danger" data-bx="${i}" title="Beleg löschen">✕</button>` : ''}</div>`).join('') || '<div class="muted small">– noch kein Beleg –</div>'}
+      ${opts.edit ? `<div class="row" style="margin-top:6px;align-items:center">
+        <label class="btn small upl">📄 Datei wählen<input type="file" accept="application/pdf,image/*" multiple data-bf style="display:none"></label>
+        <label class="btn small upl">📷 Foto<input type="file" accept="image/*" capture="environment" data-bf style="display:none"></label>
+        <span class="small muted" data-bs></span></div>` : ''}</div>`;
+    box.querySelectorAll('[data-bo]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); belegOeffnen(liste[+a.dataset.bo]); }));
+    box.querySelectorAll('[data-bx]').forEach(btn => btn.addEventListener('click', async () => {
+      const x = liste[+btn.dataset.bx];
+      if (!confirm(`Beleg „${x.name}“ löschen?`)) return;
+      try {
+        await deleteObject(sRef(storage, x.pfad)).catch(e => { if (e.code !== 'storage/object-not-found') throw e; });
+        liste = liste.filter(y => y.id !== x.id);
+        if (opts.speichern) await opts.speichern(liste);
+        logTo(null, 'beleg', `Gelöscht: ${x.name}`);
+        draw();
+      } catch (e) { fail(e); }
+    }));
+    box.querySelectorAll('[data-bf]').forEach(inp => inp.addEventListener('change', async () => {
+      const files = [...inp.files];
+      const status = box.querySelector('[data-bs]');
+      for (const [n, orig] of files.entries()) {
+        if (orig.size > MAX_BELEG) { toast(`${orig.name}: größer als 15 MB.`, true); continue; }
+        if (!/^application\/pdf$|^image\//.test(orig.type)) { toast(`${orig.name}: nur PDF oder Bilder.`, true); continue; }
+        status.textContent = `Lade hoch … (${n + 1}/${files.length})`;
+        try {
+          const f = await verkleinern(orig);
+          const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          const pfad = `${opts.basis}/${id}-${dateiName(f.name)}`;
+          await uploadBytes(sRef(storage, pfad), f, {
+            contentType: f.type || 'application/pdf',
+            // beim Öffnen/Speichern den ursprünglichen Dateinamen verwenden
+            contentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(f.name.slice(0, 120))}`,
+          });
+          liste.push({ id, name: f.name.slice(0, 120), pfad, typ: f.type || 'application/pdf', groesse: f.size, am: Date.now(), von: S.uid });
+          neu.push(pfad);
+          if (opts.speichern) await opts.speichern(liste);
+          logTo(null, 'beleg', `Hochgeladen: ${f.name}`);
+        } catch (e) { fail(e); }
+      }
+      status.textContent = '';
+      draw();
+    }));
+  };
+  draw();
+  // neues Dokument nicht gespeichert → hochgeladene Dateien wieder entfernen
+  $('#dlg').addEventListener('close', () => {
+    if (!fertig && !opts.speichern) neu.forEach(p => deleteObject(sRef(storage, p)).catch(() => {}));
+  }, { once: true });
+  return { liste: () => liste, gespeichert: () => { fertig = true; } };
+}
+
+async function belegeLoeschen(liste) {
+  for (const x of liste || []) await deleteObject(sRef(storage, x.pfad)).catch(() => {});
+}
+
 function buchungDialog(b) {
   const neu = !b;
   const edit = canBook() && !locked();
@@ -630,6 +740,7 @@ function buchungDialog(b) {
       <label style="flex:0 1 140px">Beleg-Nr.<input id="bBeleg" value="${esc(b.beleg || '')}" maxlength="40" ${ro}></label>
       <label>Notiz<input id="bNotiz" value="${esc(b.notiz || '')}" maxlength="1000" ${ro}></label>
     </div>
+    <div id="bBelege"></div>
     ${edit && imported && !ohneKont ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
       <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
@@ -643,6 +754,7 @@ function buchungDialog(b) {
       batch.delete(doc(db, 'buchungen', b.id));
       logTo(batch, 'löschen', `${deDate(b.datum)} ${fmt(b.betrag)} ${b.text}`);
       await batch.commit();
+      await belegeLoeschen(b.belege);
       toast('Gelöscht.');
     },
   });
@@ -665,6 +777,7 @@ function buchungDialog(b) {
       }
       data.beleg = $('#bBeleg').value.trim();
       data.notiz = $('#bNotiz').value.trim();
+      data.belege = belegeUi.liste();
       if (splits.length) {
         readSplits();
         const clean = splits.filter(s => s.betrag);
@@ -682,7 +795,7 @@ function buchungDialog(b) {
       const batch = writeBatch(db);
       if (neu) {
         data.erstelltAm = serverTimestamp(); data.erstelltVon = S.uid;
-        batch.set(doc(collection(db, 'buchungen')), data);
+        batch.set(neuRef, data);
         logTo(batch, 'buchung', `Neu: ${deDate(data.datum)} ${fmt(data.betrag)} ${data.text}`);
       } else {
         // splits entfernen, falls es vorher welche gab
@@ -696,8 +809,14 @@ function buchungDialog(b) {
         batch.set(doc(db, 'config', 'regeln'), { list: [...S.regeln, regel] });
       }
       await batch.commit();
+      belegeUi.gespeichert();
       toast('Gespeichert.');
     } : null,
+  });
+  const neuRef = neu ? doc(collection(db, 'buchungen')) : null;
+  const belegeUi = belegeBox('#bBelege', {
+    basis: `belege/${b.jahr || S.jahr}/buchung/${neu ? neuRef.id : b.id}`, liste: b.belege, edit,
+    speichern: neu ? null : liste => updateDoc(doc(db, 'buchungen', b.id), { belege: liste }),
   });
 
   function readSplits() {
@@ -1153,7 +1272,7 @@ function viewVeranstaltung(v) {
       <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Zahlweg</th><th>Ergebnis</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
       <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td class="k-a muted small">${p.lfd}</td><td class="nowrap k-b">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}<span class="nur-klein muted small" style="font-weight:400"> · ${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</span></td>
         <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
-        <td class="small k-voll">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
+        <td class="small k-voll">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}${(p.bank ? p.buchung?.belege : p.belege)?.length ? ` <span class="chip">📎 ${(p.bank ? p.buchung.belege : p.belege).length}</span>` : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
         <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt fürs Ergebnis' : ' · nicht im Ergebnis'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
         <td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td>
         <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragVz < 0 ? 'minus' : 'plus'} ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? '+' : '−'}${fmt(Math.abs(p.betragVz))}</span></td></tr>`).join('')
@@ -1415,12 +1534,14 @@ function postenDialog(v, p) {
     </div>
     ${bereichListe(v)}
     ${art === 'wechselgeld' || art === 'ablieferung' ? '<p class="muted small">Läuft das Geld über die Feuerwehr- oder Mannschaftskassa, nicht hier eintragen, sondern die Bankbuchung zuordnen (🏦) – sonst steht es doppelt im Festkassabuch.</p>' : ''}
+    <div id="pBelege"></div>
     ${p.erfasstVon ? `<p class="muted small">Erfasst von ${esc(userName(p.erfasstVon))}</p>` : ''}`, {
     cancel: edit ? 'Abbrechen' : 'Schließen',
     extra: edit && !neu ? [{
       label: 'Löschen', cls: 'danger', onClick: async () => {
         if (!confirm('Eintrag löschen?')) return false;
         await deleteDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id));
+        await belegeLoeschen(p.belege);
         logTo(null, 'festkassa', `${v.name}: gelöscht ${POSTEN_ARTEN[p.art].name} ${fmt(p.betrag)}`);
       },
     }] : [],
@@ -1435,11 +1556,13 @@ function postenDialog(v, p) {
       data.zahlweg = fluss ? $('#pZahlweg').value : 'bar';
       data.ergebnis = fluss ? $('#pErgebnis').checked : false;
       if (!parseDate(data.datum)) { toast('Bitte ein Datum angeben.', true); return false; }
+      data.belege = postenBelege.liste();
       if (neu) {
-        await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'posten')), { ...data, erfasstAm: serverTimestamp(), erfasstVon: S.uid });
+        await setDoc(neuPosten, { ...data, erfasstAm: serverTimestamp(), erfasstVon: S.uid });
       } else {
         await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { ...data, geaendertVon: S.uid });
       }
+      postenBelege.gespeichert();
       logTo(null, 'festkassa', `${v.name}: ${POSTEN_ARTEN[data.art].name} ${fmt(betrag)} ${data.bereich} (${data.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar'}${fluss && !data.ergebnis ? ', nicht im Ergebnis' : ''})`);
     } : null,
     onOpen: () => {
@@ -1457,6 +1580,11 @@ function postenDialog(v, p) {
       ['#pArt', '#pZahlweg', '#pErgebnis'].forEach(x => $(x).addEventListener('change', upd));
       upd();
     },
+  });
+  const neuPosten = neu ? doc(collection(db, 'veranstaltungen', v.id, 'posten')) : null;
+  const postenBelege = belegeBox('#pBelege', {
+    basis: `belege/${v.jahr}/posten/${v.id}/${neu ? neuPosten.id : p.id}`, liste: p.belege, edit,
+    speichern: neu ? null : liste => updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { belege: liste }),
   });
 }
 
@@ -1553,6 +1681,7 @@ function viewAbschluss() {
       <div class="toolbar"><h2 style="margin:0;flex:1">Jahresabschluss ${S.jahr}</h2>
         <button class="btn" id="absPrint">🖨 Drucken / PDF</button>
         <button class="btn" id="absCsv">⬇ CSV</button>
+        <button class="btn" id="absZip" title="Alle Belege des Jahres als ZIP-Datei">📎 Belege als ZIP</button>
         ${edit ? `<button class="btn primary" id="absLock">🔒 Jahr abschließen</button>` : ''}
         ${locked() && isAdmin() ? `<button class="btn" id="absUnlock">🔓 Wieder öffnen</button>` : ''}
       </div>
@@ -1593,6 +1722,7 @@ function viewAbschluss() {
   $$('#view [data-gde]').forEach(b => b.addEventListener('click', () => druckGemeinde(kontoById(b.dataset.gde))));
   $$('#view [data-gdecsv]').forEach(b => b.addEventListener('click', () => csvGemeinde(kontoById(b.dataset.gdecsv))));
   $('#absCsv').addEventListener('click', () => exportAbschluss(r));
+  $('#absZip').addEventListener('click', belegeZip);
   $$('#view [data-anfang], #view [data-bankende]').forEach(inp => inp.addEventListener('change', async () => {
     const field = inp.dataset.anfang ? 'anfang' : 'bankEnde';
     const k = inp.dataset.anfang || inp.dataset.bankende;
@@ -1734,6 +1864,50 @@ function exportAbschluss(r) {
   rows.push([], ['Veranstaltungen', '', 'Einnahmen', 'Ausgaben', 'Ergebnis']);
   S.veranstaltungen.forEach(v => { const a = abrechnungVon(v); rows.push([deDate(v.von), v.name, fmt(a.einnahmen), fmt(a.ausgaben), fmt(a.ergebnis)]); });
   download(`Jahresabschluss_${S.jahr}.csv`, toCsv(rows));
+}
+
+/** Alle Belege des gewählten Jahres als ZIP (Konto/Nr_Datum_Text.pdf, Festkassa/Fest/…) mit Belegliste.csv */
+async function belegeZip() {
+  if (!window.JSZip) { toast('ZIP-Bibliothek nicht geladen – bitte Seite neu laden.', true); return; }
+  const dateien = [];
+  for (const b of [...S.buchungen].sort(chronoSort)) {
+    const nr = String(S.belegNr.get(b.id) || 0).padStart(3, '0');
+    const t = lesbar(splitBankText(b.text).partner || splitBankText(b.text).zweck || b.text).slice(0, 40);
+    (b.belege || []).forEach((x, i) => dateien.push({ x, ordner: lesbar(kontoById(b.konto)?.name || b.konto),
+      name: `${nr}_${b.datum}_${t}${b.belege.length > 1 ? '_' + (i + 1) : ''}`, zeile: [kontoById(b.konto)?.name, nr, deDate(b.datum), fmt(b.betrag), b.text] }));
+  }
+  for (const v of S.veranstaltungen) {
+    for (const p of abrechnungVon(v).buch.filter(p => !p.bank)) {
+      (p.belege || []).forEach((x, i) => dateien.push({ x, ordner: 'Festkassa/' + lesbar(v.name),
+        name: `${String(p.lfd).padStart(3, '0')}_${p.datum}_${lesbar(p.text || p.bereich || p.art).slice(0, 40)}${p.belege.length > 1 ? '_' + (i + 1) : ''}`,
+        zeile: [v.name, p.lfd, deDate(p.datum), fmt(p.betragVz), p.text || p.bereich] }));
+    }
+  }
+  if (!dateien.length) { toast(`Im Jahr ${S.jahr} sind noch keine Belege hochgeladen.`); return; }
+  const zip = new window.JSZip();
+  const liste = [['Datei', 'Konto / Fest', 'Nr.', 'Datum', 'Betrag', 'Text']];
+  let fehler = 0;
+  for (const [i, d] of dateien.entries()) {
+    toast(`Belege werden gesammelt … ${i + 1}/${dateien.length}`);
+    const ext = (d.x.name.match(/\.(\w{2,4})$/) || [, d.x.typ === 'application/pdf' ? 'pdf' : 'jpg'])[1].toLowerCase();
+    const pfad = `${d.ordner}/${d.name}.${ext}`;
+    try {
+      zip.file(pfad, await getBlob(sRef(storage, d.x.pfad)));
+      liste.push([pfad, ...d.zeile]);
+    } catch (e) { fehler++; console.error(e); }
+  }
+  if (fehler === dateien.length) {
+    toast('Belege konnten nicht geladen werden. Beim ersten Mal muss für den Speicher CORS eingerichtet werden (siehe README, „Belege“).', true);
+    return;
+  }
+  zip.file('Belegliste.csv', toCsv(liste));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Belege_${S.jahr}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`${dateien.length - fehler} Belege als ZIP gespeichert${fehler ? ` (${fehler} fehlgeschlagen)` : ''}.`, !!fehler);
 }
 
 // ── Druckansichten ───────────────────────────────────────────────────────────

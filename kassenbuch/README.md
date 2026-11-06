@@ -97,6 +97,30 @@ Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, 
 5. **Jahresabschluss**: für das erste Jahr den **Anfangsbestand per 1.1.** je Konto eintragen.
    In den Folgejahren wird er aus dem abgeschlossenen Vorjahr übernommen.
 
+## Belege (PDF und Fotos)
+
+An jede Bankbuchung und jede Festkassa-Position lassen sich Belege hängen: **📄 Datei wählen** (PDF oder Bild) oder am Handy
+**📷 Foto** direkt mit der Kamera. Fotos werden vor dem Hochladen verkleinert (max. 2000 px), höchstens 15 MB pro Datei.
+
+- In der Buchungsliste zeigt **📎** die Anzahl der Belege; der Filter **Beleg → ohne Beleg** zeigt, wo noch einer fehlt.
+- Antippen öffnet den Beleg. Lesen dürfen alle mit Profil (auch Kassaprüfer); hochladen und löschen Kassier/Admin,
+  bei der Festkassa auch die Rolle Festkassa. In abgeschlossenen Jahren lassen sich Belege nicht mehr löschen oder ergänzen.
+- **Jahresabschluss → 📎 Belege als ZIP** lädt alle Belege des Jahres herunter – geordnet nach Konto bzw. Fest,
+  benannt nach Belegnummer, Datum und Text, mit einer **Belegliste.csv**.
+
+**Einrichtung (einmalig):**
+1. Firebase-Projekt auf den **Blaze-Tarif** umstellen (wie beim Schichtplan) und in der Google Cloud Console ein
+   **Budget** mit E-Mail-Warnung anlegen, z. B. 1 €. Belege einer Feuerwehr brauchen meist weit unter 1 GB – das kostet Cent-Beträge.
+2. **Build → Storage → Jetzt starten**, Standort wie bei Firestore (z. B. europe-west3).
+3. **Storage → Regeln**: Inhalt von `storage.rules` einfügen und **Veröffentlichen**. Die Konsole fragt, ob Storage
+   auf Firestore zugreifen darf (für Rollen und Jahressperre) – **zulassen**.
+4. Für den **ZIP-Download** einmal CORS setzen: in der Google Cloud Console oben rechts die **Cloud Shell** öffnen, `cors.json`
+   hochladen (⋮ → Hochladen) und ausführen:
+   ```bash
+   gsutil cors set cors.json gs://PROJEKT-ID.firebasestorage.app
+   ```
+   (Bucket-Name steht in der Firebase-Konsole unter Storage.) Öffnen einzelner Belege funktioniert auch ohne diesen Schritt.
+
 ## Raika-Umsätze importieren
 
 1. In **ELBA** (bzw. Mein ELBA) das Konto öffnen, unter *Umsätze* den Zeitraum wählen und als **CSV exportieren**.
@@ -238,6 +262,7 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
 | `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false), stueckelung |
 | `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden |
+| Storage `belege/{jahr}/buchung/{id}/…`, `belege/{jahr}/posten/{fest}/{id}/…` | Belege; am Dokument steht `belege: [{id, name, pfad, typ, groesse, am, von}]` |
 | `log/{id}` | Änderungsprotokoll: uid, name, wann, aktion, text |
 
 Alle Beträge werden als ganze **Cent** gespeichert (12,50 € = 1250), damit keine Rundungsfehler entstehen.

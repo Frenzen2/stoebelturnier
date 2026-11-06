@@ -88,7 +88,8 @@ service cloud.firestore {
           && (!('festArt' in b()) || b().festArt in ['', 'kassa', 'bank'])
           && optText(b(), 'notiz', 1000)
           && optText(b(), 'beleg', 40)
-          && (!('splits' in b()) || (b().splits is list && b().splits.size() <= 20));
+          && (!('splits' in b()) || (b().splits is list && b().splits.size() <= 20))
+          && (!('belege' in b()) || (b().belege is list && b().belege.size() <= 30));
       }
       allow read: if isMember();
       allow create: if isKassier() && validBuchung() && !locked(b().jahr);
@@ -128,6 +129,7 @@ service cloud.firestore {
           && optText(p(), 'quelle', 20)
           && (!('stueckelung' in p()) || p().stueckelung is map)
           && (!('zahlweg' in p()) || p().zahlweg in ['bar', 'ueberweisung'])
+          && (!('belege' in p()) || (p().belege is list && p().belege.size() <= 30))
           && (!('ergebnis' in p()) || p().ergebnis is bool);
         allow delete: if isFest() && eventOpen();
       }
