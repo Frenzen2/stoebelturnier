@@ -1,0 +1,9 @@
+{
+  "name": "Kassenbuch FF Pichl",
+  "short_name": "Kassenbuch",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#b91c1c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
