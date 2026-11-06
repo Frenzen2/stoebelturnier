@@ -292,7 +292,7 @@ function renderHeader() {
   for (let y = now + 1; y >= Math.min(now - 6, S.jahr); y--) years.push(y);
   $('#yearSel').innerHTML = years.map(y => `<option ${y === S.jahr ? 'selected' : ''}>${y}</option>`).join('');
   $('#lockChip').innerHTML = locked() ? '<span class="chip lock">🔒 abgeschlossen</span>' : '';
-  const unk = S.buchungen.filter(b => !isKontiert(b)).length;
+  const unk = S.buchungen.filter(b => !isKontiert(b, S.konten)).length;
   $('#badgeUnk').innerHTML = unk ? `<span class="badge">${unk}</span>` : '';
   $$('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === S.tab));
 }
@@ -385,7 +385,7 @@ function abrechnungVon(v) {
 
 function viewUebersicht() {
   const r = abschlussDaten();
-  const unk = S.buchungen.filter(b => !isKontiert(b));
+  const unk = S.buchungen.filter(b => !isKontiert(b, S.konten));
   const lastImport = S.buchungen.filter(b => b.quelle === 'import').map(b => b.datum).sort().at(-1);
   let html = '';
   if (!S.konten.length) {
@@ -430,7 +430,7 @@ function goTab(t) { S.tab = t; localStorage.setItem('kb.tab', t); render(true); 
 
 async function initKonten() {
   const batch = writeBatch(db);
-  for (const k of DEFAULT_KONTEN) batch.set(doc(db, 'konten', k.id), { name: k.name, iban: '', order: k.order });
+  for (const k of DEFAULT_KONTEN) batch.set(doc(db, 'konten', k.id), { name: k.name, iban: '', order: k.order, ohneKontierung: !!k.ohneKontierung });
   if (!S.kategorienGeladen) batch.set(doc(db, 'config', 'kategorien'), { list: DEFAULT_KATEGORIEN });
   if (!S.regeln.length) batch.set(doc(db, 'config', 'regeln'), { list: DEFAULT_REGELN });
   logTo(batch, 'konten', 'Standard-Konten und Kategorien angelegt');
@@ -448,7 +448,7 @@ function gefiltert() {
     if (f.richtung === '+' && b.betrag < 0) return false;
     if (f.richtung === '-' && b.betrag > 0) return false;
     const ps = parts(b);
-    if (f.kat === '__none' && isKontiert(b)) return false;
+    if (f.kat === '__none' && isKontiert(b, S.konten)) return false;
     if (f.kat && f.kat !== '__none' && !ps.some(p => p.kategorie === f.kat)) return false;
     if (f.ver === '__any' && !ps.some(p => p.veranstaltung)) return false;
     if (f.ver && f.ver !== '__any' && !ps.some(p => p.veranstaltung === f.ver)) return false;
@@ -459,9 +459,10 @@ function gefiltert() {
 
 function katLabel(b) {
   const ps = parts(b);
-  if (ps.length > 1) return `<span class="chip split" title="${esc(ps.map(p => `${katById(p.kategorie)?.name || 'unkontiert'}: ${fmt(p.betrag)}`).join('\n'))}">aufgeteilt (${ps.length})</span>${isKontiert(b) ? '' : ' <span class="chip warn">Rest offen</span>'}`;
+  if (ps.length > 1) return `<span class="chip split" title="${esc(ps.map(p => `${katById(p.kategorie)?.name || 'unkontiert'}: ${fmt(p.betrag)}`).join('\n'))}">aufgeteilt (${ps.length})</span>${isKontiert(b, S.konten) ? '' : ' <span class="chip warn">Rest offen</span>'}`;
   const k = katById(b.kategorie);
-  return k ? `<span class="chip">${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</span>` : '<span class="chip warn">unkontiert</span>';
+  if (k) return `<span class="chip">${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</span>`;
+  return kontoById(b.konto)?.ohneKontierung ? '' : '<span class="chip warn">unkontiert</span>';
 }
 
 function viewBuchungen() {
@@ -596,7 +597,7 @@ function buchungDialog(b) {
       <label>Buchungstext<input id="bText" value="${esc(b.text)}" maxlength="500" ${ro}></label>`}
     <div id="singleKat" class="${splits.length ? 'hidden' : ''}">
       <div class="row">
-        <label>Kategorie<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag, b.konto)}</select></label>
+        <label>Kategorie${kontoById(b.konto)?.ohneKontierung ? ' (optional)' : ''}<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag, b.konto)}</select></label>
         <label>Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '')}</select></label>
       </div>
     </div>
@@ -738,7 +739,7 @@ async function regelnAnwenden() {
   if (!S.regeln.length) { toast('Es sind noch keine Regeln angelegt (Verwaltung → Kontierungsregeln).', true); return; }
   const treffer = [];
   for (const b of S.buchungen) {
-    if (isKontiert(b) || b.splits?.length) continue;
+    if (isKontiert(b, S.konten) || b.splits?.length) continue;
     const r = matchRule(S.regeln, b);
     if (r) treffer.push([b, r]);
   }
@@ -821,7 +822,7 @@ function excelKarte() {
     </div>`;
   const R = X?.result;
   if (R) {
-    const neu = R.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung));
+    const neu = R.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung, S.konten));
     html += `<p><b>${R.zeilen}</b> kontierte Zeilen im Blatt · <b>${R.treffer.length}</b> Buchungen gefunden · davon <b>${neu.length}</b> zu ändern
       ${R.ohneBuchung.length ? ` · <span class="minus">${R.ohneBuchung.length} ohne passende Buchung</span>` : ''}
       ${R.unbekannt.length ? ` · <span class="minus">${R.unbekannt.length} mit unbekannter Kontierung (${[...new Set(R.unbekannt.map(z => z.kontierung))].map(esc).join(', ')})</span>` : ''}</p>
@@ -859,7 +860,7 @@ function pruefeExcel() {
 
 async function uebernehmeExcel() {
   const X = S.xl;
-  const todo = X.result.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung));
+  const todo = X.result.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung, S.konten));
   try {
     for (let i = 0; i < todo.length; i += 200) {
       const batch = writeBatch(db);
@@ -947,7 +948,7 @@ async function importieren() {
     }
     toast(`${neu.length} Umsätze importiert.`);
     S.imp = { konto: I.konto };
-    S.filter = { konto: I.konto, kat: '__none', ver: '', q: '', richtung: '' };
+    S.filter = { konto: I.konto, kat: kontoById(I.konto)?.ohneKontierung ? '' : '__none', ver: '', q: '', richtung: '' };
     goTab('buchungen');
   } catch (e) { fail(e); render(true); }
 }
@@ -1508,7 +1509,7 @@ function viewVerwaltung() {
 
     <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Bankkonten</h2><button class="btn" id="newKonto">+ Konto</button>${!S.konten.length ? '<button class="btn primary" id="initKonten2">Standard-Konten anlegen</button>' : ''}</div>
       <div class="tablewrap"><table class="t"><thead><tr><th>Name</th><th>IBAN</th><th>Kennung</th><th></th></tr></thead><tbody>
-      ${S.konten.map(k => `<tr><td>${esc(k.name)}</td><td class="small">${esc(k.iban || '–')}</td><td class="small muted">${esc(k.id)}</td><td class="r"><button class="btn small" data-konto="${esc(k.id)}">Bearbeiten</button></td></tr>`).join('')}
+      ${S.konten.map(k => `<tr><td>${esc(k.name)}${k.ohneKontierung ? ' <span class="chip">ohne Kontierung</span>' : ''}</td><td class="small">${esc(k.iban || '–')}</td><td class="small muted">${esc(k.id)}</td><td class="r"><button class="btn small" data-konto="${esc(k.id)}">Bearbeiten</button></td></tr>`).join('')}
       </tbody></table></div>
       <p class="muted small">Die IBAN dient zur automatischen Zuordnung beim Import, wenn sie im Dateinamen des ELBA-Exports steht.</p></div>
 
@@ -1638,9 +1639,10 @@ function kontoDialog(k) {
     <label>Name<input id="kName" value="${esc(k?.name || '')}" maxlength="60" required></label>
     <label>IBAN<input id="kIban" value="${esc(k?.iban || '')}" maxlength="40" placeholder="AT.."></label>
     <label>Reihenfolge<input type="number" id="kOrder" value="${k?.order ?? S.konten.length + 1}"></label>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="kOhne" ${k?.ohneKontierung ? 'checked' : ''}> muss nicht kontiert werden (z. B. Mannschaftskassa)</label>
     ${neu ? '<label>Kennung (kurz, ohne Leerzeichen, nicht mehr änderbar)<input id="kId" maxlength="30" pattern="[a-z0-9_]+" placeholder="z. B. sparbuch"></label>' : ''}`, {
     onOk: async () => {
-      const data = { name: $('#kName').value.trim(), iban: cleanIban($('#kIban').value), order: Number($('#kOrder').value) || 99 };
+      const data = { name: $('#kName').value.trim(), iban: cleanIban($('#kIban').value), order: Number($('#kOrder').value) || 99, ohneKontierung: $('#kOhne').checked };
       if (!data.name) { toast('Name fehlt.', true); return false; }
       const id = neu ? norm($('#kId').value).replace(/[^a-z0-9_]/g, '') : k.id;
       if (!id) { toast('Bitte eine Kennung angeben (a–z, 0–9).', true); return false; }

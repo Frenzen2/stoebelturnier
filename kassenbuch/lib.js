@@ -345,21 +345,6 @@ export const DEFAULT_KATEGORIEN = [
   // Feuerwehrkassa: Voranschlagsposten der Gemeinde
   ...vpE.map(([nr, name]) => ({ id: `vp_e${nr}`, nr, vp: nr, name, art: 'E', konto: 'feuerwehr' })),
   ...vpA.map(([nr, name]) => ({ id: `vp_a${nr}`, nr, vp: nr, name, art: 'A', konto: 'feuerwehr' })),
-  // Mannschaftskassa (Kameradschaftskassa, nicht Teil des Gemeinde-Abschlusses)
-  { id: 'm_beitraege', nr: 'M10', name: 'Mitgliedsbeiträge', art: 'E', konto: 'mannschaft' },
-  { id: 'm_spenden', nr: 'M11', name: 'Spenden / Sponsoring', art: 'E', konto: 'mannschaft' },
-  { id: 'm_fest_e', nr: 'M20', name: 'Veranstaltungen – Einnahmen', art: 'E', konto: 'mannschaft' },
-  { id: 'm_bewerbe_e', nr: 'M25', name: 'Bewerbe / Rückerstattungen', art: 'E', konto: 'mannschaft' },
-  { id: 'm_zinsen', nr: 'M30', name: 'Zinsen', art: 'E', konto: 'mannschaft' },
-  { id: 'm_sonst_e', nr: 'M39', name: 'Sonstige Einnahmen', art: 'E', konto: 'mannschaft' },
-  { id: 'm_kamerad', nr: 'M50', name: 'Kameradschaftspflege / Ausflüge / Essen', art: 'A', konto: 'mannschaft' },
-  { id: 'm_bekleidung', nr: 'M55', name: 'Bekleidung / Ausrüstung', art: 'A', konto: 'mannschaft' },
-  { id: 'm_bewerbe', nr: 'M60', name: 'Bewerbe / Leistungsabzeichen', art: 'A', konto: 'mannschaft' },
-  { id: 'm_jugend', nr: 'M65', name: 'Feuerwehrjugend', art: 'A', konto: 'mannschaft' },
-  { id: 'm_fest_a', nr: 'M70', name: 'Veranstaltungen – Ausgaben', art: 'A', konto: 'mannschaft' },
-  { id: 'm_ehrungen', nr: 'M75', name: 'Ehrungen / Geschenke / Kränze', art: 'A', konto: 'mannschaft' },
-  { id: 'm_bank', nr: 'M80', name: 'Bankspesen / KESt', art: 'A', konto: 'mannschaft' },
-  { id: 'm_sonst_a', nr: 'M89', name: 'Sonstige Ausgaben', art: 'A', konto: 'mannschaft' },
   // beide Konten
   { id: 'festkassa', nr: 'F', name: 'Festkassa: Ablieferung / Wechselgeld', art: 'F', konto: '', vpE: '829', vpA: '729' },
   { id: 'umbuchung', nr: 'U', name: 'Umbuchung zwischen eigenen Konten', art: 'U', konto: '' },
@@ -367,7 +352,7 @@ export const DEFAULT_KATEGORIEN = [
 
 // Vorgeschlagene Kontierungsregeln – nach der bisherigen Kontierung der FF Pichl (Excel 2025).
 // Reihenfolge zählt: die erste passende Regel gewinnt.
-const FW = 'feuerwehr', MS = 'mannschaft';
+const FW = 'feuerwehr';
 export const DEFAULT_REGELN = [
   { muster: 'Wechselgeld|Erlös', kategorie: 'festkassa', richtung: '', konto: '' },
   { muster: 'Umlage|BEWERB|Startgeld|Abzeichen|ASLP|-LG.|Lehrgang|Brennpunkt|Wix.com', kategorie: 'vp_a729', richtung: '-', konto: FW },
@@ -379,18 +364,12 @@ export const DEFAULT_REGELN = [
   { muster: 'Subvention', kategorie: 'vp_e753', richtung: '+', konto: FW },
   { muster: 'Landes-Feuerwehrverband', kategorie: 'vp_e858', richtung: '+', konto: FW },
   { muster: 'Transparent|Sponsoring|Werbebeitrag|Werbebanner|Werbung|Sumup|Spende|Mitgliedsbeitrag', kategorie: 'vp_e829', richtung: '+', konto: FW },
-  { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt', kategorie: 'm_bank', richtung: '-', konto: MS },
-  { muster: 'Habenzinsen', kategorie: 'm_zinsen', richtung: '+', konto: MS },
-  { muster: 'Mitgliedsbeitr', kategorie: 'm_beitraege', richtung: '+', konto: MS },
-  { muster: 'Spende|Sponsoring', kategorie: 'm_spenden', richtung: '+', konto: MS },
-  { muster: 'Gasthaus', kategorie: 'm_kamerad', richtung: '-', konto: MS },
-  { muster: 'Brandschutz', kategorie: 'm_bekleidung', richtung: '-', konto: MS },
-  { muster: 'Brau Union|Verleih|Hüpfburg|AKM', kategorie: 'm_fest_a', richtung: '-', konto: MS },
 ];
 
 export const DEFAULT_KONTEN = [
   { id: 'feuerwehr', name: 'Feuerwehrkassa', iban: '', order: 1 },
-  { id: 'mannschaft', name: 'Mannschaftskassa', iban: '', order: 2 },
+  // Die Mannschaftskassa muss nicht kontiert werden
+  { id: 'mannschaft', name: 'Mannschaftskassa', iban: '', order: 2, ohneKontierung: true },
 ];
 
 // ── Aufteilung einer Buchung ─────────────────────────────────────────────────
@@ -410,7 +389,9 @@ export function parts(b) {
   return [{ kategorie: b.kategorie || '', veranstaltung: b.veranstaltung || '', betrag: b.betrag, notiz: '' }];
 }
 
-export function isKontiert(b) {
+/** Konten mit ohneKontierung (z. B. Mannschaftskassa) gelten immer als kontiert. */
+export function isKontiert(b, konten) {
+  if (konten?.find(k => k.id === b.konto)?.ohneKontierung) return true;
   return parts(b).every(p => p.kategorie);
 }
 
@@ -428,6 +409,7 @@ export function jahresabschluss({ buchungen, konten, kategorien, anfang = {} }) 
   const katById = Object.fromEntries(kategorien.map(k => [k.id, k]));
   const kontoIds = konten.map(k => k.id);
   const zero = () => Object.fromEntries(kontoIds.map(id => [id, 0]));
+  const kontoFrei = new Set(konten.filter(k => k.ohneKontierung).map(k => k.id));
   const proKonto = Object.fromEntries(kontoIds.map(id => [id, {
     anfang: anfang[id] || 0, einnahmen: 0, ausgaben: 0, umbuchungen: 0, ende: anfang[id] || 0, anzahl: 0, unkontiert: 0,
   }]));
@@ -444,8 +426,9 @@ export function jahresabschluss({ buchungen, konten, kategorien, anfang = {} }) 
     pk.ende += b.betrag;
     for (const p of parts(b)) {
       const kat = katById[p.kategorie];
-      const key = kat ? kat.id : '';
-      if (!kat) pk.unkontiert++;
+      const frei = !kat && kontoFrei.has(b.konto);
+      const key = kat ? kat.id : frei ? '__ohne' : '';
+      if (!kat && !frei) pk.unkontiert++;
       if (kat && kat.art === 'U') { add(umb, key, b.konto, p.betrag); pk.umbuchungen += p.betrag; continue; }
       if (p.betrag >= 0) { add(ein, key, b.konto, p.betrag); pk.einnahmen += p.betrag; }
       else { add(aus, key, b.konto, p.betrag); pk.ausgaben += p.betrag; }
@@ -455,13 +438,15 @@ export function jahresabschluss({ buchungen, konten, kategorien, anfang = {} }) 
     const k = katById[key];
     return `${k?.nr || '999'}|${k?.name || ''}`;
   };
+  const rank = key => (katById[key] ? 0 : key === '__ohne' ? 1 : 2);
   const toRows = map => [...map.entries()]
     // Unkontiert immer ans Ende
-    .sort((a, b) => (!katById[a[0]]) - (!katById[b[0]]) || order(a[0]).localeCompare(order(b[0]), 'de', { numeric: true }))
+    // „ohne Kontierung“ und „noch nicht kontiert“ ans Ende
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || order(a[0]).localeCompare(order(b[0]), 'de', { numeric: true }))
     .map(([key, werte]) => ({
       kategorie: key,
       nr: katById[key]?.nr || '',
-      name: katById[key]?.name || '⚠ noch nicht kontiert',
+      name: katById[key]?.name || (key === '__ohne' ? 'ohne Kontierung' : '⚠ noch nicht kontiert'),
       werte,
       summe: Object.values(werte).reduce((a, v) => a + v, 0),
     }));

@@ -53,8 +53,9 @@ test('ELBA-CSV ohne Kopfzeile wird erkannt (echtes Format)', () => {
   assert.equal(matchRule(DEFAULT_REGELN, fw[3]).kategorie, 'vp_e823');   // Habenzinsen
   assert.equal(matchRule(DEFAULT_REGELN, fw[6]).kategorie, 'festkassa');
   assert.equal(matchRule(DEFAULT_REGELN, fw[9]).kategorie, 'vp_e829');   // Transparentwerbung
-  // Mannschaftskassa bekommt eigene Kategorien
-  assert.equal(matchRule(DEFAULT_REGELN, { ...rows[5], konto: 'mannschaft' }).kategorie, 'm_bank');
+  // Mannschaftskassa wird nicht kontiert – nur Festkassa-Bewegungen werden erkannt
+  assert.equal(matchRule(DEFAULT_REGELN, { ...rows[5], konto: 'mannschaft' }), null);
+  assert.equal(matchRule(DEFAULT_REGELN, { ...rows[6], konto: 'mannschaft' }).kategorie, 'festkassa');
   assert.ok(DEFAULT_REGELN.every(r => DEFAULT_KATEGORIEN.some(k => k.id === r.kategorie)));
 });
 
@@ -140,6 +141,12 @@ test('Jahresabschluss', () => {
   // Prüfsumme: Anfang + Einnahmen + Ausgaben + Umbuchungen = Ende
   for (const k of Object.values(r.proKonto)) assert.equal(k.anfang + k.einnahmen + k.ausgaben + k.umbuchungen, k.ende);
   assert.equal(r.ausgaben.at(-1).name, '⚠ noch nicht kontiert');
+  // Mannschaftskassa ohne Kontierung: zählt nicht als unkontiert
+  const r2 = jahresabschluss({ buchungen, konten: [{ id: 'feuerwehr' }, { id: 'mannschaft', ohneKontierung: true }], kategorien: DEFAULT_KATEGORIEN });
+  assert.equal(r2.gesamt.unkontiert, 0);
+  assert.equal(r2.ausgaben.at(-1).name, 'ohne Kontierung');
+  assert.equal(isKontiert({ konto: 'mannschaft', betrag: -890 }, [{ id: 'mannschaft', ohneKontierung: true }]), true);
+  assert.equal(isKontiert({ konto: 'feuerwehr', betrag: -890 }, [{ id: 'mannschaft', ohneKontierung: true }]), false);
 });
 
 test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {

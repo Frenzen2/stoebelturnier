@@ -19,7 +19,8 @@ eigenen Server, nur statische Dateien.
 - **Raika-Import**: CSV-Export aus ELBA einlesen. Die Spalten werden automatisch erkannt.
   Bereits importierte Umsätze werden übersprungen, überlappende Zeiträume sind also kein Problem.
 - **Kontenplan wie im Feuerwehr-Rechnungsabschluss**: Die Feuerwehrkassa wird nach den **Voranschlagsposten (V-P)**
-  der Gemeinde kontiert (Einnahmen 298 … 871, Ausgaben 10 … 729). Die Mannschaftskassa hat eigene Kategorien.
+  der Gemeinde kontiert (Einnahmen 298 … 871, Ausgaben 10 … 729). Die **Mannschaftskassa muss nicht kontiert werden**:
+  ihre Buchungen zählen nie als „unkontiert“. Festkassa oder Veranstaltung lassen sich bei Bedarf trotzdem zuordnen.
 - **Laufende Belegnummern** je Konto und Jahr in ELBA-Reihenfolge, wie in der bisherigen Excel-Liste.
 - **Kontieren**: Jede Buchung bekommt eine Kategorie aus dem Kontenplan und optional eine Veranstaltung.
   Mehrere Buchungen auf einmal kontieren, eine Buchung auf mehrere Kategorien aufteilen,
@@ -109,7 +110,8 @@ Wird er erneut importiert, wird er übersprungen. Zwei gleiche Umsätze am selbe
 
 **Kontenplan:** Für die Feuerwehrkassa sind die Voranschlagsposten des Feuerwehr-Rechnungsabschlusses angelegt
 (z. B. 753 lfd. Transferz. v. Gemeinden, 823 Zinsen, 829 Sonst. Einnahmen; 409 Ersatzteile, 616 Instandh. Geräte,
-728 Entgelte für sonst. Leistungen, 729 Sonst. Ausgaben). Bei der Mannschaftskassa werden nur deren eigene Kategorien angeboten.
+728 Entgelte für sonst. Leistungen, 729 Sonst. Ausgaben). Die Mannschaftskassa wird nicht kontiert; dort kann man optional die Festkassa-Kategorie und eine Veranstaltung wählen.
+Ob ein Konto kontiert werden muss, stellt man unter *Verwaltung → Bankkonten* ein („muss nicht kontiert werden“).
 Die Festkassa-Kategorie (Wechselgeld, Ablieferung) erscheint im Gemeinde-Abschluss bei Eingängen unter 829 und bei Ausgängen unter 729,
 so wie bisher in der Excel. Das lässt sich unter Verwaltung → Kategorien ändern.
 
@@ -175,7 +177,7 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | Sammlung | Inhalt |
 |---|---|
 | `users/{uid}` | name, email, role, active |
-| `konten/{id}` | name, iban, order (Standard: `feuerwehr`, `mannschaft`) |
+| `konten/{id}` | name, iban, order, ohneKontierung (Standard: `feuerwehr`, `mannschaft` mit ohneKontierung) |
 | `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/F/U, konto, vp, vpE, vpA, inaktiv}] |
 | `config/allgemein` | ffName, gemeinde, ort (Kopf der Ausdrucke) |
 | `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
