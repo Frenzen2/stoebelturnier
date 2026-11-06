@@ -322,52 +322,70 @@ export function matchRule(regeln, b) {
 
 // ── Standard-Kategorien (Kontenplan) ─────────────────────────────────────────
 // art: 'E' Einnahme, 'A' Ausgabe, 'U' Umbuchung (neutral), 'F' Festkassa (Ablieferung/Wechselgeld)
+// konto: Kategorie wird nur bei diesem Konto angeboten ('' = bei allen)
+// vp: Voranschlagsposten im Feuerwehr-Rechnungsabschluss für die Gemeinde.
+//     Bei Festkassa/Umbuchung: vpE (Eingänge) und vpA (Ausgänge).
 
-export const DEFAULT_KATEGORIEN = [
-  { id: 'e_subv_gem', nr: '100', name: 'Subvention Gemeinde', art: 'E' },
-  { id: 'e_subv_land', nr: '110', name: 'Subvention Land / LFV', art: 'E' },
-  { id: 'e_spenden', nr: '120', name: 'Spenden', art: 'E' },
-  { id: 'e_sponsoring', nr: '122', name: 'Sponsoring / Transparentwerbung', art: 'E' },
-  { id: 'e_haussammlung', nr: '125', name: 'Haussammlung', art: 'E' },
-  { id: 'e_beitraege', nr: '130', name: 'Mitgliedsbeiträge / Unterstützende Mitglieder', art: 'E' },
-  { id: 'e_kostenersatz', nr: '140', name: 'Kostenersätze Einsätze / Leistungen', art: 'E' },
-  { id: 'e_fest', nr: '150', name: 'Veranstaltungen – Einnahmen (Bank)', art: 'E' },
-  { id: 'e_zinsen', nr: '180', name: 'Zinsen / Erträge', art: 'E' },
-  { id: 'e_sonst', nr: '190', name: 'Sonstige Einnahmen', art: 'E' },
-  { id: 'a_ausruestung', nr: '500', name: 'Ausrüstung / Bekleidung', art: 'A' },
-  { id: 'a_geraete', nr: '510', name: 'Geräte / Wartung', art: 'A' },
-  { id: 'a_fahrzeuge', nr: '520', name: 'Fahrzeuge / Treibstoff', art: 'A' },
-  { id: 'a_haus', nr: '530', name: 'Feuerwehrhaus / Betriebskosten', art: 'A' },
-  { id: 'a_ausbildung', nr: '540', name: 'Aus- und Weiterbildung / Kurse', art: 'A' },
-  { id: 'a_bewerbe', nr: '550', name: 'Bewerbe / Leistungsabzeichen', art: 'A' },
-  { id: 'a_jugend', nr: '560', name: 'Feuerwehrjugend', art: 'A' },
-  { id: 'a_kamerad', nr: '570', name: 'Kameradschaftspflege / Ausflüge', art: 'A' },
-  { id: 'a_ehrungen', nr: '575', name: 'Ehrungen / Geschenke / Kränze', art: 'A' },
-  { id: 'a_fest', nr: '580', name: 'Veranstaltungen – Ausgaben (Bank)', art: 'A' },
-  { id: 'a_verwaltung', nr: '590', name: 'Verwaltung / Büro / Porto', art: 'A' },
-  { id: 'a_versicherung', nr: '600', name: 'Versicherungen / Mitgliedschaften', art: 'A' },
-  { id: 'a_bank', nr: '610', name: 'Bankspesen / Kontoführung / KESt', art: 'A' },
-  { id: 'a_sonst', nr: '690', name: 'Sonstige Ausgaben', art: 'A' },
-  { id: 'festkassa', nr: '800', name: 'Festkassa: Ablieferung / Wechselgeld', art: 'F' },
-  { id: 'umbuchung', nr: '900', name: 'Umbuchung zwischen eigenen Konten', art: 'U' },
+const vpE = [
+  ['298', 'Entnahme aus der FW-Rücklage'], ['753', 'lfd. Transferz. v.Gemeinden'], ['805', 'Veräußerungen'],
+  ['810', 'Leistungserlöse aus Einsätzen'], ['823', 'Zinsen der Feuerwehrrücklage'], ['824', 'Einnahmen aus Vermietung'],
+  ['829', 'Sonst. Einnahmen (Spenden etc.)'], ['858', 'Kapitaltransferz. v. Landes-Fw-Fonds'], ['871', 'Kapitaltransferz. vom Land'],
+];
+const vpA = [
+  ['10', 'Feuerwehrhaus-Errichtung'], ['20', 'Geräte u. Anlagen'], ['40', 'FW-Fahrzeuge-Anschaffung'], ['50', 'Löschwasseranlagen'],
+  ['298', 'Rücklagenzuführung'], ['346', 'Rückzahlung v. Darlehen'], ['400', 'Geringwert. Ge- u. Verbrauchsgüter'],
+  ['409', 'Ersatzteile für Geräte u. Fahrzeuge'], ['451', 'Betriebskosten für Gebäude'], ['452', 'Treibstoffe'],
+  ['455', 'Löschmittel, Ölbindemittel'], ['600', 'Strom'], ['614', 'Instandh. von Gebäuden'], ['616', 'Instandh. von Geräten u. Anlagen'],
+  ['617', 'Instandh. von Fahrzeugen'], ['630', 'Leistungen der Post'], ['650', 'Kreditzinsen'], ['670', 'Versicherungen'],
+  ['690', 'Schadenersätze'], ['710', 'Öffentl. Abgaben'], ['728', 'Entgelte für sonst. Leistungen'],
+  ['729', 'Sonst. Ausgaben (Aus- u. Fortbildung)'],
 ];
 
-// Vorgeschlagene Kontierungsregeln (aus typischen Raika-Umsätzen der FF Pichl)
+export const DEFAULT_KATEGORIEN = [
+  // Feuerwehrkassa: Voranschlagsposten der Gemeinde
+  ...vpE.map(([nr, name]) => ({ id: `vp_e${nr}`, nr, vp: nr, name, art: 'E', konto: 'feuerwehr' })),
+  ...vpA.map(([nr, name]) => ({ id: `vp_a${nr}`, nr, vp: nr, name, art: 'A', konto: 'feuerwehr' })),
+  // Mannschaftskassa (Kameradschaftskassa, nicht Teil des Gemeinde-Abschlusses)
+  { id: 'm_beitraege', nr: 'M10', name: 'Mitgliedsbeiträge', art: 'E', konto: 'mannschaft' },
+  { id: 'm_spenden', nr: 'M11', name: 'Spenden / Sponsoring', art: 'E', konto: 'mannschaft' },
+  { id: 'm_fest_e', nr: 'M20', name: 'Veranstaltungen – Einnahmen', art: 'E', konto: 'mannschaft' },
+  { id: 'm_bewerbe_e', nr: 'M25', name: 'Bewerbe / Rückerstattungen', art: 'E', konto: 'mannschaft' },
+  { id: 'm_zinsen', nr: 'M30', name: 'Zinsen', art: 'E', konto: 'mannschaft' },
+  { id: 'm_sonst_e', nr: 'M39', name: 'Sonstige Einnahmen', art: 'E', konto: 'mannschaft' },
+  { id: 'm_kamerad', nr: 'M50', name: 'Kameradschaftspflege / Ausflüge / Essen', art: 'A', konto: 'mannschaft' },
+  { id: 'm_bekleidung', nr: 'M55', name: 'Bekleidung / Ausrüstung', art: 'A', konto: 'mannschaft' },
+  { id: 'm_bewerbe', nr: 'M60', name: 'Bewerbe / Leistungsabzeichen', art: 'A', konto: 'mannschaft' },
+  { id: 'm_jugend', nr: 'M65', name: 'Feuerwehrjugend', art: 'A', konto: 'mannschaft' },
+  { id: 'm_fest_a', nr: 'M70', name: 'Veranstaltungen – Ausgaben', art: 'A', konto: 'mannschaft' },
+  { id: 'm_ehrungen', nr: 'M75', name: 'Ehrungen / Geschenke / Kränze', art: 'A', konto: 'mannschaft' },
+  { id: 'm_bank', nr: 'M80', name: 'Bankspesen / KESt', art: 'A', konto: 'mannschaft' },
+  { id: 'm_sonst_a', nr: 'M89', name: 'Sonstige Ausgaben', art: 'A', konto: 'mannschaft' },
+  // beide Konten
+  { id: 'festkassa', nr: 'F', name: 'Festkassa: Ablieferung / Wechselgeld', art: 'F', konto: '', vpE: '829', vpA: '729' },
+  { id: 'umbuchung', nr: 'U', name: 'Umbuchung zwischen eigenen Konten', art: 'U', konto: '' },
+];
+
+// Vorgeschlagene Kontierungsregeln – nach der bisherigen Kontierung der FF Pichl (Excel 2025).
+// Reihenfolge zählt: die erste passende Regel gewinnt.
+const FW = 'feuerwehr', MS = 'mannschaft';
 export const DEFAULT_REGELN = [
-  { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt', kategorie: 'a_bank', richtung: '-', konto: '' },
-  { muster: 'Habenzinsen', kategorie: 'e_zinsen', richtung: '+', konto: '' },
   { muster: 'Wechselgeld|Erlös', kategorie: 'festkassa', richtung: '', konto: '' },
-  { muster: 'Transparent|Sponsoring|Werbebeitrag|Werbebanner|Werbung', kategorie: 'e_sponsoring', richtung: '+', konto: '' },
-  { muster: 'Sumup', kategorie: 'e_fest', richtung: '+', konto: '' },
-  { muster: 'Subvention', kategorie: 'e_subv_gem', richtung: '+', konto: '' },
-  { muster: 'Mitgliedsbeitrag', kategorie: 'e_beitraege', richtung: '+', konto: '' },
-  { muster: 'Spende', kategorie: 'e_spenden', richtung: '+', konto: '' },
-  { muster: 'BEWERB|Startgeld|Abzeichen|ASLP', kategorie: 'a_bewerbe', richtung: '-', konto: '' },
-  { muster: 'Lehrgang|-LG.|Kurs', kategorie: 'a_ausbildung', richtung: '-', konto: '' },
-  { muster: 'Hilfssäckel|Umlage', kategorie: 'a_versicherung', richtung: '-', konto: '' },
-  { muster: 'Sonnwendfeuer|Wiesnfest|Wiesenfest|Zeltfest', kategorie: 'a_fest', richtung: '-', konto: '' },
-  { muster: 'Atemschutz|Brandschutz', kategorie: 'a_geraete', richtung: '-', konto: '' },
-  { muster: 'Jahrbuch|Brennpunkt|Wix.com', kategorie: 'a_verwaltung', richtung: '-', konto: '' },
+  { muster: 'Umlage|BEWERB|Startgeld|Abzeichen|ASLP|-LG.|Lehrgang|Brennpunkt|Wix.com', kategorie: 'vp_a729', richtung: '-', konto: FW },
+  { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt|Hilfssäckel|Jahrbuch', kategorie: 'vp_a728', richtung: '-', konto: FW },
+  { muster: 'Befüllung', kategorie: 'vp_a409', richtung: '-', konto: FW },
+  { muster: 'Brandschutz Attergau|Atemschutz', kategorie: 'vp_a616', richtung: '-', konto: FW },
+  { muster: 'Ölbindemittel', kategorie: 'vp_a455', richtung: '-', konto: FW },
+  { muster: 'Habenzinsen', kategorie: 'vp_e823', richtung: '+', konto: FW },
+  { muster: 'Subvention', kategorie: 'vp_e753', richtung: '+', konto: FW },
+  { muster: 'Landes-Feuerwehrverband', kategorie: 'vp_e858', richtung: '+', konto: FW },
+  { muster: 'Transparent|Sponsoring|Werbebeitrag|Werbebanner|Werbung|Sumup|Spende|Mitgliedsbeitrag', kategorie: 'vp_e829', richtung: '+', konto: FW },
+  { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt', kategorie: 'm_bank', richtung: '-', konto: MS },
+  { muster: 'Habenzinsen', kategorie: 'm_zinsen', richtung: '+', konto: MS },
+  { muster: 'Mitgliedsbeitr', kategorie: 'm_beitraege', richtung: '+', konto: MS },
+  { muster: 'Spende|Sponsoring', kategorie: 'm_spenden', richtung: '+', konto: MS },
+  { muster: 'Gasthaus', kategorie: 'm_kamerad', richtung: '-', konto: MS },
+  { muster: 'Brandschutz', kategorie: 'm_bekleidung', richtung: '-', konto: MS },
+  { muster: 'Brau Union|Verleih|Hüpfburg|AKM', kategorie: 'm_fest_a', richtung: '-', konto: MS },
 ];
 
 export const DEFAULT_KONTEN = [
@@ -465,6 +483,126 @@ export function jahresabschluss({ buchungen, konten, kategorien, anfang = {} }) 
       umbuchungen: total('umbuchungen'), ende: total('ende'), unkontiert: total('unkontiert'),
     },
   };
+}
+
+// ── Belegnummern ─────────────────────────────────────────────────────────────
+
+/** "18.02.2025 02:29:12:440" → "2025-02-18 02:29:12:440" (sortierbar) */
+function stampKey(z) {
+  const m = String(z || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(.*)$/);
+  return m ? `${m[3]}-${pad(m[2])}-${pad(m[1])} ${m[4]}` : String(z || '');
+}
+
+/** Chronologische Reihenfolge wie im ELBA-Export: Buchungsdatum, Zeitstempel, Zeile in der Datei. */
+export function chronoSort(a, b) {
+  return a.datum.localeCompare(b.datum) || stampKey(a.zeitstempel).localeCompare(stampKey(b.zeitstempel))
+    || (a.seq ?? 1e9) - (b.seq ?? 1e9) || String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+/** Laufende Belegnummer je Konto und Jahr (1, 2, 3 …) → Map id → Nr. */
+export function belegNummern(buchungen) {
+  const byKonto = new Map();
+  for (const b of buchungen) {
+    const k = `${b.konto}|${b.jahr ?? b.datum.slice(0, 4)}`;
+    if (!byKonto.has(k)) byKonto.set(k, []);
+    byKonto.get(k).push(b);
+  }
+  const out = new Map();
+  for (const list of byKonto.values()) list.sort(chronoSort).forEach((b, i) => out.set(b.id, i + 1));
+  return out;
+}
+
+// ── Feuerwehr-Rechnungsabschluss für die Gemeinde ────────────────────────────
+
+const byVp = (a, b) => Number(a.vp) - Number(b.vp) || a.vp.localeCompare(b.vp);
+
+/**
+ * Summen je Voranschlagsposten wie im Formular „Feuerwehr-Rechnungsabschluss“.
+ * Alle V-P-Zeilen werden aufgeführt (auch mit 0). Teile ohne V-P landen in `ohne`.
+ */
+export function gemeindeAbschluss({ buchungen, kategorien, anfang = 0 }) {
+  const katById = Object.fromEntries(kategorien.map(k => [k.id, k]));
+  const rows = { E: new Map(), A: new Map() };
+  const addRow = (side, vp, name) => { if (!rows[side].has(vp)) rows[side].set(vp, { vp, name, betrag: 0 }); return rows[side].get(vp); };
+  for (const k of kategorien) if (k.vp && (k.art === 'E' || k.art === 'A') && !k.inaktiv) addRow(k.art, k.vp, k.name);
+  const ohne = [];
+  for (const b of buchungen) {
+    for (const p of parts(b)) {
+      const k = katById[p.kategorie];
+      if (k && k.vp && k.art === 'E') addRow('E', k.vp, k.name).betrag += p.betrag;
+      else if (k && k.vp && k.art === 'A') addRow('A', k.vp, k.name).betrag -= p.betrag;
+      else if (k && p.betrag >= 0 && k.vpE) addRow('E', k.vpE, k.name).betrag += p.betrag;
+      else if (k && p.betrag < 0 && k.vpA) addRow('A', k.vpA, k.name).betrag -= p.betrag;
+      else ohne.push({ ...p, buchung: b });
+    }
+  }
+  const einnahmen = [...rows.E.values()].sort(byVp), ausgaben = [...rows.A.values()].sort(byVp);
+  const summeE = einnahmen.reduce((a, r) => a + r.betrag, 0), summeA = ausgaben.reduce((a, r) => a + r.betrag, 0);
+  return { einnahmen, ausgaben, summeE, summeA, anfang, ende: anfang + summeE - summeA, ohne };
+}
+
+/** Hat das Konto Kategorien mit Voranschlagsposten (→ Gemeinde-Abschluss sinnvoll)? */
+export function hatVp(kategorien, konto) {
+  return kategorien.some(k => k.vp && (!k.konto || k.konto === konto));
+}
+
+// ── Kontierung aus einer bisherigen Excel-Liste übernehmen ───────────────────
+
+/**
+ * Findet in einer Tabelle (Array von Zeilen) die Kopfzeile mit Datum, Betrag und Kontierung
+ * und liefert die Datenzeilen als { datum, betrag, kontierung, text, beleg }.
+ */
+export function excelKontierung(table) {
+  const hi = table.findIndex(r => {
+    const n = r.map(c => norm(c));
+    return n.includes('datum') && n.includes('betrag') && n.some(c => c.startsWith('kontierung'));
+  });
+  if (hi < 0) return null;
+  const h = table[hi].map(c => norm(c));
+  const col = name => h.findIndex(c => c.startsWith(name));
+  const ci = { datum: col('datum'), betrag: col('betrag'), kont: col('kontierung'), text: col('bezeichnung'), beleg: col('beleg') };
+  const rows = [];
+  for (const r of table.slice(hi + 1)) {
+    const d = r[ci.datum];
+    const datum = d instanceof Date ? isoLocal(d) : parseDate(d);
+    const betrag = parseAmount(r[ci.betrag]);
+    if (!datum || betrag === null) continue;
+    rows.push({ datum, betrag, kontierung: String(r[ci.kont] ?? '').trim().replace(/\.0+$/, ''), text: ci.text >= 0 ? String(r[ci.text] ?? '') : '', beleg: ci.beleg >= 0 ? r[ci.beleg] : '' });
+  }
+  return rows;
+}
+function isoLocal(d) {
+  const x = new Date(d.getTime() + 12 * 3600e3);   // Excel-Datum um Mitternacht → Zeitzonen-sicher
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+}
+
+/**
+ * Ordnet Excel-Zeilen den Buchungen eines Kontos zu (gleiches Datum und gleicher Betrag, bei
+ * mehreren gleichen in chronologischer Reihenfolge) und sucht die Kategorie zur Kontierungs-Nummer.
+ * Liefert { treffer: [{buchung, kategorie, zeile}], ohneBuchung: [zeile], unbekannt: [zeile] }.
+ */
+export function zuordnenKontierung(zeilen, buchungen, kategorien, konto) {
+  const key = x => `${x.datum}|${x.betrag}`;
+  const pool = new Map();
+  for (const b of [...buchungen].filter(b => b.konto === konto).sort(chronoSort)) {
+    if (!pool.has(key(b))) pool.set(key(b), []);
+    pool.get(key(b)).push(b);
+  }
+  const kats = kategorien.filter(k => !k.konto || k.konto === konto);
+  const findKat = (nr, betrag) => {
+    const m = kats.filter(k => String(k.vp || k.nr) === nr || String(k.nr) === nr);
+    return m.find(k => k.art === (betrag >= 0 ? 'E' : 'A')) || m[0] || null;
+  };
+  const out = { treffer: [], ohneBuchung: [], unbekannt: [] };
+  for (const z of zeilen) {
+    if (!z.kontierung) continue;
+    const b = pool.get(key(z))?.shift();
+    if (!b) { out.ohneBuchung.push(z); continue; }
+    const k = findKat(z.kontierung, z.betrag);
+    if (!k) { out.unbekannt.push(z); continue; }
+    out.treffer.push({ buchung: b, kategorie: k.id, zeile: z });
+  }
+  return out;
 }
 
 // ── Festkassa ────────────────────────────────────────────────────────────────

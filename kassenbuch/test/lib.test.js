@@ -5,6 +5,7 @@ import {
   parseAmount, parseDate, parseCsv, detectColumns, applyMapping, importIds, matchRule,
   jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, stueckelungSumme, parts, isKontiert,
   DEFAULT_KATEGORIEN, DEFAULT_REGELN, decodeText, ibanFromName, toCsv, splitBankText, suchbegriff,
+  belegNummern, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
 } from '../lib.js';
 
 test('Beträge', () => {
@@ -44,10 +45,16 @@ test('ELBA-CSV ohne Kopfzeile wird erkannt (echtes Format)', () => {
   assert.equal(rows[3].valuta, '2026-04-01');
   assert.match(rows[0].text, /^Zahlungsempfänger: Bezirksfeuerwehrkommando/);
   // Standard-Regeln kontieren alle Beispielzeilen außer der Einzelrechnung
-  const ohne = rows.filter(r => !matchRule(DEFAULT_REGELN, r));
+  const fw = rows.map(r => ({ ...r, konto: 'feuerwehr' }));
+  const ohne = fw.filter(r => !matchRule(DEFAULT_REGELN, r));
   assert.deepEqual(ohne.map(r => r.betrag), [-73401]);
-  assert.equal(matchRule(DEFAULT_REGELN, rows[6]).kategorie, 'festkassa');
-  assert.equal(matchRule(DEFAULT_REGELN, rows[9]).kategorie, 'e_sponsoring');
+  assert.equal(matchRule(DEFAULT_REGELN, fw[0]).kategorie, 'vp_a728');   // Hilfssäckel
+  assert.equal(matchRule(DEFAULT_REGELN, fw[1]).kategorie, 'vp_e753');   // Subvention
+  assert.equal(matchRule(DEFAULT_REGELN, fw[3]).kategorie, 'vp_e823');   // Habenzinsen
+  assert.equal(matchRule(DEFAULT_REGELN, fw[6]).kategorie, 'festkassa');
+  assert.equal(matchRule(DEFAULT_REGELN, fw[9]).kategorie, 'vp_e829');   // Transparentwerbung
+  // Mannschaftskassa bekommt eigene Kategorien
+  assert.equal(matchRule(DEFAULT_REGELN, { ...rows[5], konto: 'mannschaft' }).kategorie, 'm_bank');
   assert.ok(DEFAULT_REGELN.every(r => DEFAULT_KATEGORIEN.some(k => k.id === r.kategorie)));
 });
 
@@ -116,8 +123,8 @@ test('Aufteilung', () => {
 test('Jahresabschluss', () => {
   const konten = [{ id: 'feuerwehr' }, { id: 'mannschaft' }];
   const buchungen = [
-    { konto: 'feuerwehr', betrag: 350000, kategorie: 'e_subv_gem' },
-    { konto: 'feuerwehr', betrag: -41280, kategorie: 'a_versicherung' },
+    { konto: 'feuerwehr', betrag: 350000, kategorie: 'vp_e753' },
+    { konto: 'feuerwehr', betrag: -41280, kategorie: 'vp_a670' },
     { konto: 'feuerwehr', betrag: -50000, kategorie: 'umbuchung' },
     { konto: 'mannschaft', betrag: 50000, kategorie: 'umbuchung' },
     { konto: 'mannschaft', betrag: -890 },
@@ -161,4 +168,65 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
 
 test('CSV-Export', () => {
   assert.equal(toCsv([['a', 'b;c'], ['x"y', 1]]), '﻿a;"b;c"\r\n"x""y";1');
+});
+
+test('Belegnummern in ELBA-Reihenfolge', () => {
+  const b = [
+    { id: 'c', konto: 'feuerwehr', jahr: 2025, datum: '2025-03-31', zeitstempel: '31.03.2025 22:49:59:711', seq: 12 },
+    { id: 'a', konto: 'feuerwehr', jahr: 2025, datum: '2025-03-12', zeitstempel: '11.03.2025 19:38:52:015', seq: 6 },
+    { id: 'b', konto: 'feuerwehr', jahr: 2025, datum: '2025-03-31', zeitstempel: '31.03.2025 22:49:59:711', seq: 10 },
+    { id: 'x', konto: 'mannschaft', jahr: 2025, datum: '2025-01-01', zeitstempel: '' },
+  ];
+  const nr = belegNummern(b);
+  assert.deepEqual(['a', 'b', 'c', 'x'].map(id => nr.get(id)), [1, 2, 3, 1]);
+});
+
+test('Feuerwehr-Rechnungsabschluss (Gemeinde)', () => {
+  const buchungen = [
+    { konto: 'feuerwehr', betrag: 272723, kategorie: 'vp_e753' },
+    { konto: 'feuerwehr', betrag: 13401, kategorie: 'vp_e823' },
+    { konto: 'feuerwehr', betrag: -3535, kategorie: 'vp_a728' },
+    { konto: 'feuerwehr', betrag: -658500, kategorie: 'festkassa' },   // Wechselgeld → 729
+    { konto: 'feuerwehr', betrag: 658500, kategorie: 'festkassa' },    // retour → 829
+    { konto: 'feuerwehr', betrag: -1000, kategorie: 'umbuchung' },     // ohne V-P
+    { konto: 'feuerwehr', betrag: -2000 },                             // unkontiert
+  ];
+  const g = gemeindeAbschluss({ buchungen, kategorien: DEFAULT_KATEGORIEN, anfang: 2839054 });
+  const e = Object.fromEntries(g.einnahmen.map(r => [r.vp, r.betrag]));
+  const a = Object.fromEntries(g.ausgaben.map(r => [r.vp, r.betrag]));
+  assert.equal(g.einnahmen.length, 9);   // alle Einnahme-Posten, auch mit 0
+  assert.equal(g.ausgaben.length, 22);
+  assert.equal(e['753'], 272723); assert.equal(e['829'], 658500); assert.equal(e['298'], 0);
+  assert.equal(a['728'], 3535); assert.equal(a['729'], 658500);
+  assert.equal(g.ohne.length, 2);
+  assert.equal(g.ende, 2839054 + g.summeE - g.summeA);
+  assert.equal(g.einnahmen[0].vp, '298'); assert.equal(g.ausgaben[0].vp, '10');
+  assert.ok(hatVp(DEFAULT_KATEGORIEN, 'feuerwehr')); assert.ok(!hatVp(DEFAULT_KATEGORIEN.filter(k => k.konto !== 'feuerwehr' && !k.vp), 'mannschaft'));
+});
+
+test('Kontierung aus Excel übernehmen', () => {
+  const table = [
+    ['Belegnr.', 'Datum', 'Bezeichnung', 'Betrag', 'Kontierung', '', 'Fest', '', '', 298, 'Entnahme'],
+    [1, new Date(2025, 1, 18), 'Lastschrift BFK', -61.6, 728, '', '', '', '', 753, 'Transfer'],
+    [2, '18.02.2025', 'Lastschrift BFK Umlage', -47, '729', ''],
+    [3, new Date(2025, 2, 31), 'Zinsen', 7.4, 823],
+    [4, new Date(2025, 2, 31), 'Zinsen', 7.4, 823],
+    [5, new Date(2025, 3, 1), 'gibt es nicht', -5, 729],
+    [6, new Date(2025, 3, 2), 'unbekannt', -9, 999],
+  ];
+  const z = excelKontierung(table);
+  assert.equal(z.length, 6);
+  assert.deepEqual(z[0], { datum: '2025-02-18', betrag: -6160, kontierung: '728', text: 'Lastschrift BFK', beleg: 1 });
+  const buch = [
+    { id: 'u1', konto: 'feuerwehr', datum: '2025-02-18', betrag: -6160, seq: 1 },
+    { id: 'u2', konto: 'feuerwehr', datum: '2025-02-18', betrag: -4700, seq: 2 },
+    { id: 'z1', konto: 'feuerwehr', datum: '2025-03-31', betrag: 740, seq: 3 },
+    { id: 'z2', konto: 'feuerwehr', datum: '2025-03-31', betrag: 740, seq: 4 },
+    { id: 'n', konto: 'feuerwehr', datum: '2025-04-02', betrag: -900, seq: 5 },
+    { id: 'm', konto: 'mannschaft', datum: '2025-04-01', betrag: -500 },
+  ];
+  const r = zuordnenKontierung(z, buch, DEFAULT_KATEGORIEN, 'feuerwehr');
+  assert.deepEqual(r.treffer.map(t => [t.buchung.id, t.kategorie]), [['u1', 'vp_a728'], ['u2', 'vp_a729'], ['z1', 'vp_e823'], ['z2', 'vp_e823']]);
+  assert.equal(r.ohneBuchung.length, 1);   // anderes Konto
+  assert.equal(r.unbekannt.length, 1);     // 999
 });

@@ -13,7 +13,7 @@ import { FIREBASE_CONFIG } from './firebase-config.js';
 import {
   fmt, eur, parseAmount, parseDate, deDate, norm, decodeText, parseCsv, detectColumns, applyMapping,
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
-  splitBankText, suchbegriff,
+  splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
@@ -49,7 +49,8 @@ const S = {
   jahr: Number(localStorage.getItem('kb.jahr')) || new Date().getFullYear(),
   users: [], konten: [], kategorien: DEFAULT_KATEGORIEN, kategorienGeladen: false, regeln: [],
   buchungen: [], jahrDoc: null, vorjahrDoc: null, veranstaltungen: [], posten: {},
-  filter: { konto: '', kat: '', ver: '', q: '', richtung: '' }, sel: new Set(),
+  filter: { konto: '', kat: '', ver: '', q: '', richtung: '' }, sel: new Set(), belegNr: new Map(),
+  allgemein: { ffName: 'Pichl', gemeinde: 'Puchkirchen am Trattberg', ort: 'Pichl' }, xl: null,
   festSel: null, imp: null, log: null,
 };
 
@@ -117,12 +118,14 @@ const confirmDlg = (title, text, ok = 'OK') => new Promise(res => {
   $('#dlg').addEventListener('close', () => res(false), { once: true });
 });
 
-function katOptions(selected, betrag) {
+function katOptions(selected, betrag, konto = '') {
   const groups = [['E', 'Einnahmen'], ['A', 'Ausgaben'], ['F', 'Festkassa'], ['U', 'Umbuchung']];
   // passende Gruppe zuerst
   if (betrag < 0) groups.unshift(groups.splice(1, 1)[0]);
   return `<option value="">— nicht kontiert —</option>` + groups.map(([art, name]) => {
-    const ks = S.kategorien.filter(k => k.art === art && (!k.inaktiv || k.id === selected));
+    const ks = S.kategorien.filter(k => k.art === art && (!k.inaktiv || k.id === selected)
+      && (!konto || !k.konto || k.konto === konto || k.id === selected))
+      .sort((a, b) => String(a.nr).localeCompare(String(b.nr), 'de', { numeric: true }));
     return ks.length ? `<optgroup label="${name}">${ks.map(k =>
       `<option value="${esc(k.id)}" ${k.id === selected ? 'selected' : ''}>${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</option>`).join('')}</optgroup>` : '';
   }).join('');
@@ -242,6 +245,10 @@ function startData() {
     S.kategorienGeladen = !!list?.length;
     render();
   }, fail));
+  S.unsub.push(onSnapshot(doc(db, 'config', 'allgemein'), snap => {
+    if (snap.exists()) S.allgemein = { ...S.allgemein, ...snap.data() };
+    render();
+  }, fail));
   S.unsub.push(onSnapshot(doc(db, 'config', 'regeln'), snap => {
     S.regeln = snap.exists() ? (snap.data().list || []) : [];
     render();
@@ -253,8 +260,8 @@ function startYear() {
   stopYear();
   const y = S.jahr;
   S.yearUnsub.push(onSnapshot(query(collection(db, 'buchungen'), where('jahr', '==', y)), snap => {
-    S.buchungen = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => b.datum.localeCompare(a.datum) || (b.zeitstempel || '').localeCompare(a.zeitstempel || '') || a.id.localeCompare(b.id));
+    S.buchungen = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => chronoSort(b, a));
+    S.belegNr = belegNummern(S.buchungen);
     for (const id of [...S.sel]) if (!S.buchungen.some(b => b.id === id)) S.sel.delete(id);
     render();
   }, fail));
@@ -468,7 +475,7 @@ function viewBuchungen() {
       <div class="toolbar">
         <label>Konto<select id="fKonto">${kontoOptions(f.konto, 'alle Konten')}</select></label>
         <label>Kategorie<select id="fKat"><option value="">alle</option><option value="__none" ${f.kat === '__none' ? 'selected' : ''}>⚠ nur unkontierte</option>
-          ${S.kategorien.map(k => `<option value="${esc(k.id)}" ${k.id === f.kat ? 'selected' : ''}>${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</option>`).join('')}</select></label>
+          ${S.kategorien.filter(k => !f.konto || !k.konto || k.konto === f.konto).map(k => `<option value="${esc(k.id)}" ${k.id === f.kat ? 'selected' : ''}>${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</option>`).join('')}</select></label>
         <label>Veranstaltung<select id="fVer"><option value="">alle</option><option value="__any" ${f.ver === '__any' ? 'selected' : ''}>nur mit Veranstaltung</option>
           ${S.veranstaltungen.map(v => `<option value="${esc(v.id)}" ${v.id === f.ver ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
         <label>Richtung<select id="fRicht"><option value="">alle</option><option value="+" ${f.richtung === '+' ? 'selected' : ''}>Einnahmen</option><option value="-" ${f.richtung === '-' ? 'selected' : ''}>Ausgaben</option></select></label>
@@ -478,23 +485,25 @@ function viewBuchungen() {
         ${edit ? `<button class="btn" id="newBuchung">+ Buchung</button>
           <button class="btn" id="applyRules" title="Regeln aus der Verwaltung auf alle unkontierten Buchungen anwenden">⚙ Regeln anwenden</button>` : ''}
         <button class="btn" id="exportBuch">⬇ CSV</button>
+        <button class="btn" id="printKassabuch" title="Kassabuch des gewählten Kontos mit Belegnummern und laufendem Saldo">🖨 Kassabuch</button>
         <span class="spacer" style="flex:1"></span>
         <span class="muted">${list.length} Buchungen · Summe <b>${money(sum)}</b></span>
       </div>
       ${edit && sel.length ? `<div class="infobox row" style="align-items:center">
         <b>${sel.length} ausgewählt:</b>
-        <select id="bulkKat" style="flex:1 1 220px">${katOptions('', list.find(b => b.id === sel[0])?.betrag)}</select>
+        <select id="bulkKat" style="flex:1 1 220px">${katOptions('', list.find(b => b.id === sel[0])?.betrag, list.find(b => b.id === sel[0])?.konto)}</select>
         <select id="bulkVer" style="flex:1 1 160px">${verOptions('', 'Veranstaltung: unverändert')}<option value="__clear">Veranstaltung entfernen</option></select>
         <button class="btn primary small" id="bulkApply">Zuweisen</button>
         <button class="btn small" id="bulkClear">Auswahl aufheben</button></div>` : ''}
       ${locked() ? `<div class="infobox">🔒 Das Jahr ${S.jahr} ist abgeschlossen – Buchungen können nur noch angesehen werden.</div>` : ''}
       <div class="tablewrap"><table class="t">
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
-          <th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Veranstaltung</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
+          <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Veranstaltung</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
         <tbody>${list.map(b => {
           const vs = [...new Set(parts(b).map(p => p.veranstaltung).filter(Boolean))].map(id => verById(id)?.name || '?');
           return `<tr class="click ${S.sel.has(b.id) ? 'sel' : ''}" data-id="${esc(b.id)}">
             ${edit ? `<td><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
+            <td class="r small muted">${S.belegNr.get(b.id) || ''}</td>
             <td class="nowrap">${deDate(b.datum)}</td>
             <td class="nowrap small">${esc(kontoById(b.konto)?.name || b.konto)}</td>
             <td class="text">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
@@ -502,7 +511,7 @@ function viewBuchungen() {
             <td class="small">${esc(vs.join(', '))}</td>
             <td class="small">${esc(b.beleg || '')}</td>
             <td class="r">${money(b.betrag)}</td></tr>`;
-        }).join('') || `<tr><td colspan="8" class="muted">Keine Buchungen${S.buchungen.length ? ' für diesen Filter' : ` im Jahr ${S.jahr} – unter „Raika-Import“ die CSV-Datei einlesen`}.</td></tr>`}</tbody>
+        }).join('') || `<tr><td colspan="9" class="muted">Keine Buchungen${S.buchungen.length ? ' für diesen Filter' : ` im Jahr ${S.jahr} – unter „Raika-Import“ die CSV-Datei einlesen`}.</td></tr>`}</tbody>
       </table></div>
     </div>`;
 
@@ -519,6 +528,10 @@ function viewBuchungen() {
   $('#newBuchung')?.addEventListener('click', () => buchungDialog(null));
   $('#applyRules')?.addEventListener('click', regelnAnwenden);
   $('#exportBuch').addEventListener('click', () => exportBuchungen(list));
+  $('#printKassabuch').addEventListener('click', () => {
+    if (!f.konto) { toast('Bitte zuerst oben ein Konto wählen.', true); return; }
+    druckKassabuch(f.konto);
+  });
   $('#selAll')?.addEventListener('click', e => { e.stopPropagation(); if (e.target.checked) list.forEach(b => S.sel.add(b.id)); else S.sel.clear(); render(true); });
   $$('#view tr[data-id]').forEach(tr => tr.addEventListener('click', e => {
     const id = tr.dataset.id;
@@ -543,11 +556,11 @@ function viewBuchungen() {
 }
 
 function exportBuchungen(list) {
-  const rows = [['Datum', 'Valuta', 'Konto', 'Buchungstext', 'Betrag', 'Kategorie-Nr', 'Kategorie', 'Veranstaltung', 'Beleg', 'Notiz', 'Quelle']];
-  for (const b of [...list].sort((a, c) => a.datum.localeCompare(c.datum))) {
+  const rows = [['Nr.', 'Datum', 'Valuta', 'Konto', 'Buchungstext', 'Betrag', 'Kontierung', 'Kategorie', 'Veranstaltung', 'Beleg', 'Notiz', 'Quelle']];
+  for (const b of [...list].sort(chronoSort)) {
     for (const p of parts(b)) {
       const k = katById(p.kategorie);
-      rows.push([deDate(b.datum), deDate(b.valuta), kontoById(b.konto)?.name || b.konto, b.text, fmt(p.betrag), k?.nr || '', k?.name || '',
+      rows.push([S.belegNr.get(b.id) || '', deDate(b.datum), deDate(b.valuta), kontoById(b.konto)?.name || b.konto, b.text, fmt(p.betrag), k?.nr || '', k?.name || '',
         verById(p.veranstaltung)?.name || '', b.beleg || '', [b.notiz, p.notiz].filter(Boolean).join(' / '), b.quelle || '']);
     }
   }
@@ -570,7 +583,7 @@ function buchungDialog(b) {
   const ro = !edit ? 'disabled' : '';
   const html = `
     ${imported ? `<dl class="kv">
-        <dt>Konto</dt><dd>${esc(kontoById(b.konto)?.name || b.konto)}</dd>
+        <dt>Konto</dt><dd>${esc(kontoById(b.konto)?.name || b.konto)} · lfd. Nr. ${S.belegNr.get(b.id) || '–'}</dd>
         <dt>Datum</dt><dd>${deDate(b.datum)}${b.valuta && b.valuta !== b.datum ? ` (Valuta ${deDate(b.valuta)})` : ''}</dd>
         <dt>Betrag</dt><dd><b>${money(b.betrag)} €</b></dd>
         <dt>Bank-Text</dt><dd>${esc(b.text)}</dd>
@@ -583,7 +596,7 @@ function buchungDialog(b) {
       <label>Buchungstext<input id="bText" value="${esc(b.text)}" maxlength="500" ${ro}></label>`}
     <div id="singleKat" class="${splits.length ? 'hidden' : ''}">
       <div class="row">
-        <label>Kategorie<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag)}</select></label>
+        <label>Kategorie<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag, b.konto)}</select></label>
         <label>Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '')}</select></label>
       </div>
     </div>
@@ -681,7 +694,7 @@ function buchungDialog(b) {
   function drawSplits() {
     const total = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
     $('#splitRows').innerHTML = splits.map((s, i) => `<div class="splitrow">
-      <select class="sKat" ${ro}>${katOptions(s.kategorie, total)}</select>
+      <select class="sKat" ${ro}>${katOptions(s.kategorie, total, imported ? b.konto : $('#bKonto')?.value)}</select>
       <select class="sVer" ${ro}>${verOptions(s.veranstaltung)}</select>
       <input class="sBet num" inputmode="decimal" value="${s.betrag ? fmt(s.betrag) : ''}" ${ro}>
       ${edit ? `<button type="button" class="btn small danger" data-del="${i}">✕</button>` : '<span></span>'}</div>`).join('');
@@ -691,6 +704,12 @@ function buchungDialog(b) {
     $$('#splitRows .sBet').forEach(x => x.addEventListener('change', () => { readSplits(); drawSplits(); }));
   }
   if (splits.length) drawSplits();
+  // Kategorien passend zum Konto anbieten
+  $('#bKonto')?.addEventListener('change', () => {
+    const cur = $('#bKat').value;
+    $('#bKat').innerHTML = katOptions(cur, parseAmount($('#bBetrag').value) || 0, $('#bKonto').value);
+    if (splits.length) { readSplits(); drawSplits(); }
+  });
   $('#splitAdd')?.addEventListener('click', () => {
     readSplits();
     const total = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
@@ -774,11 +793,87 @@ function viewImport() {
     }
   }
   $('#view').innerHTML = html;
+  $('#view').insertAdjacentHTML('beforeend', excelKarte());
+  $('#xlKonto').addEventListener('change', e => { S.xl = { ...(S.xl || {}), konto: e.target.value }; pruefeExcel(); });
+  $('#xlFile').addEventListener('change', leseExcel);
+  $('#xlSheet')?.addEventListener('change', e => { S.xl.sheet = e.target.value; pruefeExcel(); });
+  $('#xlOver')?.addEventListener('change', e => { S.xl.over = e.target.checked; render(true); });
+  $('#xlGo')?.addEventListener('click', uebernehmeExcel);
   $('#impKonto').addEventListener('change', e => { S.imp = { ...(S.imp || {}), konto: e.target.value }; if (S.imp.table) pruefeImport(); else render(true); });
   $('#impFile').addEventListener('change', leseImportDatei);
   $$('#view [data-col]').forEach(sel => sel.addEventListener('change', () => { S.imp.mapping[+sel.dataset.col] = sel.value; pruefeImport(); }));
   $('#impHeader')?.addEventListener('change', e => { S.imp.header = e.target.checked; pruefeImport(); });
   $('#impGo')?.addEventListener('click', importieren);
+}
+
+// ── Kontierung aus der bisherigen Excel übernehmen ───────────────────────────
+
+function excelKarte() {
+  const X = S.xl;
+  let html = `<div class="card"><h2>Kontierung aus der bisherigen Excel übernehmen</h2>
+    <p class="muted">Für Jahre, die schon in der Excel-Liste (Spalten <b>Belegnr., Datum, Bezeichnung, Betrag, Kontierung</b>) kontiert wurden:
+      zuerst die Raika-CSV des Jahres importieren, dann hier die Excel wählen. Buchungen werden über Datum und Betrag zugeordnet,
+      die Kontierungs-Nummer (V-P) wird zur Kategorie. Gilt für das oben gewählte Jahr <b>${S.jahr}</b>.</p>
+    <div class="row">
+      <label>Konto<select id="xlKonto">${kontoOptions(X?.konto || '', '— Konto wählen —')}</select></label>
+      <label>Excel-Datei<input type="file" id="xlFile" accept=".xlsx,.xls,.ods"></label>
+      ${X?.sheets ? `<label>Blatt<select id="xlSheet">${X.sheets.map(n => `<option ${n === X.sheet ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : ''}
+    </div>`;
+  const R = X?.result;
+  if (R) {
+    const neu = R.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung));
+    html += `<p><b>${R.zeilen}</b> kontierte Zeilen im Blatt · <b>${R.treffer.length}</b> Buchungen gefunden · davon <b>${neu.length}</b> zu ändern
+      ${R.ohneBuchung.length ? ` · <span class="minus">${R.ohneBuchung.length} ohne passende Buchung</span>` : ''}
+      ${R.unbekannt.length ? ` · <span class="minus">${R.unbekannt.length} mit unbekannter Kontierung (${[...new Set(R.unbekannt.map(z => z.kontierung))].map(esc).join(', ')})</span>` : ''}</p>
+      ${R.ohneBuchung.length ? `<div class="warnbox">Ohne passende Buchung (Raika-CSV noch nicht importiert oder anderes Jahr/Konto?): ${R.ohneBuchung.slice(0, 8).map(z => `${deDate(z.datum)} ${fmt(z.betrag)}`).join(', ')}${R.ohneBuchung.length > 8 ? ' …' : ''}</div>` : ''}
+      <label class="check"><input type="checkbox" id="xlOver" ${X.over ? 'checked' : ''}> auch bereits kontierte Buchungen überschreiben</label>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="xlGo" ${neu.length ? '' : 'disabled'}>${neu.length} Kontierungen übernehmen</button></div>`;
+  } else if (X?.sheets && X.konto) html += `<div class="warnbox">In diesem Blatt gibt es für ${S.jahr} keine kontierten Zeilen (nötig: Kopfzeile mit „Datum“, „Betrag“ und „Kontierung“).</div>`;
+  return html + '</div>';
+}
+
+async function leseExcel(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!window.XLSX) { toast('Excel-Bibliothek nicht geladen – bitte Seite neu laden.', true); return; }
+  try {
+    const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const tables = Object.fromEntries(wb.SheetNames.map(n => [n, window.XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })]));
+    // Blatt vorschlagen: passend zum Kontonamen (z. B. „FW Kassa“), sonst das erste mit Kontierungen
+    const konto = S.xl?.konto || '';
+    const withData = wb.SheetNames.filter(n => (excelKontierung(tables[n]) || []).some(z => z.kontierung));
+    const kn = norm(kontoById(konto)?.name || '');
+    const guess = withData.find(n => kn && (norm(n).includes(kn.slice(0, 4)) || (kn.startsWith('feuerwehr') && /^fw/.test(norm(n))) || (kn.startsWith('mannschaft') && /^ms/.test(norm(n)))));
+    S.xl = { konto, datei: file.name, tables, sheets: wb.SheetNames, sheet: guess || withData[0] || wb.SheetNames[0], over: false };
+    pruefeExcel();
+  } catch (err) { fail(err); }
+}
+
+function pruefeExcel() {
+  const X = S.xl;
+  if (!X?.tables) { render(true); return; }
+  const zeilen = (excelKontierung(X.tables[X.sheet]) || []).filter(z => z.kontierung && z.datum.startsWith(String(S.jahr)));
+  X.result = X.konto && zeilen.length ? { zeilen: zeilen.length, ...zuordnenKontierung(zeilen, S.buchungen, S.kategorien, X.konto) } : null;
+  render(true);
+}
+
+async function uebernehmeExcel() {
+  const X = S.xl;
+  const todo = X.result.treffer.filter(t => X.over ? t.buchung.kategorie !== t.kategorie || t.buchung.splits?.length : !isKontiert(t.buchung));
+  try {
+    for (let i = 0; i < todo.length; i += 200) {
+      const batch = writeBatch(db);
+      for (const t of todo.slice(i, i + 200)) {
+        batch.update(doc(db, 'buchungen', t.buchung.id), { kategorie: t.kategorie, splits: deleteField(), geaendertAm: serverTimestamp(), geaendertVon: S.uid });
+      }
+      if (i === 0) logTo(batch, 'kontieren', `${todo.length} Kontierungen aus ${X.datei} (${X.sheet}) übernommen`);
+      await batch.commit();
+    }
+    toast(`${todo.length} Kontierungen übernommen.`);
+    S.filter = { konto: X.konto, kat: '', ver: '', q: '', richtung: '' };
+    S.xl = { konto: X.konto };
+    goTab('buchungen');
+  } catch (e) { fail(e); }
 }
 
 async function leseImportDatei(e) {
@@ -841,7 +936,7 @@ async function importieren() {
       const batch = writeBatch(db);
       for (const r of neu.slice(i, i + 100)) {
         batch.set(doc(db, 'buchungen', r.id), {
-          konto: I.konto, datum: r.datum, valuta: r.valuta, betrag: r.betrag, text: r.text, zeitstempel: r.zeitstempel || '',
+          konto: I.konto, datum: r.datum, valuta: r.valuta, betrag: r.betrag, text: r.text, zeitstempel: r.zeitstempel || '', seq: r.zeile,
           jahr: Number(r.datum.slice(0, 4)), quelle: 'import', datei: I.datei.slice(0, 120),
           kategorie: r.kategorie, veranstaltung: r.veranstaltung || '',
           importiertAm: serverTimestamp(), importiertVon: S.uid,
@@ -1190,12 +1285,16 @@ function viewAbschluss() {
         ${r.umbuchungen.length ? katTable('Umbuchungen', r.umbuchungen, r.summeUmbuchungen) : ''}
       </tbody></table></div>
 
+      ${K.filter(k => hatVp(S.kategorien, k.id)).map(k => gemeindeTabelle(k)).join('')}
+
       <h3>Veranstaltungen</h3>
       ${veranstaltungsTabelle()}
     </div>`;
 
   $('#toUnk')?.addEventListener('click', e => { e.preventDefault(); S.filter = { konto: '', kat: '__none', ver: '', q: '', richtung: '' }; goTab('buchungen'); });
   $('#absPrint').addEventListener('click', druckAbschluss);
+  $$('#view [data-gde]').forEach(b => b.addEventListener('click', () => druckGemeinde(kontoById(b.dataset.gde))));
+  $$('#view [data-gdecsv]').forEach(b => b.addEventListener('click', () => csvGemeinde(kontoById(b.dataset.gdecsv))));
   $('#absCsv').addEventListener('click', () => exportAbschluss(r));
   $$('#view [data-anfang], #view [data-bankende]').forEach(inp => inp.addEventListener('change', async () => {
     const field = inp.dataset.anfang ? 'anfang' : 'bankEnde';
@@ -1228,6 +1327,83 @@ function viewAbschluss() {
     logTo(batch, 'abschluss', `Jahr ${S.jahr} wieder geöffnet`);
     await batch.commit().catch(fail);
   });
+}
+
+// ── Feuerwehr-Rechnungsabschluss (Gemeinde) ─────────────────────────────────
+
+function gemeindeDaten(k) {
+  return gemeindeAbschluss({ buchungen: S.buchungen.filter(b => b.konto === k.id), kategorien: S.kategorien, anfang: anfangsbestaende()[k.id] || 0 });
+}
+/** Zwei Spalten nebeneinander wie im Formular: Einnahmen links, Ausgaben rechts */
+function gemeindeZeilen(g, cls = '') {
+  const n = Math.max(g.einnahmen.length, g.ausgaben.length);
+  const cell = x => x ? `<td>${esc(x.vp)}</td><td>${esc(x.name)}</td><td class="r">${fmt(x.betrag)}</td>` : '<td></td><td></td><td></td>';
+  let html = '';
+  for (let i = 0; i < n; i++) html += `<tr class="${cls}">${cell(g.einnahmen[i])}${cell(g.ausgaben[i])}</tr>`;
+  return html;
+}
+function gemeindeTabelle(k) {
+  const g = gemeindeDaten(k);
+  return `<h3>Feuerwehr-Rechnungsabschluss für die Gemeinde (${esc(k.name)})</h3>
+    <div class="toolbar"><button class="btn" data-gde="${esc(k.id)}">🏛 Rechnungsabschluss drucken</button><button class="btn" data-gdecsv="${esc(k.id)}">⬇ CSV</button></div>
+    ${g.ohne.length ? `<div class="warnbox">⚠ ${g.ohne.length} Buchung(steil)e(n) haben keinen Voranschlagsposten und fehlen im Gemeinde-Abschluss
+      (${g.ohne.slice(0, 5).map(p => `${deDate(p.buchung.datum)} ${fmt(p.betrag)}`).join(', ')}${g.ohne.length > 5 ? ' …' : ''}). Bitte mit einer V-P-Kategorie kontieren.</div>` : ''}
+    <div class="tablewrap"><table class="t"><thead><tr><th>V-P</th><th>Einnahmen</th><th class="r">Euro</th><th>V-P</th><th>Ausgaben</th><th class="r">Euro</th></tr></thead><tbody>
+      ${gemeindeZeilen(g)}
+      <tr class="sum"><td colspan="2">Summe der Einnahmen</td><td class="r">${fmt(g.summeE)}</td><td colspan="2">Summe der Ausgaben</td><td class="r">${fmt(g.summeA)}</td></tr>
+      <tr><td colspan="2">Kassastand 01.01.${S.jahr}</td><td class="r">${fmt(g.anfang)}</td><td colspan="2">Kassastand 01.01.${S.jahr + 1}</td><td class="r"><b>${fmt(g.ende)}</b></td></tr>
+    </tbody></table></div>`;
+}
+function druckGemeinde(k) {
+  const g = gemeindeDaten(k);
+  const A = S.allgemein;
+  printOut(`<div style="font-size:11pt;line-height:1.6">Freiwillige Feuerwehr&nbsp;&nbsp;&nbsp;<b>${esc(A.ffName.toUpperCase())}</b><br>
+      Gemeinde&nbsp;&nbsp;&nbsp;<b>${esc(A.gemeinde.toUpperCase())}</b></div>
+    <h1 style="text-align:center;margin-top:18pt">FEUERWEHR-RECHNUNGSABSCHLUSS</h1>
+    <p style="text-align:center;margin:0 0 14pt">für das Finanzjahr ${S.jahr}</p>
+    <table><thead><tr><th colspan="3">Einnahmen</th><th colspan="3">Ausgaben</th></tr>
+      <tr><th>V-P</th><th>Gegenstand</th><th class="r">Euro</th><th>V-P</th><th>Gegenstand</th><th class="r">Euro</th></tr></thead><tbody>
+      ${gemeindeZeilen(g)}
+      <tr class="sum"><td colspan="2">Summe der Einnahmen</td><td class="r">${fmt(g.summeE)}</td><td colspan="2">Summe der Ausgaben</td><td class="r">${fmt(g.summeA)}</td></tr>
+      <tr><td colspan="2">Kassastand 01.01.${S.jahr}</td><td class="r">${fmt(g.anfang)}</td><td colspan="2">Kassastand 01.01.${S.jahr + 1}</td><td class="r"><b>${fmt(g.ende)}</b></td></tr>
+    </tbody></table>
+    ${g.ohne.length ? `<p><b>Achtung: ${g.ohne.length} Buchung(en) ohne Voranschlagsposten – Abschluss unvollständig.</b></p>` : ''}
+    <p style="margin-top:24pt">${esc(A.ort)}, am ____________________</p>
+    ${sig(['Rechnungsprüfer', 'Kassier'])}${sig(['Rechnungsprüfer', 'Feuerwehrkommandant'])}`);
+}
+function csvGemeinde(k) {
+  const g = gemeindeDaten(k);
+  const rows = [[`Feuerwehr-Rechnungsabschluss ${S.jahr} – FF ${S.allgemein.ffName}`], [], ['V-P', 'Einnahmen', 'Euro', 'V-P', 'Ausgaben', 'Euro']];
+  for (let i = 0; i < Math.max(g.einnahmen.length, g.ausgaben.length); i++) {
+    const e = g.einnahmen[i], a = g.ausgaben[i];
+    rows.push([e?.vp || '', e?.name || '', e ? fmt(e.betrag) : '', a?.vp || '', a?.name || '', a ? fmt(a.betrag) : '']);
+  }
+  rows.push(['', 'Summe der Einnahmen', fmt(g.summeE), '', 'Summe der Ausgaben', fmt(g.summeA)]);
+  rows.push(['', `Kassastand 01.01.${S.jahr}`, fmt(g.anfang), '', `Kassastand 01.01.${S.jahr + 1}`, fmt(g.ende)]);
+  download(`Rechnungsabschluss_${k.name}_${S.jahr}.csv`, toCsv(rows));
+}
+
+/** Kassabuch eines Kontos wie in der bisherigen Excel: Nr., Datum, Bezeichnung, Betrag, Kontierung, Saldo */
+function druckKassabuch(kontoId) {
+  const k = kontoById(kontoId);
+  const list = S.buchungen.filter(b => b.konto === kontoId).sort(chronoSort);
+  let saldo = anfangsbestaende()[kontoId] || 0;
+  let se = 0, sa = 0;
+  const rows = list.map(b => {
+    saldo += b.betrag;
+    if (b.betrag >= 0) se += b.betrag; else sa -= b.betrag;
+    const { partner, zweck } = splitBankText(b.text);
+    const kont = parts(b).map(p => katById(p.kategorie)?.nr || '?').join(' / ');
+    return `<tr><td class="r">${S.belegNr.get(b.id) || ''}</td><td>${deDate(b.datum)}</td><td>${esc([partner, zweck].filter(Boolean).join(' – ') || b.text)}</td>
+      <td class="r">${b.betrag >= 0 ? fmt(b.betrag) : ''}</td><td class="r">${b.betrag < 0 ? fmt(-b.betrag) : ''}</td><td>${esc(kont)}</td><td class="r">${fmt(saldo)}</td></tr>`;
+  }).join('');
+  printOut(`<h1>Kassabuch ${esc(k.name)} ${S.jahr}</h1>
+    <p class="meta">Freiwillige Feuerwehr ${esc(S.allgemein.ffName)}${k.iban ? ' · ' + esc(k.iban) : ''} · ${list.length} Buchungen</p>
+    <table><thead><tr><th class="r">Nr.</th><th>Datum</th><th>Bezeichnung</th><th class="r">Einnahme</th><th class="r">Ausgabe</th><th>Kontierung</th><th class="r">Saldo</th></tr></thead><tbody>
+      <tr><td></td><td>01.01.${S.jahr}</td><td>Anfangsbestand</td><td></td><td></td><td></td><td class="r">${fmt(anfangsbestaende()[kontoId] || 0)}</td></tr>
+      ${rows}
+      <tr class="sum"><td colspan="3">Summe</td><td class="r">${fmt(se)}</td><td class="r">${fmt(sa)}</td><td></td><td class="r">${fmt(saldo)}</td></tr>
+    </tbody></table>${sig(['Kassier', 'Rechnungsprüfer', 'Rechnungsprüfer'])}`);
 }
 
 function veranstaltungsTabelle() {
@@ -1279,7 +1455,7 @@ function druckAbschluss() {
     + rows.map(x => `<tr><td>${esc(x.nr)}</td><td>${esc(x.name)}</td>${K.map(k => `<td class="r">${x.werte[k.id] ? fmt(x.werte[k.id]) : ''}</td>`).join('')}<td class="r">${fmt(x.summe)}</td></tr>`).join('')
     + `<tr class="sum"><td></td><td>Summe ${title}</td>${K.map(k => `<td class="r">${fmt(sum.werte[k.id])}</td>`).join('')}<td class="r">${fmt(sum.summe)}</td></tr>`;
   const bankEnde = S.jahrDoc?.bankEnde || {};
-  printOut(`<h1>Freiwillige Feuerwehr Pichl – Jahresabschluss ${S.jahr}</h1>
+  printOut(`<h1>Freiwillige Feuerwehr ${esc(S.allgemein.ffName)} – Jahresabschluss ${S.jahr}</h1>
     <p class="meta">Zeitraum 1.1.–31.12.${S.jahr} · ${S.buchungen.length} Bankbuchungen${locked() ? ' · abgeschlossen' : ' · <b>vorläufig (nicht abgeschlossen)</b>'}</p>
     <section><h2>Kontenentwicklung</h2><table><thead><tr><th></th>${K.map(k => `<th class="r">${esc(k.name)}</th>`).join('')}<th class="r">Gesamt</th></tr></thead><tbody>
       <tr><td>Anfangsbestand 1.1.</td>${K.map(k => `<td class="r">${fmt(r.proKonto[k.id].anfang)}</td>`).join('')}<td class="r">${fmt(r.gesamt.anfang)}</td></tr>
@@ -1336,13 +1512,25 @@ function viewVerwaltung() {
       </tbody></table></div>
       <p class="muted small">Die IBAN dient zur automatischen Zuordnung beim Import, wenn sie im Dateinamen des ELBA-Exports steht.</p></div>
 
+    <div class="card"><h2>Allgemein</h2>
+      <div class="row">
+        <label>Feuerwehr<input id="aFf" value="${esc(S.allgemein.ffName)}" maxlength="60"></label>
+        <label>Gemeinde<input id="aGde" value="${esc(S.allgemein.gemeinde)}" maxlength="80"></label>
+        <label>Ort (für „…, am“)<input id="aOrt" value="${esc(S.allgemein.ort)}" maxlength="60"></label>
+        <button class="btn" id="aSave">Speichern</button>
+      </div><p class="muted small">Erscheint im Kopf des Feuerwehr-Rechnungsabschlusses und der Ausdrucke.</p></div>
+
     <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Kategorien (Kontenplan)</h2><button class="btn" id="newKat">+ Kategorie</button>
-      ${S.kategorienGeladen ? '' : '<button class="btn primary" id="saveKatDefaults">Standard-Kategorien speichern</button>'}</div>
-      <p class="muted small">Art: <b>E</b> Einnahme, <b>A</b> Ausgabe, <b>F</b> Festkassa-Geldbewegung (Ablieferung/Wechselgeld, zählt bei der Veranstaltung nicht doppelt), <b>U</b> Umbuchung zwischen eigenen Konten (neutral).</p>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Nr.</th><th>Name</th><th>Art</th><th class="r">Buchungen ${S.jahr}</th><th></th></tr></thead><tbody>
-      ${[...S.kategorien].sort((a, b) => String(a.nr).localeCompare(String(b.nr), 'de', { numeric: true })).map(k => {
+      ${S.kategorienGeladen ? '<button class="btn" id="addKatDefaults">Fehlende Standard-Kategorien ergänzen</button>' : '<button class="btn primary" id="saveKatDefaults">Standard-Kategorien speichern</button>'}</div>
+      <p class="muted small">Die Feuerwehrkassa wird nach den <b>Voranschlagsposten (V-P)</b> des Feuerwehr-Rechnungsabschlusses für die Gemeinde kontiert; die Mannschaftskassa hat eigene Kategorien.
+        Art: <b>E</b> Einnahme, <b>A</b> Ausgabe, <b>F</b> Festkassa-Geldbewegung (Ablieferung/Wechselgeld, zählt bei der Veranstaltung nicht doppelt), <b>U</b> Umbuchung zwischen eigenen Konten.</p>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Nr.</th><th>Name</th><th>Art</th><th>Konto</th><th>V-P Gemeinde</th><th class="r">Buchungen ${S.jahr}</th><th></th></tr></thead><tbody>
+      ${[...S.kategorien].sort((a, b) => String(a.konto || 'zz').localeCompare(String(b.konto || 'zz')) || a.art.localeCompare(b.art) || String(a.nr).localeCompare(String(b.nr), 'de', { numeric: true })).map(k => {
         const n = S.buchungen.filter(b => parts(b).some(p => p.kategorie === k.id)).length;
-        return `<tr class="${k.inaktiv ? 'muted' : ''}"><td>${esc(k.nr)}</td><td>${esc(k.name)}${k.inaktiv ? ' (inaktiv)' : ''}</td><td>${esc(k.art)}</td><td class="r">${n || ''}</td><td class="r"><button class="btn small" data-kat="${esc(k.id)}">Bearbeiten</button></td></tr>`;
+        const vp = k.vp || [k.vpE && `+ ${k.vpE}`, k.vpA && `− ${k.vpA}`].filter(Boolean).join(' / ');
+        return `<tr class="${k.inaktiv ? 'muted' : ''}"><td>${esc(k.nr)}</td><td>${esc(k.name)}${k.inaktiv ? ' (inaktiv)' : ''}</td><td>${esc(k.art)}</td>
+          <td class="small">${esc(k.konto ? (kontoById(k.konto)?.name || k.konto) : 'alle')}</td><td class="small">${esc(vp || '')}</td>
+          <td class="r">${n || ''}</td><td class="r"><button class="btn small" data-kat="${esc(k.id)}">Bearbeiten</button></td></tr>`;
       }).join('')}</tbody></table></div></div>` : ''}
 
     <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Kontierungsregeln</h2>
@@ -1368,6 +1556,18 @@ function viewVerwaltung() {
   $$('#view [data-konto]').forEach(b => b.addEventListener('click', () => kontoDialog(kontoById(b.dataset.konto))));
   $('#newKat')?.addEventListener('click', () => katDialog(null));
   $('#saveKatDefaults')?.addEventListener('click', () => saveKategorien(DEFAULT_KATEGORIEN));
+  $('#addKatDefaults')?.addEventListener('click', async () => {
+    const ids = new Set(S.kategorien.map(k => k.id));
+    const neu = DEFAULT_KATEGORIEN.filter(k => !ids.has(k.id));
+    if (!neu.length) { toast('Alle Standard-Kategorien sind schon vorhanden.'); return; }
+    await saveKategorien([...S.kategorien, ...neu]).catch(fail);
+    toast(`${neu.length} Kategorien ergänzt.`);
+  });
+  $('#aSave')?.addEventListener('click', async () => {
+    const data = { ffName: $('#aFf').value.trim(), gemeinde: $('#aGde').value.trim(), ort: $('#aOrt').value.trim() };
+    await setDoc(doc(db, 'config', 'allgemein'), data).catch(fail);
+    toast('Gespeichert.');
+  });
   $$('#view [data-kat]').forEach(b => b.addEventListener('click', () => katDialog(katById(b.dataset.kat))));
   $('#newRegel')?.addEventListener('click', () => regelDialog(null));
   $('#addDefaultRegeln')?.addEventListener('click', async () => {
@@ -1463,7 +1663,16 @@ function katDialog(k) {
       <label style="flex:0 1 100px">Nr.<input id="cNr" value="${esc(k?.nr || '')}" maxlength="10"></label>
       <label>Name<input id="cName" value="${esc(k?.name || '')}" maxlength="80" required></label>
     </div>
-    <label>Art<select id="cArt">${[['E', 'Einnahme'], ['A', 'Ausgabe'], ['F', 'Festkassa (Ablieferung/Wechselgeld)'], ['U', 'Umbuchung (neutral)']].map(([a, n]) => `<option value="${a}" ${k?.art === a ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <div class="row">
+      <label>Art<select id="cArt">${[['E', 'Einnahme'], ['A', 'Ausgabe'], ['F', 'Festkassa (Ablieferung/Wechselgeld)'], ['U', 'Umbuchung (neutral)']].map(([a, n]) => `<option value="${a}" ${k?.art === a ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label>Nur bei Konto<select id="cKonto">${kontoOptions(k?.konto || '', 'alle Konten')}</select></label>
+    </div>
+    <div class="row">
+      <label>V-P im Gemeinde-Abschluss<input id="cVp" value="${esc(k?.vp || '')}" maxlength="10" placeholder="z. B. 729"></label>
+      <label>oder: Eingänge als V-P<input id="cVpE" value="${esc(k?.vpE || '')}" maxlength="10" placeholder="z. B. 829"></label>
+      <label>Ausgänge als V-P<input id="cVpA" value="${esc(k?.vpA || '')}" maxlength="10" placeholder="z. B. 729"></label>
+    </div>
+    <p class="muted small">„V-P“ für Einnahme-/Ausgabe-Kategorien der Feuerwehrkassa (meist gleich der Nr.). Für Festkassa/Umbuchung getrennt nach Eingang und Ausgang. Leer = nicht im Gemeinde-Abschluss.</p>
     ${!neu ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="cInaktiv" ${k.inaktiv ? 'checked' : ''}> inaktiv (wird bei neuen Buchungen nicht mehr angeboten)</label>` : ''}`, {
     extra: !neu ? [{
       label: 'Löschen', cls: 'danger', onClick: async () => {
@@ -1473,7 +1682,8 @@ function katDialog(k) {
       },
     }] : [],
     onOk: async () => {
-      const data = { nr: $('#cNr').value.trim(), name: $('#cName').value.trim(), art: $('#cArt').value };
+      const data = { nr: $('#cNr').value.trim(), name: $('#cName').value.trim(), art: $('#cArt').value, konto: $('#cKonto').value,
+        vp: $('#cVp').value.trim(), vpE: $('#cVpE').value.trim(), vpA: $('#cVpA').value.trim() };
       if (!data.name) { toast('Name fehlt.', true); return false; }
       let list;
       if (neu) list = [...S.kategorien, { id: 'k_' + Date.now().toString(36), ...data }];
@@ -1493,7 +1703,7 @@ function regelDialog(idx) {
       <label>Richtung<select id="rRicht"><option value="">Ein- und Ausgänge</option><option value="+" ${r.richtung === '+' ? 'selected' : ''}>nur Eingänge</option><option value="-" ${r.richtung === '-' ? 'selected' : ''}>nur Ausgänge</option></select></label>
       <label>Konto<select id="rKonto">${kontoOptions(r.konto, 'alle Konten')}</select></label>
     </div>
-    <label>Kategorie<select id="rKat">${katOptions(r.kategorie, r.richtung === '-' ? -1 : 1)}</select></label>
+    <label>Kategorie<select id="rKat">${katOptions(r.kategorie, r.richtung === '-' ? -1 : 1, r.konto)}</select></label>
     <p class="muted small" id="rTreffer"></p>`, {
     extra: !neu ? [{ label: 'Löschen', cls: 'danger', onClick: () => setDoc(doc(db, 'config', 'regeln'), { list: S.regeln.filter((_, i) => i !== idx) }) }] : [],
     onOk: async () => {
@@ -1510,6 +1720,9 @@ function regelDialog(idx) {
         $('#rTreffer').textContent = test.muster.trim() ? `Passt auf ${n} Buchung(en) im Jahr ${S.jahr}.` : '';
       };
       ['#rMuster', '#rRicht', '#rKonto'].forEach(s => $(s).addEventListener('input', upd));
+      ['#rRicht', '#rKonto'].forEach(s => $(s).addEventListener('change', () => {
+        $('#rKat').innerHTML = katOptions($('#rKat').value, $('#rRicht').value === '-' ? -1 : 1, $('#rKonto').value);
+      }));
       upd();
     },
   });

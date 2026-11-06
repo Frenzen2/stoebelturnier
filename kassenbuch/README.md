@@ -18,12 +18,19 @@ eigenen Server, nur statische Dateien.
 - **Zwei Bankkonten**: *Feuerwehrkassa* und *Mannschaftskassa*. Weitere Konten (z. B. Sparbuch) lassen sich ergänzen.
 - **Raika-Import**: CSV-Export aus ELBA einlesen. Die Spalten werden automatisch erkannt.
   Bereits importierte Umsätze werden übersprungen, überlappende Zeiträume sind also kein Problem.
+- **Kontenplan wie im Feuerwehr-Rechnungsabschluss**: Die Feuerwehrkassa wird nach den **Voranschlagsposten (V-P)**
+  der Gemeinde kontiert (Einnahmen 298 … 871, Ausgaben 10 … 729). Die Mannschaftskassa hat eigene Kategorien.
+- **Laufende Belegnummern** je Konto und Jahr in ELBA-Reihenfolge, wie in der bisherigen Excel-Liste.
 - **Kontieren**: Jede Buchung bekommt eine Kategorie aus dem Kontenplan und optional eine Veranstaltung.
   Mehrere Buchungen auf einmal kontieren, eine Buchung auf mehrere Kategorien aufteilen,
   **Kontierungsregeln** (z. B. „Kontoführung“ → Bankspesen) wirken schon beim Import.
 - **Festkassabuch je Veranstaltung** (Zeltfest, Ball, Florianifeier …): Wechselgeld, Einnahmen je Stand,
   **Kassasturz mit Zählprotokoll** (Scheine und Münzen), Barausgaben mit Beleg-Nr., Ablieferung an die Bank,
   laufender Kassabestand und Abrechnung nach Bereichen. Druckbar mit Unterschriftszeilen.
+- **Feuerwehr-Rechnungsabschluss für die Gemeinde**: alle V-P mit Summen, Summe der Einnahmen und Ausgaben,
+  Kassastand 01.01. und 01.01. des Folgejahres, Unterschriften (Rechnungsprüfer, Kassier, Feuerwehrkommandant). Wie das Blatt „Abschluß Gde“.
+- **Kassabuch** je Konto zum Ausdrucken: Nr., Datum, Bezeichnung, Einnahme, Ausgabe, Kontierung, laufender Saldo.
+- **Kontierung aus der bisherigen Excel übernehmen** (Spalten Belegnr., Datum, Bezeichnung, Betrag, Kontierung).
 - **Jahresabschluss**: Anfangsbestand, Einnahmen und Ausgaben je Kategorie und Konto, Umbuchungen, Endbestand,
   Abgleich mit dem Kontoauszug, Übersicht der Veranstaltungen. Hinweise auf Unkontiertes, offene Festkassen
   und Differenzen. Druck/PDF mit Unterschriften (Kassier, Kommandant, Kassaprüfer), CSV für Excel.
@@ -100,6 +107,15 @@ Wird er erneut importiert, wird er übersprungen. Zwei gleiche Umsätze am selbe
 
 ## Kontieren
 
+**Kontenplan:** Für die Feuerwehrkassa sind die Voranschlagsposten des Feuerwehr-Rechnungsabschlusses angelegt
+(z. B. 753 lfd. Transferz. v. Gemeinden, 823 Zinsen, 829 Sonst. Einnahmen; 409 Ersatzteile, 616 Instandh. Geräte,
+728 Entgelte für sonst. Leistungen, 729 Sonst. Ausgaben). Bei der Mannschaftskassa werden nur deren eigene Kategorien angeboten.
+Die Festkassa-Kategorie (Wechselgeld, Ablieferung) erscheint im Gemeinde-Abschluss bei Eingängen unter 829 und bei Ausgängen unter 729,
+so wie bisher in der Excel. Das lässt sich unter Verwaltung → Kategorien ändern.
+
+**Bisherige Excel übernehmen:** Raika-CSV des Jahres importieren, dann unter *Raika-Import → Kontierung aus der bisherigen Excel übernehmen*
+Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird über Datum und Betrag.
+
 - **Buchungen** zeigt alle Bankbuchungen des gewählten Jahres. Der rote Zähler am Reiter zeigt, wie viele noch unkontiert sind.
 - Buchung antippen → Kategorie und ggf. Veranstaltung wählen. Mit **„Für künftige Importe merken“**
   entsteht eine Regel, die ähnliche Umsätze künftig automatisch kontiert.
@@ -132,10 +148,12 @@ Typischer Ablauf, z. B. beim Zeltfest:
 ## Jahresabschluss
 
 1. Alle Umsätze bis 31.12. importieren und kontieren, bis der Zähler auf 0 steht.
+   Für den **Feuerwehr-Rechnungsabschluss** müssen alle Buchungen der Feuerwehrkassa einen V-P haben – sonst erscheint ein Hinweis.
 2. Im Reiter **Jahresabschluss** den **Saldo laut Kontoauszug per 31.12.** je Konto eintragen.
    Die Differenz zum Endbestand laut Buchungen muss 0 sein.
 3. Die Hinweise abarbeiten (unkontierte Buchungen, offene Festkassen, Umbuchungen).
-4. **🖨 Drucken / PDF** für die Kassaprüfung und die Mitgliederversammlung, **⬇ CSV** für Excel.
+4. **🏛 Rechnungsabschluss drucken** für die Gemeinde, **🖨 Drucken / PDF** (Übersicht beider Konten) für Kassaprüfung
+   und Mitgliederversammlung, **⬇ CSV** für Excel. Das Kassabuch eines Kontos druckt man unter *Buchungen* (Konto wählen → 🖨 Kassabuch).
 5. **🔒 Jahr abschließen**. Danach ist das Jahr gesperrt, und die Endbestände werden
    als Anfangsbestände ins neue Jahr übernommen.
 
@@ -158,9 +176,10 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 |---|---|
 | `users/{uid}` | name, email, role, active |
 | `konten/{id}` | name, iban, order (Standard: `feuerwehr`, `mannschaft`) |
-| `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/F/U, inaktiv}] |
+| `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/F/U, konto, vp, vpE, vpA, inaktiv}] |
+| `config/allgemein` | ffName, gemeinde, ort (Kopf der Ausdrucke) |
 | `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
-| `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
+| `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
 | `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, stueckelung |
 | `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden |
