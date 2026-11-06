@@ -38,6 +38,18 @@ eigenen Server, nur statische Dateien.
   **Jahr abschließen** sperrt alle Buchungen des Jahres und überträgt die Endbestände ins Folgejahr.
 - **Änderungsprotokoll**: Jede Änderung wird mit Person und Zeitpunkt festgehalten und kann nicht gelöscht werden.
 
+## Handy und Computer
+
+Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, mit demselben Login.
+
+- **Computer**: am bequemsten für Import, Kontieren, Jahresabschluss und Ausdrucke (PDF).
+- **Handy**: Listen werden als Karten angezeigt (Datum, Betrag, Text, Kategorie), die Filter bei den Buchungen sind
+  eingeklappt. Gut geeignet zum Nachschauen, Kontieren einzelner Buchungen und für die **Festkassa direkt beim Fest**
+  (Einnahmen/Ausgaben erfassen, Kassasturz mit Zählprotokoll).
+- **Als App auf den Startbildschirm**: iPhone/iPad in Safari *Teilen → Zum Home-Bildschirm*, Android in Chrome
+  *⋮ → Zum Startbildschirm hinzufügen*. Dann startet das Kassenbuch wie eine App mit eigenem Symbol.
+- Es ist eine Internetverbindung nötig; kurze Funklöcher überbrückt die App, Änderungen werden nachgeschickt.
+
 ## Sicherheit
 
 - Ohne **aktives Profil** in der Datenbank sieht man nichts, auch wenn sich jemand selbst einen Firebase-Login anlegt.

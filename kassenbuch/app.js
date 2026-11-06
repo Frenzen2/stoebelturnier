@@ -473,8 +473,12 @@ function viewBuchungen() {
   const sum = list.reduce((a, b) => a + b.betrag, 0);
   const edit = canBook() && !locked();
   const sel = [...S.sel].filter(id => list.some(b => b.id === id));
+  const aktiv = [f.konto && kontoById(f.konto)?.name, f.kat && (f.kat === '__none' ? 'unkontiert' : katById(f.kat)?.name), f.ver && (f.ver === '__any' ? 'mit Fest' : verById(f.ver)?.name),
+    f.richtung && (f.richtung === '+' ? 'Einnahmen' : 'Ausgaben'), f.q && `„${f.q}“`].filter(Boolean);
+  const filterOffen = S.filterOffen ?? window.innerWidth > 700;
   $('#view').innerHTML = `
     <div class="card">
+      <details class="filter" id="filterBox" ${filterOffen ? 'open' : ''}><summary>Filter${aktiv.length ? `: <span class="muted" style="font-weight:400">${esc(aktiv.join(' · '))}</span>` : ''}</summary>
       <div class="toolbar">
         <label>Konto<select id="fKonto">${kontoOptions(f.konto, 'alle Konten')}</select></label>
         <label>Kategorie<select id="fKat"><option value="">alle</option><option value="__none" ${f.kat === '__none' ? 'selected' : ''}>⚠ nur unkontierte</option>
@@ -483,7 +487,7 @@ function viewBuchungen() {
           ${S.veranstaltungen.map(v => `<option value="${esc(v.id)}" ${v.id === f.ver ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
         <label>Richtung<select id="fRicht"><option value="">alle</option><option value="+" ${f.richtung === '+' ? 'selected' : ''}>Einnahmen</option><option value="-" ${f.richtung === '-' ? 'selected' : ''}>Ausgaben</option></select></label>
         <label class="grow">Suche<input id="fQ" value="${esc(f.q)}" placeholder="Text, Betrag, Beleg …"></label>
-      </div>
+      </div></details>
       <div class="toolbar">
         ${edit ? `<button class="btn" id="newBuchung">+ Buchung</button>
           <button class="btn" id="applyRules" title="Regeln aus der Verwaltung auf alle unkontierten Buchungen anwenden">⚙ Regeln anwenden</button>` : ''}
@@ -499,26 +503,27 @@ function viewBuchungen() {
         <button class="btn primary small" id="bulkApply">Zuweisen</button>
         <button class="btn small" id="bulkClear">Auswahl aufheben</button></div>` : ''}
       ${locked() ? `<div class="infobox">🔒 Das Jahr ${S.jahr} ist abgeschlossen – Buchungen können nur noch angesehen werden.</div>` : ''}
-      <div class="tablewrap"><table class="t">
+      <div class="tablewrap"><table class="t karten">
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
           <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Festkassabuch</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
         <tbody>${list.map(b => {
           const vs = parts(b).filter(p => p.veranstaltung).map(festLabel);
           return `<tr class="click ${S.sel.has(b.id) ? 'sel' : ''}" data-id="${esc(b.id)}">
-            ${edit ? `<td><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
-            <td class="r small muted">${S.belegNr.get(b.id) || ''}</td>
-            <td class="nowrap">${deDate(b.datum)}</td>
-            <td class="nowrap small">${esc(kontoById(b.konto)?.name || b.konto)}</td>
-            <td class="text">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
-            <td>${katLabel(b)}</td>
-            <td class="small">${vs.join(' ')}</td>
-            <td class="small">${esc(b.beleg || '')}</td>
-            <td class="r">${money(b.betrag)}</td></tr>`;
+            ${edit ? `<td class="k-a"><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
+            <td class="r small muted k-weg">${S.belegNr.get(b.id) || ''}</td>
+            <td class="nowrap k-b">${deDate(b.datum)}<span class="nur-klein muted small" style="font-weight:400"> · Nr. ${S.belegNr.get(b.id) || ''} · ${esc(kontoById(b.konto)?.name || b.konto)}</span></td>
+            <td class="nowrap small k-weg">${esc(kontoById(b.konto)?.name || b.konto)}</td>
+            <td class="text k-voll">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
+            <td class="k-zeile">${katLabel(b)}</td>
+            <td class="small k-zeile">${vs.join(' ')}</td>
+            <td class="small k-weg">${esc(b.beleg || '')}</td>
+            <td class="r k-c">${money(b.betrag)}</td></tr>`;
         }).join('') || `<tr><td colspan="9" class="muted">Keine Buchungen${S.buchungen.length ? ' für diesen Filter' : ` im Jahr ${S.jahr} – unter „Raika-Import“ die CSV-Datei einlesen`}.</td></tr>`}</tbody>
       </table></div>
     </div>`;
 
   const setF = (k, v) => { S.filter[k] = v; S.sel.clear(); render(true); };
+  $('#filterBox').addEventListener('toggle', e => { S.filterOffen = e.target.open; });
   $('#fKonto').addEventListener('change', e => setF('konto', e.target.value));
   $('#fKat').addEventListener('change', e => setF('kat', e.target.value));
   $('#fVer').addEventListener('change', e => setF('ver', e.target.value));
@@ -1145,12 +1150,13 @@ function viewVeranstaltung(v) {
     </div>
 
     <div class="card"><h2>Festkassabuch</h2>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Zahlweg</th><th>Ergebnis</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
-      <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td>${p.lfd}</td><td class="nowrap">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}</td>
-        <td class="small">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
-        <td class="small">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}</td><td class="small">${esc(p.beleg || '')}</td>
-        <td class="small">${zahlwegLabel(p)}</td><td class="small">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
-        <td class="r ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td><td class="r"><b>${fmt(p.bestand)}</b></td></tr>`).join('')
+      <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Zahlweg</th><th>Ergebnis</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
+      <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td class="k-a muted small">${p.lfd}</td><td class="nowrap k-b">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}<span class="nur-klein muted small" style="font-weight:400"> · ${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</span></td>
+        <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
+        <td class="small k-voll">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
+        <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt fürs Ergebnis' : ' · nicht im Ergebnis'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
+        <td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td>
+        <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragVz < 0 ? 'minus' : 'plus'} ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? '+' : '−'}${fmt(Math.abs(p.betragVz))}</span></td></tr>`).join('')
         || `<tr><td colspan="11" class="muted">Noch keine Einträge. Üblicher Ablauf: Wechselgeld von der Bank abheben (Bankbuchung zuordnen) → nach dem Fest je Stand einen <b>Kassasturz</b> machen → <b>Barausgaben</b> mit Beleg erfassen → Geld auf die Bank einzahlen (Bankbuchung zuordnen).</td></tr>`}</tbody></table></div>
       <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen (Feuerwehr- oder Mannschaftskassa): eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung. Sie müssen nicht noch einmal eingetragen werden.
         Positionen mit Zahlweg <b>Überweisung</b> (grau) ändern den Kassabestand nicht. Ergebnis „–“ = zählt nicht zum Ergebnis des Festes.</p>
