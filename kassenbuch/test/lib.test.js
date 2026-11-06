@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   parseAmount, parseDate, parseCsv, detectColumns, applyMapping, importIds, matchRule,
   jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, stueckelungSumme, parts, isKontiert,
-  DEFAULT_KATEGORIEN, decodeText, ibanFromName, toCsv,
+  DEFAULT_KATEGORIEN, DEFAULT_REGELN, decodeText, ibanFromName, toCsv, splitBankText, suchbegriff,
 } from '../lib.js';
 
 test('Beträge', () => {
@@ -31,17 +31,33 @@ test('Datum', () => {
   assert.equal(parseDate('02.01.2026 07:12:44:301'), '2026-01-02');
 });
 
-test('ELBA-CSV ohne Kopfzeile wird erkannt', () => {
-  const table = parseCsv(readFileSync(new URL('../beispiel-raika.csv', import.meta.url), 'utf8'));
+test('ELBA-CSV ohne Kopfzeile wird erkannt (echtes Format)', () => {
+  const table = parseCsv(decodeText(readFileSync(new URL('../beispiel-raika.csv', import.meta.url))));
   const det = detectColumns(table);
   assert.equal(det.header, false);
   assert.deepEqual(det.mapping, ['datum', 'text', 'valuta', 'betrag', 'waehrung', 'zeitstempel']);
   const { rows, errors } = applyMapping(table, det.mapping, det.header);
   assert.deepEqual(errors, []);
-  assert.equal(rows.length, 5);
-  assert.equal(rows[0].betrag, 350000);
-  assert.equal(rows[1].betrag, -41280);
-  assert.match(rows[0].text, /Subvention/);
+  assert.equal(rows.length, 10);
+  assert.equal(rows[0].betrag, -6160);
+  assert.equal(rows[1].betrag, 272723);          // positiver Betrag ohne „+“
+  assert.equal(rows[3].valuta, '2026-04-01');
+  assert.match(rows[0].text, /^Zahlungsempfänger: Bezirksfeuerwehrkommando/);
+  // Standard-Regeln kontieren alle Beispielzeilen außer der Einzelrechnung
+  const ohne = rows.filter(r => !matchRule(DEFAULT_REGELN, r));
+  assert.deepEqual(ohne.map(r => r.betrag), [-73401]);
+  assert.equal(matchRule(DEFAULT_REGELN, rows[6]).kategorie, 'festkassa');
+  assert.equal(matchRule(DEFAULT_REGELN, rows[9]).kategorie, 'e_sponsoring');
+  assert.ok(DEFAULT_REGELN.every(r => DEFAULT_KATEGORIEN.some(k => k.id === r.kategorie)));
+});
+
+test('Bank-Text zerlegen', () => {
+  const t = 'Online Banking vom 17.05 um 10:48 Empfänger: Brandschutz Muster Zahlungsreferenz: Rechnung Nr 2025 IBAN Empfänger: AT001234000000000005 BIC Empfänger: MUSTAT2L523 Empfänger: Hauptstraße 3, 4881 Musterort';
+  assert.deepEqual(splitBankText(t), { partner: 'Brandschutz Muster', zweck: 'Rechnung Nr 2025', iban: 'AT001234000000000005' });
+  assert.deepEqual(splitBankText('Zahlungsreferenz: Kontoführung'), { partner: '', zweck: 'Kontoführung', iban: '' });
+  assert.equal(splitBankText('Bareinzahlung Zeltfest').zweck, 'Bareinzahlung Zeltfest');
+  assert.equal(suchbegriff(t), 'Brandschutz Muster');
+  assert.equal(suchbegriff('Zahlungsreferenz: 1,5 % p.a.Habenzinsen ab 2.000'), 'Habenzinsen');
 });
 
 test('CSV mit Kopfzeile, Windows-1252 und Anführungszeichen', () => {

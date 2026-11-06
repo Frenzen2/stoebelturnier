@@ -271,6 +271,42 @@ export async function importIds(kontoId, rows) {
  * Regeln: [{ muster: "Getränke Haas", kategorie: "a_fest", veranstaltung?: id, richtung?: '+'|'-'|'' , konto?: id }]
  * Mehrere Suchbegriffe mit "|" trennen. Erste passende Regel gewinnt.
  */
+// ── Bank-Text zerlegen ───────────────────────────────────────────────────────
+// ELBA liefert den Umsatztext als eine lange Zeile, z. B.
+//   "Online Banking vom 11.03 um 19:32 Empfänger: Brandschutz Attergau Zahlungsreferenz: Rechnung Nr 123
+//    IBAN Empfänger: AT74… BIC Empfänger: RZOO…"
+// Für die Anzeige werden Auftraggeber/Empfänger und Verwendungszweck herausgelöst.
+
+const LABELS = /(IBAN Auftraggeber|IBAN Zahlungsempfänger|IBAN Empfänger|BIC Auftraggeber|BIC Zahlungsempfänger|BIC Empfänger|Empfänger-Kennung|Auftraggeberreferenz|Zahlungsempfänger|Auftraggeber|Empfänger|Verwendungszweck|Zahlungsreferenz|Mandat):\s*/g;
+
+export function splitBankText(text) {
+  const t = String(text || '').replace(/^Online Banking vom [\d.]+ um [\d:]+\s*/, '');
+  const parts = {};
+  let lastLabel = null, lastIdx = 0, m;
+  const pre = [];
+  LABELS.lastIndex = 0;
+  while ((m = LABELS.exec(t))) {
+    const chunk = t.slice(lastIdx, m.index).trim();
+    if (lastLabel) { if (!(lastLabel in parts)) parts[lastLabel] = chunk; } else if (chunk) pre.push(chunk);
+    lastLabel = m[1]; lastIdx = LABELS.lastIndex;
+  }
+  const tail = t.slice(lastIdx).trim();
+  if (lastLabel) { if (!(lastLabel in parts)) parts[lastLabel] = tail; } else if (tail) pre.push(tail);
+  const clean = s => (s || '').replace(/\s{2,}/g, ' ').trim();
+  return {
+    partner: clean(parts.Auftraggeber || parts.Zahlungsempfänger || parts['Empfänger']),
+    zweck: clean([parts.Verwendungszweck, parts.Zahlungsreferenz].filter(Boolean).join(' · ') || pre.join(' ') || parts.Auftraggeberreferenz),
+    iban: clean(parts['IBAN Auftraggeber'] || parts['IBAN Zahlungsempfänger'] || parts['IBAN Empfänger']),
+  };
+}
+
+/** Vorschlag für den Suchbegriff einer Kontierungsregel: Name des Gegenübers, sonst der Verwendungszweck. */
+export function suchbegriff(text) {
+  const { partner, zweck } = splitBankText(text);
+  if (partner) return partner.replace(/\s*\(.*?\)\s*/g, ' ').trim().split(' ').slice(0, 3).join(' ');
+  return (zweck || String(text || '')).replace(/[\d.,%]+(\s*p\.a\.)?/g, ' ').split(/\s+/).filter(w => w.length > 2).slice(0, 3).join(' ');
+}
+
 export function matchRule(regeln, b) {
   const t = norm(b.text);
   for (const r of regeln || []) {
@@ -291,6 +327,7 @@ export const DEFAULT_KATEGORIEN = [
   { id: 'e_subv_gem', nr: '100', name: 'Subvention Gemeinde', art: 'E' },
   { id: 'e_subv_land', nr: '110', name: 'Subvention Land / LFV', art: 'E' },
   { id: 'e_spenden', nr: '120', name: 'Spenden', art: 'E' },
+  { id: 'e_sponsoring', nr: '122', name: 'Sponsoring / Transparentwerbung', art: 'E' },
   { id: 'e_haussammlung', nr: '125', name: 'Haussammlung', art: 'E' },
   { id: 'e_beitraege', nr: '130', name: 'Mitgliedsbeiträge / Unterstützende Mitglieder', art: 'E' },
   { id: 'e_kostenersatz', nr: '140', name: 'Kostenersätze Einsätze / Leistungen', art: 'E' },
@@ -309,10 +346,28 @@ export const DEFAULT_KATEGORIEN = [
   { id: 'a_fest', nr: '580', name: 'Veranstaltungen – Ausgaben (Bank)', art: 'A' },
   { id: 'a_verwaltung', nr: '590', name: 'Verwaltung / Büro / Porto', art: 'A' },
   { id: 'a_versicherung', nr: '600', name: 'Versicherungen / Mitgliedschaften', art: 'A' },
-  { id: 'a_bank', nr: '610', name: 'Bankspesen', art: 'A' },
+  { id: 'a_bank', nr: '610', name: 'Bankspesen / Kontoführung / KESt', art: 'A' },
   { id: 'a_sonst', nr: '690', name: 'Sonstige Ausgaben', art: 'A' },
   { id: 'festkassa', nr: '800', name: 'Festkassa: Ablieferung / Wechselgeld', art: 'F' },
   { id: 'umbuchung', nr: '900', name: 'Umbuchung zwischen eigenen Konten', art: 'U' },
+];
+
+// Vorgeschlagene Kontierungsregeln (aus typischen Raika-Umsätzen der FF Pichl)
+export const DEFAULT_REGELN = [
+  { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt', kategorie: 'a_bank', richtung: '-', konto: '' },
+  { muster: 'Habenzinsen', kategorie: 'e_zinsen', richtung: '+', konto: '' },
+  { muster: 'Wechselgeld|Erlös', kategorie: 'festkassa', richtung: '', konto: '' },
+  { muster: 'Transparent|Sponsoring|Werbebeitrag|Werbebanner|Werbung', kategorie: 'e_sponsoring', richtung: '+', konto: '' },
+  { muster: 'Sumup', kategorie: 'e_fest', richtung: '+', konto: '' },
+  { muster: 'Subvention', kategorie: 'e_subv_gem', richtung: '+', konto: '' },
+  { muster: 'Mitgliedsbeitrag', kategorie: 'e_beitraege', richtung: '+', konto: '' },
+  { muster: 'Spende', kategorie: 'e_spenden', richtung: '+', konto: '' },
+  { muster: 'BEWERB|Startgeld|Abzeichen|ASLP', kategorie: 'a_bewerbe', richtung: '-', konto: '' },
+  { muster: 'Lehrgang|-LG.|Kurs', kategorie: 'a_ausbildung', richtung: '-', konto: '' },
+  { muster: 'Hilfssäckel|Umlage', kategorie: 'a_versicherung', richtung: '-', konto: '' },
+  { muster: 'Sonnwendfeuer|Wiesnfest|Wiesenfest|Zeltfest', kategorie: 'a_fest', richtung: '-', konto: '' },
+  { muster: 'Atemschutz|Brandschutz', kategorie: 'a_geraete', richtung: '-', konto: '' },
+  { muster: 'Jahrbuch|Brennpunkt|Wix.com', kategorie: 'a_verwaltung', richtung: '-', konto: '' },
 ];
 
 export const DEFAULT_KONTEN = [

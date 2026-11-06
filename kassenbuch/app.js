@@ -12,7 +12,8 @@ import {
 import { FIREBASE_CONFIG } from './firebase-config.js';
 import {
   fmt, eur, parseAmount, parseDate, deDate, norm, decodeText, parseCsv, detectColumns, applyMapping,
-  ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, parts,
+  ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
+  splitBankText, suchbegriff,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
@@ -424,6 +425,7 @@ async function initKonten() {
   const batch = writeBatch(db);
   for (const k of DEFAULT_KONTEN) batch.set(doc(db, 'konten', k.id), { name: k.name, iban: '', order: k.order });
   if (!S.kategorienGeladen) batch.set(doc(db, 'config', 'kategorien'), { list: DEFAULT_KATEGORIEN });
+  if (!S.regeln.length) batch.set(doc(db, 'config', 'regeln'), { list: DEFAULT_REGELN });
   logTo(batch, 'konten', 'Standard-Konten und Kategorien angelegt');
   await batch.commit().catch(fail);
   toast('Konten angelegt. IBANs bitte unter Verwaltung eintragen.');
@@ -495,7 +497,7 @@ function viewBuchungen() {
             ${edit ? `<td><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
             <td class="nowrap">${deDate(b.datum)}</td>
             <td class="nowrap small">${esc(kontoById(b.konto)?.name || b.konto)}</td>
-            <td class="text">${esc(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
+            <td class="text">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
             <td>${katLabel(b)}</td>
             <td class="small">${esc(vs.join(', '))}</td>
             <td class="small">${esc(b.beleg || '')}</td>
@@ -599,7 +601,7 @@ function buchungDialog(b) {
       <label>Notiz<input id="bNotiz" value="${esc(b.notiz || '')}" maxlength="1000" ${ro}></label>
     </div>
     ${edit && imported ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
-      <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(vorschlagSuchbegriff(b.text))}">` : ''}
+      <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
 
   const extra = [];
@@ -706,11 +708,11 @@ function buchungDialog(b) {
   });
 }
 
-/** Schlägt einen Suchbegriff für eine Kontierungsregel vor (erste markante Wörter ohne Zahlen/IBAN). */
-function vorschlagSuchbegriff(text) {
-  const words = String(text || '').split(/[\s·,;:/]+/)
-    .filter(w => w.length > 2 && !/\d{3,}/.test(w) && !/^(gutschrift|abbuchung|lastschrift|überweisung|ueberweisung|dauerauftrag|zahlung|eingang|auftrag|sepa|ref|von|für|fuer|und|der|die|das|gmbh)$/i.test(w));
-  return words.slice(0, 2).join(' ');
+/** Bank-Text kompakt: Auftraggeber/Empfänger fett, dann Verwendungszweck. Voller Text als Tooltip. */
+function bankText(text) {
+  const { partner, zweck } = splitBankText(text);
+  if (!partner && !zweck) return esc(text);
+  return `<span title="${esc(text)}">${partner ? `<b>${esc(partner)}</b>` : ''}${partner && zweck ? '<br>' : ''}${zweck ? `<span class="muted">${esc(zweck)}</span>` : ''}</span>`;
 }
 
 async function regelnAnwenden() {
@@ -767,7 +769,7 @@ function viewImport() {
           ${!I.konto ? '<span class="minus">Bitte oben das Konto wählen.</span>' : ''}</div>
         <div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th>Datum</th><th>Text</th><th>Kategorie (Regel)</th><th class="r">Betrag</th></tr></thead><tbody>
         ${rows.map(r => `<tr class="${r.status !== 'neu' ? 'muted' : ''}"><td>${r.status === 'neu' ? '<span class="chip ok">neu</span>' : r.status === 'vorhanden' ? '<span class="chip">vorhanden</span>' : '<span class="chip lock">gesperrt</span>'}</td>
-          <td class="nowrap">${deDate(r.datum)}</td><td class="text small">${esc(r.text)}</td><td class="small">${esc(katById(r.kategorie)?.name || '')}</td><td class="r">${money(r.betrag)}</td></tr>`).join('')}
+          <td class="nowrap">${deDate(r.datum)}</td><td class="text small">${bankText(r.text)}</td><td class="small">${esc(katById(r.kategorie)?.name || '')}</td><td class="r">${money(r.betrag)}</td></tr>`).join('')}
         </tbody></table></div></div>`;
     }
   }
@@ -1343,7 +1345,9 @@ function viewVerwaltung() {
         return `<tr class="${k.inaktiv ? 'muted' : ''}"><td>${esc(k.nr)}</td><td>${esc(k.name)}${k.inaktiv ? ' (inaktiv)' : ''}</td><td>${esc(k.art)}</td><td class="r">${n || ''}</td><td class="r"><button class="btn small" data-kat="${esc(k.id)}">Bearbeiten</button></td></tr>`;
       }).join('')}</tbody></table></div></div>` : ''}
 
-    <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Kontierungsregeln</h2><button class="btn" id="newRegel">+ Regel</button></div>
+    <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Kontierungsregeln</h2>
+      <button class="btn" id="addDefaultRegeln" title="Vorschläge für Kontoführung, Zinsen, KESt, Sponsoring, SumUp, Wechselgeld usw.">Standard-Regeln ergänzen</button>
+      <button class="btn" id="newRegel">+ Regel</button></div>
       <p class="muted small">Beim Import werden neue Umsätze automatisch kontiert, wenn der Bank-Text einen Suchbegriff enthält (Groß-/Kleinschreibung egal, mehrere Begriffe mit <code>|</code> trennen). Die erste passende Regel gilt.
         Regeln lassen sich auch direkt beim Kontieren einer Buchung anlegen („Für künftige Importe merken“).</p>
       <div class="tablewrap"><table class="t"><thead><tr><th>#</th><th>Text enthält</th><th>Richtung</th><th>Konto</th><th>Kategorie</th><th></th></tr></thead><tbody>
@@ -1366,6 +1370,13 @@ function viewVerwaltung() {
   $('#saveKatDefaults')?.addEventListener('click', () => saveKategorien(DEFAULT_KATEGORIEN));
   $$('#view [data-kat]').forEach(b => b.addEventListener('click', () => katDialog(katById(b.dataset.kat))));
   $('#newRegel')?.addEventListener('click', () => regelDialog(null));
+  $('#addDefaultRegeln')?.addEventListener('click', async () => {
+    const vorhanden = new Set(S.regeln.map(r => norm(r.muster)));
+    const neu = DEFAULT_REGELN.filter(r => !vorhanden.has(norm(r.muster)) && katById(r.kategorie));
+    if (!neu.length) { toast('Alle Standard-Regeln sind schon vorhanden.'); return; }
+    await setDoc(doc(db, 'config', 'regeln'), { list: [...S.regeln, ...neu] }).catch(fail);
+    toast(`${neu.length} Regeln ergänzt.`);
+  });
   $$('#view [data-regel]').forEach(b => b.addEventListener('click', () => regelDialog(+b.dataset.regel)));
   $$('#view [data-up]').forEach(b => b.addEventListener('click', () => {
     const i = +b.dataset.up, list = [...S.regeln];
