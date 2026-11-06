@@ -97,6 +97,29 @@ Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, 
 5. **Jahresabschluss**: für das erste Jahr den **Anfangsbestand per 1.1.** je Konto eintragen.
    In den Folgejahren wird er aus dem abgeschlossenen Vorjahr übernommen.
 
+## Sponsoren und Transparente
+
+Im Festkassabuch jedes Festes gibt es den Bereich **Sponsoren / Transparente**:
+
+- **+ Sponsor**: Name, Anschrift, Leistung, Betrag, Zahlweg (*Überweisung* mit Rechnung oder *bar* in die Festkassa),
+  Fotos vom Transparent. Bekannte Sponsoren werden beim Tippen vorgeschlagen, die Anschrift wird übernommen.
+- **⧉ Aus anderem Fest übernehmen**: z. B. alle Sponsoren vom Wiesnfest des Vorjahres – Status „offen“, ohne Rechnungsnummer.
+- **🖨 Rechnungen**: fortlaufende Nummer je Jahr (2026-001, 2026-002 …), Briefkopf, IBAN und Rechnungsnummer als
+  Verwendungszweck; für Barzahler eine Quittung. Im Druckdialog „Als PDF speichern“ für den Versand per E-Mail.
+- **🖨 Dankesschreiben** mit dem ersten Foto des Transparents.
+- **⇄ Zahlungen zuordnen**: Zahlungseingänge beider Konten werden über die **Rechnungsnummer** im Text oder über
+  **Betrag und Namen** erkannt; der Sponsor wird „bezahlt“ und mit der Bankbuchung verknüpft.
+- **⬇ Aus Überweisungen**: Eingänge mit „Transparent“, „Sponsoring“ oder „Werbung“, die noch keinem Sponsor gehören,
+  als neue (bezahlte) Sponsoren anlegen – Zahlungen, die schon einer Position entsprechen, werden nicht vorgeschlagen.
+- **Bezahlte Sponsoren stehen automatisch im Festkassabuch** (Bereich „Transparente“, bar oder Überweisung) und zählen
+  zum Ergebnis; offene Rechnungen nicht – sie erscheinen als Hinweis im Jahresabschluss.
+- Aus dem bisherigen Excel übernommene Transparent-Positionen lassen sich mit **In Sponsoren umwandeln** übernehmen
+  (das Ergebnis bleibt gleich, Überweisungen werden gleich verknüpft).
+
+Briefkopf (Anschrift, E-Mail, Kommandant, Kassier), Konto für Zahlungen, Zahlungsziel, Steuerhinweis und die Texte für
+Rechnung und Dankesschreiben stellt der Admin unter **Verwaltung → Briefkopf, Rechnungen und Dankesschreiben** ein.
+Den Steuerhinweis bitte mit der Gemeinde bzw. Steuerberatung abklären.
+
 ## Belege (PDF und Fotos)
 
 An jede Bankbuchung und jede Festkassa-Position lassen sich Belege hängen: **📄 Datei wählen** (PDF oder Bild) oder am Handy
@@ -261,7 +284,8 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), festArt (kassa/bank), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
 | `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false), stueckelung |
-| `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden |
+| `veranstaltungen/{id}/sponsoring/{id}` | name, zusatz, strasse, plzOrt, email, leistung, betrag (Cent), zahlweg, status (offen/bezahlt), bezahltAm, buchungId, rechnungsNr, rechnungsDatum, belege (Fotos), dankGedruckt |
+| `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden, rechnungNr (Zähler für Rechnungsnummern) |
 | Storage `belege/{jahr}/buchung/{id}/…`, `belege/{jahr}/posten/{fest}/{id}/…` | Belege; am Dokument steht `belege: [{id, name, pfad, typ, groesse, am, von}]` |
 | `log/{id}` | Änderungsprotokoll: uid, name, wann, aktion, text |
 

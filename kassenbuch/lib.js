@@ -855,7 +855,7 @@ const STOP = new Set(['online', 'banking', 'empfanger', 'auftraggeber', 'zahlung
 const woerter = t => new Set(norm(t).replace(/[^a-z0-9 ]+/g, ' ').split(' ')
   .filter(w => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)));
 const kompakt = t => norm(t).split(/[^a-z0-9]+/).filter(w => w && !STOP.has(w) && !['gmbh', 'co', 'kg', 'eu', 'ag'].includes(w)).join('');
-const aehnlich = (a, b) => {
+export const aehnlich = (a, b) => {
   const wb = woerter(b);
   let n = 0;
   // kurze Firmennamen wie „EW-BAU“ oder „AKM“: zusammengeschrieben im Bank-Text enthalten
@@ -894,6 +894,13 @@ export function bankAbgleich(posten, buchungen, v) {
   // zuerst alle genauen Treffer, damit Summen nicht die Einzelbuchungen „wegnehmen“:
   //  a) gleicher Betrag UND ähnlicher Name (bester Name gewinnt)  b) gleicher Betrag, Name egal
   let offenP = [];
+  // fest verknüpfte Bankbuchung (z. B. bezahlte Sponsor-Rechnung) → direkt zuordnen
+  const ohneLink = [];
+  for (const p of ue) {
+    const b = p.buchungId && buchungen.find(x => x.id === p.buchungId);
+    if (b) { benutzt.add(b.id); zeilen.push({ posten: p, status: 'ok', buchungen: [b], sicher: true }); } else ohneLink.push(p);
+  }
+  ue.length = 0; ue.push(...ohneLink);
   const genau = (p, mitText) => {
     const vz = p.art === 'ausgabe' ? -1 : 1;
     return frei.filter(b => !benutzt.has(b.id) && b.betrag === vz * p.betrag && (!mitText || aehnlich(p.text, b.text) > 0))
@@ -948,6 +955,81 @@ function addTage(iso, n) {
   const d = new Date(iso + 'T12:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+// ── Sponsoring / Transparente ────────────────────────────────────────────────
+//
+// Je Veranstaltung: veranstaltungen/{id}/sponsoring/{sid}
+//   { name, zusatz, strasse, plzOrt, email, leistung, betrag (Cent), zahlweg 'ueberweisung'|'bar',
+//     status 'offen'|'bezahlt', bezahltAm, buchungId, rechnungsNr, rechnungsDatum, belege (Fotos) }
+// Bezahlte Sponsoren erscheinen automatisch als Einnahme im Festkassabuch (Bereich „Transparente“).
+
+/** Bezahlte Sponsoren als (nicht editierbare) Zeilen fürs Festkassabuch */
+export function sponsorPosten(eintraege) {
+  return (eintraege || []).filter(e => e.status === 'bezahlt' && e.betrag > 0).map(e => ({
+    id: 'sp_' + e.id, sponsorId: e.id, sponsor: true,
+    art: 'einnahme', betrag: e.betrag, datum: e.bezahltAm || e.rechnungsDatum || '', zeit: '',
+    zahlweg: e.zahlweg === 'bar' ? 'bar' : 'ueberweisung', ergebnis: true,
+    bereich: e.bereich || 'Transparente', text: e.name, beleg: e.rechnungsNr || '',
+    buchungId: e.buchungId || '', belege: e.belege || [],
+  }));
+}
+
+const kompaktNr = t => norm(t).replace(/[^a-z0-9]/g, '');
+
+/**
+ * Ordnet offene Sponsor-Rechnungen (Zahlweg Überweisung) Zahlungseingängen beider Konten zu.
+ *  1. Rechnungsnummer steht im Bank-Text (z. B. „RE 2026-007“, „2026007“)
+ *  2. gleicher Betrag und ähnlicher Name
+ *  3. gleicher Betrag, Name passt nicht → nur Vorschlag (sicher: false)
+ * buchungenVergeben: IDs, die schon einer Rechnung zugeordnet sind.
+ */
+export function sponsorZahlungen(eintraege, buchungen, buchungenVergeben = new Set()) {
+  const frei = buchungen.filter(b => b.betrag > 0 && !buchungenVergeben.has(b.id) && !b.splits?.length
+    && (!b.veranstaltung || b.festArt === 'bank'));
+  const benutzt = new Set();
+  const out = [];
+  const offen = eintraege.filter(e => e.status !== 'bezahlt' && e.zahlweg !== 'bar' && e.betrag > 0);
+  const nimm = (e, b, sicher, grund) => { benutzt.add(b.id); out.push({ eintrag: e, buchung: b, sicher, grund }); };
+  const rest = [];
+  for (const e of offen) {
+    const nr = e.rechnungsNr && kompaktNr(e.rechnungsNr);
+    const b = nr && nr.length >= 5 && frei.find(x => !benutzt.has(x.id) && kompaktNr(x.text).includes(nr));
+    if (b) nimm(e, b, b.betrag === e.betrag, 'Rechnungsnummer'); else rest.push(e);
+  }
+  const rest2 = [];
+  for (const e of rest) {
+    const b = frei.filter(x => !benutzt.has(x.id) && x.betrag === e.betrag && aehnlich(e.name, x.text) > 0)
+      .sort((a, c) => aehnlich(e.name, c.text) - aehnlich(e.name, a.text))[0];
+    if (b) nimm(e, b, true, 'Betrag und Name'); else rest2.push(e);
+  }
+  for (const e of rest2) {
+    const kand = frei.filter(x => !benutzt.has(x.id) && x.betrag === e.betrag
+      && /transparent|sponsor|werb|banner/.test(norm(x.text)));
+    if (kand.length === 1) nimm(e, kand[0], false, 'nur Betrag');
+  }
+  return out;
+}
+
+/** Zahlungseingänge, die nach Sponsoring aussehen, aber keinem Sponsor zugeordnet sind → Vorschlag für neue Einträge */
+export function sponsorKandidaten(buchungen, buchungenVergeben = new Set(), v = null) {
+  return buchungen.filter(b => b.betrag > 0 && !buchungenVergeben.has(b.id) && !b.splits?.length
+    && (!b.veranstaltung || (v && b.veranstaltung === v.id && b.festArt === 'bank'))
+    && /transparent|sponsor|werbebeitrag|werbung|banner/.test(norm(b.text)))
+    .map(b => {
+      const { partner, zweck } = splitBankText(b.text);
+      return { buchung: b, name: (partner || zweck || b.text).replace(/\s+(IBAN|BIC)\b.*$/i, '').slice(0, 120), betrag: b.betrag };
+    });
+}
+
+/** Platzhalter {name}, {fest}, {betrag} … in Vorlagen ersetzen */
+export function fuelleVorlage(text, werte) {
+  return String(text || '').replace(/\{(\w+)\}/g, (m, k) => (k in werte ? String(werte[k]) : m));
+}
+
+/** Nächste Rechnungsnummer im Format JJJJ-NNN */
+export function rechnungsNummer(jahr, laufend) {
+  return `${jahr}-${String(laufend).padStart(3, '0')}`;
 }
 
 // ── CSV-Export ───────────────────────────────────────────────────────────────

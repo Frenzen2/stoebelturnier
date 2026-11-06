@@ -7,7 +7,7 @@ import {
 import {
   initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, onSnapshot, query, where, orderBy, limit, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  writeBatch, serverTimestamp, deleteField,
+  writeBatch, serverTimestamp, deleteField, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import {
   getStorage, connectStorageEmulator, ref as sRef, uploadBytes, getDownloadURL, getBlob, deleteObject,
@@ -19,6 +19,7 @@ import {
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel, bankAbgleich,
+  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -50,7 +51,7 @@ if (USE_EMULATOR) connectStorageEmulator(storage, '127.0.0.1', 9199);
 // ── Zustand ──────────────────────────────────────────────────────────────────
 
 const S = {
-  uid: null, me: null, unsub: [], yearUnsub: [], postenUnsub: {},
+  uid: null, me: null, unsub: [], yearUnsub: [], postenUnsub: {}, sponsoring: {}, sponsorUnsub: {},
   tab: localStorage.getItem('kb.tab') || 'uebersicht',
   jahr: Number(localStorage.getItem('kb.jahr')) || new Date().getFullYear(),
   users: [], konten: [], kategorien: DEFAULT_KATEGORIEN, kategorienGeladen: false, regeln: [],
@@ -191,6 +192,7 @@ function stopAll() {
 function stopYear() {
   S.yearUnsub.forEach(u => u()); S.yearUnsub = [];
   Object.values(S.postenUnsub).forEach(u => u()); S.postenUnsub = {}; S.posten = {};
+  Object.values(S.sponsorUnsub).forEach(u => u()); S.sponsorUnsub = {}; S.sponsoring = {};
   S.buchungen = []; S.veranstaltungen = []; S.jahrDoc = null; S.vorjahrDoc = null; S.sel.clear();
 }
 
@@ -280,6 +282,14 @@ function startYear() {
     // Festkassa-Posten aller Veranstaltungen des Jahres mitlesen (für Abrechnung und Jahresabschluss)
     const ids = new Set(S.veranstaltungen.map(v => v.id));
     for (const id of Object.keys(S.postenUnsub)) if (!ids.has(id)) { S.postenUnsub[id](); delete S.postenUnsub[id]; delete S.posten[id]; }
+    for (const id of Object.keys(S.sponsorUnsub)) if (!ids.has(id)) { S.sponsorUnsub[id](); delete S.sponsorUnsub[id]; delete S.sponsoring[id]; }
+    for (const id of ids) {
+      if (S.sponsorUnsub[id]) continue;
+      S.sponsorUnsub[id] = onSnapshot(collection(db, 'veranstaltungen', id, 'sponsoring'), ps => {
+        S.sponsoring[id] = ps.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
+        render();
+      }, fail);
+    }
     for (const id of ids) {
       if (S.postenUnsub[id]) continue;
       S.postenUnsub[id] = onSnapshot(collection(db, 'veranstaltungen', id, 'posten'), ps => {
@@ -385,7 +395,11 @@ function bankTeileVon(vid) {
   return out;
 }
 function abrechnungVon(v) {
-  return veranstaltungsAbrechnung(S.posten[v.id] || [], bankTeileVon(v.id));
+  return veranstaltungsAbrechnung(eigenePosten(v), bankTeileVon(v.id));
+}
+/** Festkassa-Posten einer Veranstaltung inkl. bezahlter Sponsoren */
+function eigenePosten(v) {
+  return [...(S.posten[v.id] || []), ...sponsorPosten(S.sponsoring[v.id])];
 }
 
 // ── Übersicht ────────────────────────────────────────────────────────────────
@@ -637,7 +651,7 @@ function belegeBox(sel, opts) {
   const draw = () => {
     const box = $(sel);
     if (!box) return;
-    box.innerHTML = `<div class="belege"><div class="muted small">Belege (PDF oder Foto)</div>
+    box.innerHTML = `<div class="belege"><div class="muted small">${esc(opts.titel || 'Belege (PDF oder Foto)')}</div>
       ${liste.map((x, i) => `<div class="beleg"><a href="#" data-bo="${i}">📎 ${esc(x.name)}</a> <span class="muted small">${groesse(x.groesse || 0)}</span>
         ${opts.edit ? `<button type="button" class="btn small danger" data-bx="${i}" title="Beleg löschen">✕</button>` : ''}</div>`).join('') || '<div class="muted small">– noch kein Beleg –</div>'}
       ${opts.edit ? `<div class="row" style="margin-top:6px;align-items:center">
@@ -743,6 +757,7 @@ function buchungDialog(b) {
     <div id="bBelege"></div>
     ${edit && imported && !ohneKont ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
       <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
+    ${sponsorZuBuchung(b.id) ? `<div class="okbox small">🤝 Zahlung von <b>${esc(sponsorZuBuchung(b.id).e.name)}</b> (Sponsoring ${esc(sponsorZuBuchung(b.id).v.name)}${sponsorZuBuchung(b.id).e.rechnungsNr ? ', Rechnung ' + esc(sponsorZuBuchung(b.id).e.rechnungsNr) : ''}) – steht schon im Festkassabuch, nicht zusätzlich zuordnen.</div>` : ''}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
 
   const extra = [];
@@ -1281,6 +1296,8 @@ function viewVeranstaltung(v) {
         Positionen mit Zahlweg <b>Überweisung</b> (grau) ändern den Kassabestand nicht. Ergebnis „–“ = zählt nicht zum Ergebnis des Festes.</p>
     </div>
 
+    ${sponsorKarte(v)}
+
     <div class="card"><h2>Abrechnung nach Bereichen</h2>
       <div class="tablewrap"><table class="t"><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
       ${a.bereiche.map(x => `<tr><td>${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
@@ -1307,6 +1324,7 @@ function viewVeranstaltung(v) {
   $('#bankZuordnen')?.addEventListener('click', () => bankZuordnenDialog(v));
   $('#fkExcel')?.addEventListener('click', () => festkassaExcelDialog(v));
   bindAbgleich(v);
+  bindSponsoren(v);
   $('#barumsatz')?.addEventListener('click', async () => {
     if (!await confirmDlg('Barumsatz errechnen', `Es wurde kein (vollständiger) Kassasturz erfasst. Aus Ablieferungen, Barausgaben, Wechselgeld und sonstigen
       Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme (bar, zählt fürs Ergebnis) eingetragen – danach ist der Kassabestand 0.`, 'Eintragen')) return;
@@ -1318,6 +1336,7 @@ function viewVeranstaltung(v) {
     logTo(null, 'festkassa', `${v.name}: Barumsatz errechnet ${fmt(-a.bestand)}`);
   });
   $$('#view [data-posten]').forEach(tr => tr.addEventListener('click', () => {
+    if (tr.dataset.posten.startsWith('sp_')) { sponsorDialog(v, (S.sponsoring[v.id] || []).find(x => 'sp_' + x.id === tr.dataset.posten)); return; }
     const p = (S.posten[v.id] || []).find(x => x.id === tr.dataset.posten);
     if (p.stueckelung) zaehlDialog(v, p); else postenDialog(v, p);
   }));
@@ -1393,7 +1412,7 @@ function zahlwegLabel(p) {
 // ── Abgleich Festkassabuch ↔ Bank ────────────────────────────────────────────
 
 function abgleichKarte(v, edit) {
-  const ab = bankAbgleich(S.posten[v.id] || [], S.buchungen, v);
+  const ab = bankAbgleich(eigenePosten(v), S.buchungen, v);
   if (!ab.zeilen.length && !ab.offen.length) return '';
   const n = s => ab.zeilen.filter(z => z.status === s).length;
   const bu = b => `<span class="nowrap">${esc(kontoById(b.konto)?.name || '')} ${deDate(b.datum)}</span> ${fmt(Math.abs(b.betrag))} <span class="muted">${esc((splitBankText(b.text).partner || '').slice(0, 30))} ${esc(splitBankText(b.text).zweck.slice(0, 40))}</span>`;
@@ -1403,7 +1422,7 @@ function abgleichKarte(v, edit) {
   const zeile = z => `<tr><td class="small">${z.status === 'ok' && !z.sicher ? '≈ nur der Betrag passt – Name prüfen' : status[z.status]}</td>
     <td class="small">${esc(z.posten.text || z.posten.bereich)}</td><td class="r">${z.posten.art === 'ausgabe' ? '−' : ''}${fmt(z.posten.betrag)}</td>
     <td class="small">${z.buchungen.map(bu).join('<br>')}${z.status === 'diff' ? `<br><b class="${z.differenz > 0 ? 'minus' : 'plus'}">Differenz ${fmt(z.differenz)}</b>` : ''}</td>
-    <td>${edit && z.status === 'diff' ? `<button class="btn small" data-abg-betrag="${esc(z.posten.id)}" data-abg-wert="${Math.abs(z.buchungen[0].betrag)}">Bankbetrag übernehmen</button>` : ''}</td></tr>`;
+    <td>${edit && z.status === 'diff' && !z.posten.sponsor ? `<button class="btn small" data-abg-betrag="${esc(z.posten.id)}" data-abg-wert="${Math.abs(z.buchungen[0].betrag)}">Bankbetrag übernehmen</button>` : ''}</td></tr>`;
   return `<div class="card"><h2>Abgleich mit der Bank</h2>
     <p class="muted small">Positionen mit Zahlweg „Überweisung“ im Vergleich mit den Bankbuchungen beider Konten (60 Tage vor bis 120 Tage nach dem Fest).
       ${n('ok') + n('summe')} von ${ab.zeilen.length} gefunden${ab.zeilen.some(z => z.status === 'ok' && !z.sicher) ? ` (davon ${ab.zeilen.filter(z => z.status === 'ok' && !z.sicher).length} nur über den Betrag)` : ''}${n('diff') ? `, <b>${n('diff')} mit abweichendem Betrag</b>` : ''}${n('fehlt') ? `, <b>${n('fehlt')} ohne Bankbuchung</b>` : ''}.</p>
@@ -1664,6 +1683,8 @@ function viewAbschluss() {
   const warn = [];
   if (r.gesamt.unkontiert) warn.push(`<a href="#" id="toUnk">${r.gesamt.unkontiert} Buchung(en)</a> sind noch nicht kontiert.`);
   if (r.summeUmbuchungen.summe) warn.push(`Umbuchungen zwischen den eigenen Konten ergeben in Summe ${fmt(r.summeUmbuchungen.summe)} € statt 0 – eine Gegenbuchung fehlt oder ist falsch kontiert.`);
+  const offeneSp = S.veranstaltungen.flatMap(v => (S.sponsoring[v.id] || []).filter(e => e.status !== 'bezahlt' && e.betrag > 0).map(e => ({ v, e })));
+  if (offeneSp.length) warn.push(`${offeneSp.length} Sponsor-Rechnung(en) noch nicht bezahlt (${fmt(offeneSp.reduce((a, x) => a + x.e.betrag, 0))} €): ${offeneSp.slice(0, 6).map(x => esc(x.e.name)).join(', ')}${offeneSp.length > 6 ? ' …' : ''}.`);
   if (offeneVer.length) warn.push(`Noch offene Veranstaltungen: ${offeneVer.map(v => esc(v.name)).join(', ')}.`);
   festBestand.forEach(([v, b]) => warn.push(`Festkassa „${esc(v.name)}“ hat noch einen Bestand von ${eur(b)}.`));
   K.forEach(k => {
@@ -1866,6 +1887,353 @@ function exportAbschluss(r) {
   download(`Jahresabschluss_${S.jahr}.csv`, toCsv(rows));
 }
 
+// ── Sponsoring / Transparente ────────────────────────────────────────────────
+
+const RECHNUNG_TEXT = 'Für die Transparentwerbung bei unserem {fest} am {datum} erlauben wir uns, folgenden Betrag in Rechnung zu stellen:';
+const DANK_TEXT = 'Sehr geehrte Damen und Herren,\n\nherzlichen Dank für Ihre Unterstützung beim {fest}! Mit Ihrer Transparentwerbung über {betrag} helfen Sie uns, '
+  + 'Ausrüstung und Ausbildung unserer Feuerwehr zu finanzieren – und damit die Sicherheit in unserer Gemeinde.\n\n'
+  + 'Wir freuen uns, Sie auch beim nächsten Fest wieder bei uns begrüßen zu dürfen.';
+
+/** alle Bankbuchungs-IDs, die einem Sponsor zugeordnet sind */
+function vergebeneZahlungen() {
+  return new Set(Object.values(S.sponsoring).flat().map(e => e.buchungId).filter(Boolean));
+}
+/** zusätzlich: Bankbuchungen, die der Bankabgleich dieses Festes schon einer Position zuordnet (auch unter anderem Namen) */
+function belegteZahlungen(v) {
+  const ids = vergebeneZahlungen();
+  for (const z of bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen) for (const b of z.buchungen) ids.add(b.id);
+  return ids;
+}
+function sponsorZuBuchung(bid) {
+  for (const v of S.veranstaltungen) { const e = (S.sponsoring[v.id] || []).find(x => x.buchungId === bid); if (e) return { v, e }; }
+  return null;
+}
+const festDatum = v => `${deDate(v.von)}${v.bis && v.bis !== v.von ? '–' + deDate(v.bis) : ''}`;
+const spRef = (v, id) => doc(db, 'veranstaltungen', v.id, 'sponsoring', id);
+
+function sponsorKarte(v) {
+  const liste = S.sponsoring[v.id] || [];
+  const kassier = canBook() && !locked();
+  const edit = kassier || (canFest() && v.status === 'offen' && !locked());
+  const summe = f => liste.filter(f).reduce((a, e) => a + (e.betrag || 0), 0);
+  const belegt = belegteZahlungen(v);
+  const zahlungen = sponsorZahlungen(liste, S.buchungen, belegt);
+  const kand = sponsorKandidaten(S.buchungen, belegt, v)
+    .filter(k => veranstaltungImText(k.buchung.text, [v]) || Math.abs((new Date(k.buchung.datum) - new Date(v.von || k.buchung.datum)) / 864e5) <= 90);
+  const transparentPosten = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
+  return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Sponsoren / Transparente</h2>
+      ${edit ? `<button class="btn primary" id="spNeu">+ Sponsor</button>` : ''}
+      ${kassier && zahlungen.length ? `<button class="btn" id="spZahl">⇄ ${zahlungen.length} Zahlung(en) zuordnen</button>` : ''}
+      ${kassier && kand.length ? `<button class="btn" id="spKand" title="Zahlungseingänge mit Transparent/Sponsoring im Text, die noch keinem Sponsor gehören">⬇ ${kand.length} aus Überweisungen</button>` : ''}
+      ${edit ? `<button class="btn" id="spVorjahr">⧉ Aus anderem Fest übernehmen</button>` : ''}
+      ${liste.length && kassier ? `<button class="btn" id="spRe">🖨 Rechnungen</button>` : ''}${liste.length ? `<button class="btn" id="spDank">🖨 Dankesschreiben</button>` : ''}
+    </div>
+    <p class="muted small">${liste.length} Sponsoren · gesamt ${eur(summe(() => true))} · bezahlt ${eur(summe(e => e.status === 'bezahlt'))}${summe(e => e.status !== 'bezahlt') ? ` · <b class="minus">offen ${eur(summe(e => e.status !== 'bezahlt'))}</b>` : ''}.
+      Bezahlte Sponsoren stehen automatisch im Festkassabuch (Bereich „Transparente“). Zahlungen werden über die Rechnungsnummer oder Betrag und Namen erkannt.</p>
+    ${transparentPosten.length && edit ? `<div class="warnbox">Im Festkassabuch stehen ${transparentPosten.length} eingetragene Transparent-/Sponsor-Positionen (${eur(transparentPosten.reduce((a, p) => a + p.betrag, 0))}).
+      <button class="btn small" id="spAusPosten">In Sponsoren umwandeln</button> – sonst zählen sie doppelt, sobald Sponsoren erfasst sind.</div>` : ''}
+    ${liste.length ? `<div class="tablewrap"><table class="t karten"><thead><tr><th>Rechnung</th><th>Sponsor</th><th>Zahlweg</th><th>Status</th><th class="r">Betrag</th></tr></thead><tbody>
+      ${liste.map(e => `<tr class="click" data-sp="${esc(e.id)}"><td class="small k-a muted">${esc(e.rechnungsNr || '–')}</td>
+        <td class="k-b">${esc(e.name)}${e.belege?.length ? ` <span class="chip">📷 ${e.belege.length}</span>` : ''}${e.dankGedruckt ? ' <span class="chip">✉ Dank</span>' : ''}</td>
+        <td class="small k-zeile">${e.zahlweg === 'bar' ? 'bar' : 'Überweisung'}</td>
+        <td class="small k-zeile">${e.status === 'bezahlt' ? `<span class="chip ok">bezahlt ${deDate(e.bezahltAm)}${e.buchungId ? ' 🏦' : ''}</span>` : '<span class="chip warn">offen</span>'}</td>
+        <td class="r k-c">${fmt(e.betrag)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Noch keine Sponsoren erfasst.</p>'}
+  </div>`;
+}
+
+function bindSponsoren(v) {
+  $('#spNeu')?.addEventListener('click', () => sponsorDialog(v, null));
+  $$('#view [data-sp]').forEach(tr => tr.addEventListener('click', () => sponsorDialog(v, (S.sponsoring[v.id] || []).find(e => e.id === tr.dataset.sp))));
+  $('#spZahl')?.addEventListener('click', () => zahlungenDialog(v));
+  $('#spKand')?.addEventListener('click', () => kandidatenDialog(v));
+  $('#spVorjahr')?.addEventListener('click', () => vorjahrDialog(v));
+  $('#spRe')?.addEventListener('click', () => auswahlDruck(v, 'rechnung'));
+  $('#spDank')?.addEventListener('click', () => auswahlDruck(v, 'dank'));
+  $('#spAusPosten')?.addEventListener('click', async () => {
+    const tp = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
+    if (!confirm(`${tp.length} Positionen als Sponsoren übernehmen? Sie werden als bezahlt angelegt und aus dem Festkassabuch-Eintrag entfernt (das Ergebnis bleibt gleich). Überweisungen werden – wo möglich – gleich der Bankbuchung zugeordnet.`)) return;
+    const neu = tp.map(p => ({ p, id: doc(collection(db, 'x')).id, e: { name: p.text || 'Sponsor', betrag: p.betrag, zahlweg: p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', status: 'offen', rechnungsNr: '' } }));
+    const links = new Map(sponsorZahlungen(neu.map(x => ({ ...x.e, id: x.id })), S.buchungen, vergebeneZahlungen()).filter(m => m.sicher).map(m => [m.eintrag.id, m.buchung]));
+    const batch = writeBatch(db);
+    for (const { p, id, e } of neu) {
+      const b = links.get(id);
+      batch.set(spRef(v, id), { ...e, leistung: `Transparentwerbung ${v.name}`, status: 'bezahlt', bezahltAm: b?.datum || p.datum || v.bis || v.von,
+        buchungId: b?.id || '', bereich: p.bereich || 'Transparente', erfasstAm: serverTimestamp(), erfasstVon: S.uid });
+      batch.delete(doc(db, 'veranstaltungen', v.id, 'posten', p.id));
+    }
+    logTo(batch, 'sponsoring', `${v.name}: ${tp.length} Festkassa-Positionen in Sponsoren umgewandelt (${links.size} Zahlungen zugeordnet)`);
+    await batch.commit().catch(fail);
+    toast(`${tp.length} Sponsoren angelegt, ${links.size} Überweisungen zugeordnet.`);
+  });
+}
+
+function sponsorDialog(v, e) {
+  const neu = !e;
+  const kassier = canBook() && !locked();
+  const edit = kassier || (canFest() && v.status === 'offen' && !locked());
+  const ro = edit ? '' : 'disabled';
+  e = e || { name: '', zusatz: '', strasse: '', plzOrt: '', email: '', leistung: `Transparentwerbung ${v.name}`, betrag: 0, zahlweg: 'ueberweisung', status: 'offen' };
+  const b = e.buchungId && S.buchungen.find(x => x.id === e.buchungId);
+  const namen = [...new Set(Object.values(S.sponsoring).flat().map(x => x.name))];
+  modal(neu ? 'Sponsor erfassen' : e.name, `
+    <label>Name / Firma<input id="sName" value="${esc(e.name)}" maxlength="120" list="spNamen" required ${ro}></label>
+    <datalist id="spNamen">${namen.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="row">
+      <label>z. H. / Zusatz<input id="sZusatz" value="${esc(e.zusatz || '')}" maxlength="120" ${ro}></label>
+      <label>E-Mail<input id="sMail" type="email" value="${esc(e.email || '')}" maxlength="120" ${ro}></label>
+    </div>
+    <div class="row">
+      <label>Straße<input id="sStr" value="${esc(e.strasse || '')}" maxlength="120" ${ro}></label>
+      <label>PLZ Ort<input id="sPlz" value="${esc(e.plzOrt || '')}" maxlength="120" ${ro}></label>
+    </div>
+    <label>Leistung<input id="sLeist" value="${esc(e.leistung || '')}" maxlength="200" ${ro}></label>
+    <div class="row">
+      <label>Betrag €<input id="sBetrag" class="num" inputmode="decimal" value="${e.betrag ? fmt(e.betrag) : ''}" ${ro}></label>
+      <label>Zahlweg<select id="sZw" ${ro}><option value="ueberweisung" ${e.zahlweg !== 'bar' ? 'selected' : ''}>Überweisung (Rechnung)</option><option value="bar" ${e.zahlweg === 'bar' ? 'selected' : ''}>bar in die Festkassa</option></select></label>
+      <label>Status<select id="sStatus" ${ro}><option value="offen" ${e.status !== 'bezahlt' ? 'selected' : ''}>offen</option><option value="bezahlt" ${e.status === 'bezahlt' ? 'selected' : ''}>bezahlt</option></select></label>
+      <label style="flex:0 1 150px">bezahlt am<input id="sBez" type="date" value="${esc(e.bezahltAm || '')}" ${ro}></label>
+    </div>
+    ${e.rechnungsNr ? `<p class="small">Rechnung <b>${esc(e.rechnungsNr)}</b> vom ${deDate(e.rechnungsDatum)}</p>` : ''}
+    ${b ? `<div class="okbox small">🏦 Bezahlt mit Bankbuchung ${deDate(b.datum)} ${fmt(b.betrag)} € (${esc(kontoById(b.konto)?.name || '')}): ${esc(splitBankText(b.text).partner || '')} – ${esc(splitBankText(b.text).zweck)}
+      ${kassier ? ' <a href="#" id="sLoesen">Zuordnung lösen</a>' : ''}</div>` : ''}
+    <label>Notiz<input id="sNotiz" value="${esc(e.notiz || '')}" maxlength="500" ${ro}></label>
+    <div id="sFotos"></div>`, {
+    wide: true, ok: 'Speichern', cancel: edit ? 'Abbrechen' : 'Schließen',
+    extra: [
+      ...(!neu && kassier ? [{ label: '🖨 Rechnung', onClick: async () => { await druckSponsoren(v, [e], 'rechnung'); return false; } }] : []),
+      ...(!neu ? [
+        { label: '🖨 Dankesschreiben', onClick: async () => { await druckSponsoren(v, [e], 'dank'); return false; } }] : []),
+      ...(!neu && kassier ? [{ label: 'Löschen', cls: 'danger', onClick: async () => {
+        if (!confirm(`Sponsor „${e.name}“ löschen?`)) return false;
+        await deleteDoc(spRef(v, e.id)); await belegeLoeschen(e.belege);
+        logTo(null, 'sponsoring', `${v.name}: Sponsor ${e.name} gelöscht`);
+      } }] : []),
+    ],
+    onOk: edit ? async () => {
+      const data = {
+        name: $('#sName').value.trim(), zusatz: $('#sZusatz').value.trim(), email: $('#sMail').value.trim(),
+        strasse: $('#sStr').value.trim(), plzOrt: $('#sPlz').value.trim(), leistung: $('#sLeist').value.trim(),
+        betrag: Math.abs(parseAmount($('#sBetrag').value) || 0), zahlweg: $('#sZw').value, status: $('#sStatus').value,
+        bezahltAm: $('#sBez').value || '', notiz: $('#sNotiz').value.trim(), belege: fotos.liste(),
+      };
+      if (!data.name) { toast('Bitte den Namen angeben.', true); return false; }
+      if (data.status === 'bezahlt' && !data.bezahltAm) data.bezahltAm = data.zahlweg === 'bar' ? (v.bis || v.von || today()) : today();
+      if (data.status !== 'bezahlt') { data.bezahltAm = ''; data.buchungId = ''; }
+      if (neu) await setDoc(neuRef, { ...data, rechnungsNr: '', buchungId: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid });
+      else await updateDoc(spRef(v, e.id), { ...data, geaendertVon: S.uid });
+      fotos.gespeichert();
+      logTo(null, 'sponsoring', `${v.name}: ${data.name} ${fmt(data.betrag)} (${data.status})`);
+    } : null,
+    onOpen: () => {
+      // bekannte Sponsoren: Anschrift aus früheren Einträgen übernehmen
+      $('#sName').addEventListener('change', () => {
+        const alt = Object.values(S.sponsoring).flat().find(x => x.name === $('#sName').value && x.id !== e.id);
+        if (!alt) return;
+        for (const [sel, f] of [['#sZusatz', 'zusatz'], ['#sMail', 'email'], ['#sStr', 'strasse'], ['#sPlz', 'plzOrt']]) if (!$(sel).value) $(sel).value = alt[f] || '';
+        if (!$('#sBetrag').value && alt.betrag) $('#sBetrag').value = fmt(alt.betrag);
+      });
+      $('#sZw').addEventListener('change', () => { if ($('#sZw').value === 'bar' && neu) { $('#sStatus').value = 'bezahlt'; $('#sBez').value = v.bis || v.von || today(); } });
+      $('#sLoesen')?.addEventListener('click', async ev => {
+        ev.preventDefault();
+        await updateDoc(spRef(v, e.id), { buchungId: '', status: 'offen', bezahltAm: '' }).catch(fail);
+        $('#dlg').close();
+      });
+    },
+  });
+  const neuRef = neu ? doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')) : null;
+  const fotos = belegeBox('#sFotos', {
+    basis: `belege/${v.jahr}/posten/${v.id}/sp_${neu ? neuRef.id : e.id}`, liste: e.belege, edit, titel: 'Fotos vom Transparent (für das Dankesschreiben)',
+    speichern: neu ? null : liste => updateDoc(spRef(v, e.id), { belege: liste }),
+  });
+}
+
+function zahlungenDialog(v) {
+  const z = sponsorZahlungen(S.sponsoring[v.id] || [], S.buchungen, belegteZahlungen(v));
+  modal('Zahlungen den Sponsoren zuordnen', `
+    <p class="muted small">Gefundene Zahlungseingänge (Feuerwehr- und Mannschaftskassa). Sichere Treffer sind angehakt; bei „nur Betrag“ bitte den Namen prüfen.</p>
+    <div class="tablewrap"><table class="t"><thead><tr><th></th><th>Sponsor</th><th class="r">Betrag</th><th>Bankbuchung</th><th>erkannt über</th></tr></thead><tbody>
+    ${z.map((m, i) => `<tr><td><input type="checkbox" data-zi="${i}" ${m.sicher ? 'checked' : ''}></td><td>${esc(m.eintrag.name)}<div class="muted small">${esc(m.eintrag.rechnungsNr || '')}</div></td>
+      <td class="r">${fmt(m.eintrag.betrag)}</td><td class="small">${deDate(m.buchung.datum)} ${fmt(m.buchung.betrag)} · ${bankText(m.buchung.text)}</td>
+      <td class="small">${m.sicher ? '✓ ' : '≈ '}${esc(m.grund)}</td></tr>`).join('')}</tbody></table></div>`, {
+    wide: true, ok: 'Zuordnen',
+    onOk: async () => {
+      const sel = $$('#dlg [data-zi]:checked').map(c => z[+c.dataset.zi]);
+      if (!sel.length) return;
+      const batch = writeBatch(db);
+      sel.forEach(m => batch.update(spRef(v, m.eintrag.id), { status: 'bezahlt', bezahltAm: m.buchung.datum, buchungId: m.buchung.id }));
+      logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Zahlung(en) zugeordnet`);
+      await batch.commit();
+      toast(`${sel.length} Sponsor(en) als bezahlt markiert.`);
+    },
+  });
+}
+
+function kandidatenDialog(v) {
+  const kand = sponsorKandidaten(S.buchungen, belegteZahlungen(v), v)
+    .filter(k => veranstaltungImText(k.buchung.text, [v]) || Math.abs((new Date(k.buchung.datum) - new Date(v.von || k.buchung.datum)) / 864e5) <= 90);
+  const andere = S.veranstaltungen.filter(x => x.id !== v.id);
+  modal('Sponsoren aus Überweisungen anlegen', `
+    <p class="muted small">Zahlungseingänge mit „Transparent“, „Sponsoring“ oder „Werbung“ im Text (bis 90 Tage um das Fest), die noch keinem Sponsor gehören.
+      Angehakt sind die, die kein anderes Fest nennen. Sie werden als bezahlt angelegt.</p>
+    <div class="tablewrap"><table class="t"><thead><tr><th></th><th>Name</th><th class="r">Betrag</th><th>Bankbuchung</th></tr></thead><tbody>
+    ${kand.map((k, i) => `<tr><td><input type="checkbox" data-ki="${i}" ${veranstaltungImText(k.buchung.text, andere) ? '' : 'checked'}></td>
+      <td><input data-kn="${i}" value="${esc(k.name)}" maxlength="120" style="width:100%"></td><td class="r">${fmt(k.betrag)}</td>
+      <td class="small">${deDate(k.buchung.datum)} · ${esc(kontoById(k.buchung.konto)?.name || '')} · ${esc(splitBankText(k.buchung.text).zweck.slice(0, 50))}</td></tr>`).join('')}</tbody></table></div>`, {
+    wide: true, ok: 'Anlegen',
+    onOk: async () => {
+      const sel = $$('#dlg [data-ki]:checked').map(c => +c.dataset.ki);
+      if (!sel.length) return;
+      const batch = writeBatch(db);
+      for (const i of sel) {
+        const k = kand[i];
+        batch.set(doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')), {
+          name: $(`#dlg [data-kn="${i}"]`).value.trim() || k.name, zusatz: '', strasse: '', plzOrt: '', email: '',
+          leistung: `Transparentwerbung ${v.name}`, betrag: k.betrag, zahlweg: 'ueberweisung', status: 'bezahlt',
+          bezahltAm: k.buchung.datum, buchungId: k.buchung.id, rechnungsNr: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+        });
+      }
+      logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Sponsoren aus Überweisungen angelegt`);
+      await batch.commit();
+      toast(`${sel.length} Sponsoren angelegt.`);
+    },
+  });
+}
+
+async function vorjahrDialog(v) {
+  // Sponsoren früherer Feste (auch aus Vorjahren) laden
+  const feste = (await getDocs(collection(db, 'veranstaltungen'))).docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(x => x.id !== v.id).sort((a, b) => (b.von || '').localeCompare(a.von || ''));
+  modal('Sponsoren aus anderem Fest übernehmen', `
+    <label>Fest<select id="vjFest">${feste.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}</select></label>
+    <div id="vjListe" style="margin-top:10px"></div>`, {
+    wide: true, ok: 'Übernehmen',
+    onOpen: () => {
+      const laden = async () => {
+        const id = $('#vjFest').value;
+        if (!id) { $('#vjListe').innerHTML = '<p class="muted">Keine anderen Feste.</p>'; return; }
+        const docs = (await getDocs(collection(db, 'veranstaltungen', id, 'sponsoring'))).docs.map(d => d.data());
+        const schon = new Set((S.sponsoring[v.id] || []).map(e => norm(e.name)));
+        $('#vjListe').innerHTML = docs.length ? `<p class="muted small">Name, Anschrift, Zahlweg und Betrag werden übernommen, Status „offen“, ohne Rechnungsnummer.</p>
+          <table class="t">${docs.sort((a, b) => a.name.localeCompare(b.name, 'de')).map((d, i) => `<tr><td><input type="checkbox" data-vj="${i}" ${schon.has(norm(d.name)) ? 'disabled' : 'checked'}></td>
+            <td>${esc(d.name)}${schon.has(norm(d.name)) ? ' <span class="muted small">(schon da)</span>' : ''}</td><td class="r">${fmt(d.betrag)}</td><td class="small">${d.zahlweg === 'bar' ? 'bar' : 'Überweisung'}</td></tr>`).join('')}</table>`
+          : '<p class="muted">Dieses Fest hat keine Sponsoren.</p>';
+        $('#vjListe').dataset.docs = JSON.stringify(docs.sort((a, b) => a.name.localeCompare(b.name, 'de')));
+      };
+      $('#vjFest').addEventListener('change', laden);
+      laden();
+    },
+    onOk: async () => {
+      const docs = JSON.parse($('#vjListe').dataset.docs || '[]');
+      const sel = $$('#dlg [data-vj]:checked').map(c => docs[+c.dataset.vj]);
+      if (!sel.length) return;
+      const batch = writeBatch(db);
+      for (const d of sel) {
+        batch.set(doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')), {
+          name: d.name, zusatz: d.zusatz || '', strasse: d.strasse || '', plzOrt: d.plzOrt || '', email: d.email || '',
+          leistung: `Transparentwerbung ${v.name}`, betrag: d.betrag || 0, zahlweg: d.zahlweg === 'bar' ? 'bar' : 'ueberweisung',
+          status: 'offen', bezahltAm: '', buchungId: '', rechnungsNr: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+        });
+      }
+      logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Sponsoren aus anderem Fest übernommen`);
+      await batch.commit();
+      toast(`${sel.length} Sponsoren übernommen.`);
+    },
+  });
+}
+
+function auswahlDruck(v, art) {
+  const liste = S.sponsoring[v.id] || [];
+  const vor = e => art === 'rechnung' ? !e.rechnungsNr && e.zahlweg !== 'bar' : e.status === 'bezahlt' && !e.dankGedruckt;
+  modal(art === 'rechnung' ? 'Rechnungen drucken' : 'Dankesschreiben drucken', `
+    <p class="muted small">${art === 'rechnung' ? 'Vorausgewählt: Sponsoren mit Überweisung, die noch keine Rechnung haben. Rechnungsnummern werden beim Drucken fortlaufend vergeben. Für Barzahler wird eine Quittung gedruckt.'
+      : 'Vorausgewählt: bezahlte Sponsoren ohne bisher gedrucktes Dankesschreiben. Das erste Foto des Transparents wird eingefügt.'}</p>
+    <label class="check"><input type="checkbox" id="adAlle"> alle auswählen</label>
+    <table class="t">${liste.map((e, i) => `<tr><td><input type="checkbox" data-ad="${i}" ${vor(e) ? 'checked' : ''}></td><td>${esc(e.name)}</td>
+      <td class="small">${esc(e.rechnungsNr || '')}</td><td class="r">${fmt(e.betrag)}</td><td class="small">${e.status === 'bezahlt' ? 'bezahlt' : 'offen'}${e.belege?.some(x => /^image\//.test(x.typ)) ? ' · 📷' : ''}</td></tr>`).join('')}</table>
+    <p class="muted small">Tipp: Im Druckdialog „Als PDF speichern“ wählen, um die Rechnungen per E-Mail zu verschicken.</p>`, {
+    wide: true, ok: 'Drucken',
+    onOpen: () => $('#adAlle').addEventListener('change', ev => $$('#dlg [data-ad]').forEach(c => { c.checked = ev.target.checked; })),
+    onOk: async () => {
+      const sel = $$('#dlg [data-ad]:checked').map(c => liste[+c.dataset.ad]);
+      if (!sel.length) { toast('Bitte mindestens einen Sponsor auswählen.', true); return false; }
+      await druckSponsoren(v, sel, art);
+    },
+  });
+}
+
+/** Rechnungsnummern fortlaufend je Jahr vergeben (Zähler in jahre/{jahr}.rechnungNr) */
+async function nummernVergeben(v, liste) {
+  const ohne = liste.filter(e => !e.rechnungsNr);
+  if (!ohne.length) return liste;
+  const jahr = v.jahr || S.jahr;
+  const heute = today();
+  const vergeben = await runTransaction(db, async tx => {
+    const ref = doc(db, 'jahre', String(jahr));
+    const snap = await tx.get(ref);
+    let n = snap.exists() ? (snap.data().rechnungNr || 0) : 0;
+    const out = ohne.map(e => ({ id: e.id, nr: rechnungsNummer(jahr, ++n) }));
+    tx.set(ref, { rechnungNr: n }, { merge: true });
+    for (const x of out) tx.update(spRef(v, x.id), { rechnungsNr: x.nr, rechnungsDatum: heute });
+    return out;
+  });
+  const map = new Map(vergeben.map(x => [x.id, x.nr]));
+  logTo(null, 'sponsoring', `${v.name}: Rechnungen ${vergeben.map(x => x.nr).join(', ')} vergeben`);
+  return liste.map(e => map.has(e.id) ? { ...e, rechnungsNr: map.get(e.id), rechnungsDatum: heute } : e);
+}
+
+async function druckSponsoren(v, liste, art) {
+  try {
+    if (art === 'rechnung') liste = await nummernVergeben(v, liste);
+  } catch (e) { fail(e); return; }
+  const A = S.allgemein;
+  const konto = kontoById(A.rechnungKonto || 'feuerwehr') || S.konten[0];
+  const fotoUrl = async e => {
+    const f = (e.belege || []).find(x => /^image\//.test(x.typ));
+    return f ? getDownloadURL(sRef(storage, f.pfad)).catch(() => '') : '';
+  };
+  const kopf = `<div class="kopf"><img src="icon.svg" alt=""><div><b style="font-size:14pt">Freiwillige Feuerwehr ${esc(A.ffName)}</b><br>
+    <span class="meta">${esc([A.strasse, A.plzOrt].filter(Boolean).join(', '))}${A.email ? ' · ' + esc(A.email) : ''}</span></div></div>`;
+  const anschrift = e => `<div class="empf">${esc(e.name)}${e.zusatz ? '<br>' + esc(e.zusatz) : ''}${e.strasse ? '<br>' + esc(e.strasse) : ''}${e.plzOrt ? '<br>' + esc(e.plzOrt) : ''}</div>`;
+  const werte = e => ({ name: e.name, fest: v.name, datum: festDatum(v), betrag: eur(e.betrag), nr: e.rechnungsNr || '', ff: `Freiwillige Feuerwehr ${A.ffName}`, leistung: e.leistung || '' });
+  const absatz = t => esc(t).split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+  const seiten = [];
+  for (const e of liste) {
+    if (art === 'rechnung') {
+      const bar = e.zahlweg === 'bar';
+      const ziel = new Date(); ziel.setDate(ziel.getDate() + (A.zahlungsziel ?? 14));
+      seiten.push(`<section class="seite">${kopf}${anschrift(e)}
+        <p class="rechts">${esc(A.ort || A.ffName)}, am ${deDate(e.rechnungsDatum || today())}</p>
+        <h1>${bar ? 'Quittung' : 'Rechnung'} Nr. ${esc(e.rechnungsNr)}</h1>
+        ${absatz(fuelleVorlage(A.rechnungText || RECHNUNG_TEXT, werte(e)))}
+        <table><thead><tr><th>Pos.</th><th>Leistung</th><th class="r">Betrag</th></tr></thead><tbody>
+          <tr><td>1</td><td>${esc(e.leistung || `Transparentwerbung ${v.name}`)}<br><span class="meta">${esc(v.name)}, ${festDatum(v)}</span></td><td class="r">${eur(e.betrag)}</td></tr>
+          <tr class="sum"><td></td><td>Gesamtbetrag</td><td class="r">${eur(e.betrag)}</td></tr></tbody></table>
+        ${A.steuerhinweis ? `<p class="meta">${esc(A.steuerhinweis)}</p>` : ''}
+        ${bar ? `<p>Betrag dankend in bar erhalten${e.bezahltAm ? ' am ' + deDate(e.bezahltAm) : ''}.</p>`
+          : `<p>Bitte überweisen Sie den Betrag bis <b>${ziel.toLocaleDateString('de-AT')}</b> auf unser Konto:<br>
+            <b>${esc(konto?.name || '')}</b>${konto?.iban ? `, IBAN <b>${esc(konto.iban.replace(/(.{4})/g, '$1 ').trim())}</b>` : ''}<br>
+            Verwendungszweck: <b>Rechnung ${esc(e.rechnungsNr)}</b></p>`}
+        <p>Vielen Dank für Ihre Unterstützung!</p><p>Mit kameradschaftlichen Grüßen</p>
+        ${sig([`Kassier${A.kassier ? ' ' + A.kassier : ''}`, `Kommandant${A.kommandant ? ' ' + A.kommandant : ''}`])}</section>`);
+    } else {
+      const url = await fotoUrl(e);
+      seiten.push(`<section class="seite">${kopf}${anschrift(e)}
+        <p class="rechts">${esc(A.ort || A.ffName)}, am ${new Date().toLocaleDateString('de-AT')}</p>
+        <h1>Herzlichen Dank!</h1>
+        ${absatz(fuelleVorlage(A.dankText || DANK_TEXT, werte(e)))}
+        ${url ? `<img class="foto" src="${esc(url)}" alt="Transparent">` : ''}
+        <p>Mit kameradschaftlichen Grüßen</p>
+        ${sig([`Kommandant${A.kommandant ? ' ' + A.kommandant : ''}`, `Kassier${A.kassier ? ' ' + A.kassier : ''}`])}</section>`);
+    }
+  }
+  if (art === 'dank') {
+    const batch = writeBatch(db);
+    liste.forEach(e => batch.update(spRef(v, e.id), { dankGedruckt: today() }));
+    batch.commit().catch(() => {});
+  }
+  await printOut(seiten.join(''), { fuss: false });
+}
+
 /** Alle Belege des gewählten Jahres als ZIP (Konto/Nr_Datum_Text.pdf, Festkassa/Fest/…) mit Belegliste.csv */
 async function belegeZip() {
   if (!window.JSZip) { toast('ZIP-Bibliothek nicht geladen – bitte Seite neu laden.', true); return; }
@@ -1912,8 +2280,11 @@ async function belegeZip() {
 
 // ── Druckansichten ───────────────────────────────────────────────────────────
 
-function printOut(html) {
-  $('#print').innerHTML = html + `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>`;
+async function printOut(html, { fuss = true } = {}) {
+  $('#print').innerHTML = html + (fuss ? `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>` : '');
+  // Fotos erst fertig laden, sonst fehlen sie im Ausdruck
+  await Promise.all([...$('#print').querySelectorAll('img')].map(img => img.complete ? null
+    : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
   window.print();
 }
 const sig = names => `<div class="sig">${names.map(n => `<div>${esc(n)}</div>`).join('')}</div>`;
@@ -1994,6 +2365,24 @@ function viewVerwaltung() {
         <button class="btn" id="aSave">Speichern</button>
       </div><p class="muted small">Erscheint im Kopf des Feuerwehr-Rechnungsabschlusses und der Ausdrucke.</p></div>
 
+    <div class="card"><h2>Briefkopf, Rechnungen und Dankesschreiben</h2>
+      <div class="row">
+        <label>Straße<input id="aStr" value="${esc(S.allgemein.strasse || '')}" maxlength="80"></label>
+        <label>PLZ Ort<input id="aPlz" value="${esc(S.allgemein.plzOrt || '')}" maxlength="80"></label>
+        <label>E-Mail<input id="aMail" value="${esc(S.allgemein.email || '')}" maxlength="80"></label>
+      </div>
+      <div class="row">
+        <label>Kommandant<input id="aKdt" value="${esc(S.allgemein.kommandant || '')}" maxlength="80"></label>
+        <label>Kassier<input id="aKas" value="${esc(S.allgemein.kassier || '')}" maxlength="80"></label>
+        <label>Zahlungen auf Konto<select id="aKonto">${kontoOptions(S.allgemein.rechnungKonto || 'feuerwehr')}</select></label>
+        <label style="flex:0 1 120px">Zahlungsziel (Tage)<input id="aZiel" type="number" min="0" value="${S.allgemein.zahlungsziel ?? 14}"></label>
+      </div>
+      <label>Steuerhinweis auf der Rechnung (bitte mit Gemeinde/Steuerberatung klären)<input id="aSteuer" value="${esc(S.allgemein.steuerhinweis || '')}" maxlength="300" placeholder="z. B. Umsatzsteuerfrei gemäß …"></label>
+      <label>Rechnungstext<textarea id="aReText" rows="2" maxlength="1000">${esc(S.allgemein.rechnungText ?? RECHNUNG_TEXT)}</textarea></label>
+      <label>Dankesschreiben<textarea id="aDank" rows="6" maxlength="3000">${esc(S.allgemein.dankText ?? DANK_TEXT)}</textarea></label>
+      <p class="muted small">Platzhalter: {name} Sponsor, {fest} Veranstaltung, {datum} Festdatum, {betrag}, {nr} Rechnungsnummer, {ff} Feuerwehr, {leistung}.</p>
+      <button class="btn primary" id="aBriefSave">Speichern</button></div>
+
     <div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Kategorien (Kontenplan)</h2><button class="btn" id="newKat">+ Kategorie</button>
       ${S.kategorienGeladen ? '<button class="btn" id="addKatDefaults">Fehlende Standard-Kategorien ergänzen</button>' : '<button class="btn primary" id="saveKatDefaults">Standard-Kategorien speichern</button>'}</div>
       <p class="muted small">Die Feuerwehrkassa wird nach den <b>Voranschlagsposten (V-P)</b> des Feuerwehr-Rechnungsabschlusses für die Gemeinde kontiert; die Mannschaftskassa hat eigene Kategorien.
@@ -2039,7 +2428,17 @@ function viewVerwaltung() {
   });
   $('#aSave')?.addEventListener('click', async () => {
     const data = { ffName: $('#aFf').value.trim(), gemeinde: $('#aGde').value.trim(), ort: $('#aOrt').value.trim() };
-    await setDoc(doc(db, 'config', 'allgemein'), data).catch(fail);
+    await setDoc(doc(db, 'config', 'allgemein'), data, { merge: true }).catch(fail);
+    toast('Gespeichert.');
+  });
+  $('#aBriefSave')?.addEventListener('click', async () => {
+    const data = {
+      strasse: $('#aStr').value.trim(), plzOrt: $('#aPlz').value.trim(), email: $('#aMail').value.trim(),
+      kommandant: $('#aKdt').value.trim(), kassier: $('#aKas').value.trim(), rechnungKonto: $('#aKonto').value,
+      zahlungsziel: Math.max(0, parseInt($('#aZiel').value, 10) || 0), steuerhinweis: $('#aSteuer').value.trim(),
+      rechnungText: $('#aReText').value.trim(), dankText: $('#aDank').value.trim(),
+    };
+    await setDoc(doc(db, 'config', 'allgemein'), data, { merge: true }).catch(fail);
     toast('Gespeichert.');
   });
   $$('#view [data-kat]').forEach(b => b.addEventListener('click', () => katDialog(katById(b.dataset.kat))));

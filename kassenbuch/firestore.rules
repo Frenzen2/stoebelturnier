@@ -113,6 +113,20 @@ service cloud.firestore {
         && (resource == null || !locked(resource.data.jahr));
       allow delete: if isAdmin() && !locked(resource.data.jahr);
 
+      // Sponsoren / Transparente: Kassier jederzeit (Zahlungen kommen oft nach dem Fest), Festkassa nur bei offenem Fest
+      match /sponsoring/{sid} {
+        function ev() { return get(/databases/$(database)/documents/veranstaltungen/$(vid)).data; }
+        function sp() { return request.resource.data; }
+        allow read: if isMember();
+        allow create, update: if (isKassier() || (isFest() && ev().status == 'offen')) && !locked(ev().jahr)
+          && sp().name is string && sp().name.size() > 0 && sp().name.size() <= 120
+          && sp().betrag is int && sp().betrag >= 0
+          && sp().zahlweg in ['ueberweisung', 'bar']
+          && sp().status in ['offen', 'bezahlt']
+          && (!('belege' in sp()) || (sp().belege is list && sp().belege.size() <= 30));
+        allow delete: if isKassier() && !locked(ev().jahr);
+      }
+
       match /posten/{pid} {
         function evt() { return get(/databases/$(database)/documents/veranstaltungen/$(vid)).data; }
         function p() { return request.resource.data; }

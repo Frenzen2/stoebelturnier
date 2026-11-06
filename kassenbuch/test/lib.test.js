@@ -408,3 +408,45 @@ test('Veranstaltung über weitere Suchbegriffe erkennen', async () => {
   // Gleichstand → keine Zuordnung
   assert.equal(veranstaltungImText('Wiesn Ballx', [{ id: 'a', name: 'Fest A', suchbegriffe: 'wiesn' }, { id: 'c', name: 'Fest C', suchbegriffe: 'wiesn' }]), null);
 });
+
+test('Sponsoring: Festkassabuch, Zahlungen zuordnen, Vorlagen', async () => {
+  const { sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, bankAbgleich } = await import('../lib.js');
+  const E = (id, name, betrag, extra = {}) => ({ id, name, betrag, zahlweg: 'ueberweisung', status: 'offen', ...extra });
+  const eintraege = [
+    E('a', 'Muster Bau GmbH', 10000, { rechnungsNr: '2026-001' }),
+    E('b', 'Tischlerei Holz', 5000, { rechnungsNr: '2026-002' }),
+    E('c', 'Autohaus Blitz', 5000, { rechnungsNr: '2026-003' }),
+    E('d', 'Bäckerei Korn', 3000, { zahlweg: 'bar', status: 'bezahlt', bezahltAm: '2026-09-20' }),
+    E('e', 'Ohne Zahlung', 8000, { rechnungsNr: '2026-005' }),
+  ];
+  const B = (id, betrag, text, extra = {}) => ({ id, konto: 'feuerwehr', datum: '2026-10-01', betrag, text, ...extra });
+  const buchungen = [
+    B('x1', 10000, 'Auftraggeber: Muster Bau Zahlungsreferenz: RE 2026 001'),          // Nummer im Text
+    B('x2', 5000, 'Auftraggeber: Tischlerei Holz e.U. Zahlungsreferenz: Transparent'),  // Name + Betrag
+    B('x3', 5000, 'Auftraggeber: Firma Q Zahlungsreferenz: Transparentwerbung'),       // nur Betrag (unsicher)
+    B('x4', 7500, 'Auftraggeber: Neu GmbH Zahlungsreferenz: Sponsoring Fest'),         // neuer Sponsor
+    B('x5', 9999, 'Zahlungsreferenz: Habenzinsen'),
+  ];
+  const z = sponsorZahlungen(eintraege, buchungen);
+  assert.deepEqual(z.map(m => [m.eintrag.id, m.buchung.id, m.sicher, m.grund]), [
+    ['a', 'x1', true, 'Rechnungsnummer'], ['b', 'x2', true, 'Betrag und Name'], ['c', 'x3', false, 'nur Betrag'],
+  ]);
+  const vergeben = new Set(z.map(m => m.buchung.id));
+  assert.deepEqual(sponsorKandidaten(buchungen, vergeben).map(k => [k.buchung.id, k.name]), [['x4', 'Neu GmbH']]);
+  // nur bezahlte erscheinen im Festkassabuch
+  const bez = eintraege.map(e => z.find(m => m.eintrag.id === e.id) ? { ...e, status: 'bezahlt', buchungId: z.find(m => m.eintrag.id === e.id).buchung.id, bezahltAm: '2026-10-01' } : e);
+  const sp = sponsorPosten(bez);
+  assert.deepEqual(sp.map(p => [p.text, p.zahlweg, p.betrag, p.bereich]), [
+    ['Muster Bau GmbH', 'ueberweisung', 10000, 'Transparente'], ['Tischlerei Holz', 'ueberweisung', 5000, 'Transparente'],
+    ['Autohaus Blitz', 'ueberweisung', 5000, 'Transparente'], ['Bäckerei Korn', 'bar', 3000, 'Transparente'],
+  ]);
+  const a = veranstaltungsAbrechnung(sp, []);
+  assert.equal(a.einnahmen, 23000);
+  assert.equal(a.bestand, 3000);   // nur die Barzahlung ändert den Kassabestand
+  // Bankabgleich nutzt die feste Verknüpfung
+  const ab = bankAbgleich(sp, buchungen, { id: 'v', name: 'Fest 2026', von: '2026-09-19', bis: '2026-09-20' });
+  assert.deepEqual(ab.zeilen.filter(z => z.posten.sponsor).map(z => [z.posten.text, z.buchungen[0].id, z.sicher]),
+    [['Muster Bau GmbH', 'x1', true], ['Tischlerei Holz', 'x2', true], ['Autohaus Blitz', 'x3', true]]);
+  assert.equal(fuelleVorlage('Danke {name} für {betrag} beim {fest} {x}', { name: 'A', betrag: '50,00 €', fest: 'Wiesnfest' }), 'Danke A für 50,00 € beim Wiesnfest {x}');
+  assert.equal(rechnungsNummer(2026, 7), '2026-007');
+});
