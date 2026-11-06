@@ -348,3 +348,43 @@ test('Bisheriges Festkassabuch (Excel) übernehmen', async () => {
   assert.equal(a.bestand, 0);
   assert.equal(a.ergebnis, 422050);
 });
+
+test('Abgleich Festkassabuch ↔ Bank', async () => {
+  const { bankAbgleich } = await import('../lib.js');
+  const B = (id, konto, datum, betrag, text, extra = {}) => ({ id, konto, datum, betrag, text, ...extra });
+  const buchungen = [
+    B('g', 'MS', '2026-09-29', -173226, 'Empfänger: Max Muster Zahlungsreferenz: gschäftl fürs fest'),
+    B('s1', 'FW', '2026-09-22', 138851, 'Auftraggeber: Sumup Limited Verwendungszweck: PAYOUT'),
+    B('s2', 'FW', '2026-09-18', 493, 'Auftraggeber: Sumup Limited Verwendungszweck: PAYOUT'),
+    B('b1', 'MS', '2026-08-04', -27660, 'Empfänger: A Zahlungsreferenz: 12xBacadi'),
+    B('b2', 'MS', '2026-08-04', -15180, 'Empfänger: B Zahlungsreferenz: 7xBacardi'),
+    B('u1', 'MS', '2026-10-09', -33523, 'Empfänger: Brau Union Österreich AG Zahlungsreferenz: Rechnung 1'),
+    B('u2', 'MS', '2026-10-17', -17316, 'Empfänger: Brau Union Österreich AG Zahlungsreferenz: Rechnung 2'),
+    B('st', 'MS', '2026-10-23', -65350, 'Empfänger: Max Muster Zahlungsreferenz: Starzinger fürs Fest'),
+    B('e1', 'FW', '2026-09-23', 10000, 'Auftraggeber: EW-Bau Zahlungsreferenz: Transparent'),
+    B('e2', 'FW', '2026-09-24', 10000, 'Auftraggeber: Muster Immo GmbH Zahlungsreferenz: Werbung'),
+    B('x', 'MS', '2026-12-18', -15000, 'Empfänger: Hans Zahlungsreferenz: Schnaps fürs Wiesenfest 2026'),
+    B('w', 'MS', '2026-09-23', 1467298, 'Zahlungsreferenz: Wiesnfest', { veranstaltung: 'v', festArt: 'kassa' }),
+    B('alt', 'MS', '2026-03-01', -5000, 'Zahlungsreferenz: Wiesnfest Vorbereitung'),   // außerhalb des Zeitfensters
+  ];
+  const P = (text, art, betrag) => ({ id: text, text, art, betrag, zahlweg: 'ueberweisung', ergebnis: true, datum: '2026-09-21' });
+  const posten = [
+    P('Gschäftl', 'ausgabe', 173226), P('Bankomat Kassa', 'einnahme', 139344), P('Barcadi / Gin', 'ausgabe', 42840),
+    P('Brau Union', 'ausgabe', 50839), P('Starzinger', 'ausgabe', 65300), P('Muster Immo', 'einnahme', 10000),
+    P('EW-BAU Gmbh', 'einnahme', 10000), P('Elektro Neu', 'einnahme', 10000),
+    { ...P('Musik', 'ausgabe', 140000), zahlweg: 'bar' },   // bar: nicht im Abgleich
+  ];
+  const ab = bankAbgleich(posten, buchungen, { id: 'v', name: 'Wiesnfest 2026', von: '2026-09-20', bis: '2026-09-21' });
+  const st = Object.fromEntries(ab.zeilen.map(z => [z.posten.text, [z.status, z.buchungen.map(b => b.id).sort().join(','), z.sicher ?? null]]));
+  assert.deepEqual(st['Gschäftl'], ['ok', 'g', true]);
+  assert.deepEqual(st['Bankomat Kassa'].slice(0, 2), ['summe', 's1,s2']);
+  assert.deepEqual(st['Barcadi / Gin'].slice(0, 2), ['summe', 'b1,b2']);
+  assert.deepEqual(st['Brau Union'].slice(0, 2), ['summe', 'u1,u2']);
+  assert.deepEqual(st['Starzinger'].slice(0, 2), ['diff', 'st']);
+  assert.deepEqual(st['Muster Immo'], ['ok', 'e2', true]);
+  assert.deepEqual(st['EW-BAU Gmbh'], ['ok', 'e1', true]);
+  assert.equal(st['Elektro Neu'][0], 'fehlt');
+  assert.equal(ab.zeilen.find(z => z.posten.text === 'Starzinger').differenz, 50);
+  assert.equal(ab.zeilen.length, 8);
+  assert.deepEqual(ab.offen.map(b => b.id), ['x']);
+});

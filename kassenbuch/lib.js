@@ -822,6 +822,116 @@ export function festkassaExcel(table, { datumStandard = '' } = {}) {
   return { zeilen };
 }
 
+// ── Abgleich: Überweisungs-Positionen im Festkassabuch ↔ Bankbuchungen ─────
+//
+// Für jede Position mit Zahlweg „Überweisung“ wird die passende Bankbuchung (beide Konten) gesucht:
+//  1. gleicher Betrag (bei mehreren: ähnlichster Text, dann nächstes Datum)
+//  2. Summe mehrerer Buchungen desselben Auftraggebers/Empfängers (z. B. drei SumUp-Auszahlungen)
+//  3. Summe mehrerer Buchungen vom selben Tag (z. B. sechs Getränke-Einkäufe)
+//  4. Summe zweier Buchungen mit ähnlichem Text (z. B. zwei Brau-Union-Rechnungen)
+// Findet sich nichts, wird die Buchung mit dem ähnlichsten Text als Abweichung gezeigt.
+// Zusätzlich: Bankbuchungen, die das Fest nennen, aber keiner Position entsprechen.
+
+const STOP = new Set(['online', 'banking', 'empfanger', 'auftraggeber', 'zahlungsreferenz', 'verwendungszweck', 'rechnung', 'pichl', 'feuerwehr',
+  'freiwillige', 'gmbh', 'fur', 'furs', 'und', 'nummer', 'wiesenfest', 'wiesnfest', 'fest', 'festl', '2024', '2025', '2026', '2027']);
+const woerter = t => new Set(norm(t).replace(/[^a-z0-9 ]+/g, ' ').split(' ')
+  .filter(w => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)));
+const kompakt = t => norm(t).split(/[^a-z0-9]+/).filter(w => w && !STOP.has(w) && !['gmbh', 'co', 'kg', 'eu', 'ag'].includes(w)).join('');
+const aehnlich = (a, b) => {
+  const wb = woerter(b);
+  let n = 0;
+  // kurze Firmennamen wie „EW-BAU“ oder „AKM“: zusammengeschrieben im Bank-Text enthalten
+  const ka = kompakt(a), kb = kompakt(b);
+  if (ka.length >= 3 && kb.includes(ka.slice(0, 8))) n++;
+  for (const w of woerter(a)) if ([...wb].some(x => x.startsWith(w.slice(0, 5)) || w.startsWith(x.slice(0, 5))
+    || (w.length >= 6 && x.length >= 6 && (w.includes(x) || x.includes(w))))) n++;
+  return n;
+};
+const tageZwischen = (a, b) => Math.abs((new Date(a) - new Date(b)) / 864e5);
+
+function teilsumme(kand, ziel, max = 8) {
+  // kleine Teilsummensuche (Cent genau) über höchstens 14 Kandidaten
+  const k = kand.slice(0, 14);
+  let best = null;
+  const rec = (i, rest, pick) => {
+    if (best) return;
+    if (rest === 0 && pick.length > 1) { best = [...pick]; return; }
+    if (rest <= 0 || pick.length >= max || i >= k.length) return;
+    rec(i + 1, rest - Math.abs(k[i].betrag), [...pick, k[i]]);
+    rec(i + 1, rest, pick);
+  };
+  rec(0, ziel, []);
+  return best;
+}
+
+export function bankAbgleich(posten, buchungen, v) {
+  const von = v.von || v.bis, bis = v.bis || v.von;
+  const imFenster = b => (!von || b.datum >= addTage(von, -60)) && (!bis || b.datum <= addTage(bis, 120));
+  const frei = buchungen.filter(b => imFenster(b) && !b.splits?.length
+    && (!b.veranstaltung || (b.veranstaltung === v.id && b.festArt !== 'kassa')));
+  const benutzt = new Set();
+  const zeilen = [];
+  const ue = posten.filter(p => !p.bank && (p.art === 'einnahme' || p.art === 'ausgabe') && p.zahlweg === 'ueberweisung')
+    .sort((a, b) => b.betrag - a.betrag);
+  // zuerst alle genauen Treffer, damit Summen nicht die Einzelbuchungen „wegnehmen“:
+  //  a) gleicher Betrag UND ähnlicher Name (bester Name gewinnt)  b) gleicher Betrag, Name egal
+  let offenP = [];
+  const genau = (p, mitText) => {
+    const vz = p.art === 'ausgabe' ? -1 : 1;
+    return frei.filter(b => !benutzt.has(b.id) && b.betrag === vz * p.betrag && (!mitText || aehnlich(p.text, b.text) > 0))
+      .sort((a, b) => aehnlich(p.text, b.text) - aehnlich(p.text, a.text) || tageZwischen(a.datum, p.datum) - tageZwischen(b.datum, p.datum));
+  };
+  for (const p of ue) {
+    const k = genau(p, true)[0];
+    if (k) { benutzt.add(k.id); zeilen.push({ posten: p, status: 'ok', buchungen: [k], sicher: true }); } else offenP.push(p);
+  }
+  offenP = offenP.filter(p => {
+    const k = genau(p, false)[0];
+    if (!k) return true;
+    benutzt.add(k.id);
+    zeilen.push({ posten: p, status: 'ok', buchungen: [k], sicher: false });
+    return false;
+  });
+  for (const p of offenP) {
+    const vz = p.art === 'ausgabe' ? -1 : 1;
+    const kand = frei.filter(b => !benutzt.has(b.id) && Math.sign(b.betrag) === vz && Math.abs(b.betrag) < p.betrag);
+    let treffer = null;
+    // 2. gleicher Auftraggeber/Empfänger
+    const gruppen = new Map();
+    for (const b of kand) { const k = norm(splitBankText(b.text).partner); if (k) { if (!gruppen.has(k)) gruppen.set(k, []); gruppen.get(k).push(b); } }
+    for (const g of gruppen.values()) if (!treffer && g.length > 1) treffer = teilsumme(g, p.betrag);
+    // 3. gleicher Tag
+    if (!treffer) {
+      const tage = new Map();
+      for (const b of kand) { if (!tage.has(b.datum)) tage.set(b.datum, []); tage.get(b.datum).push(b); }
+      for (const g of tage.values()) if (!treffer && g.length > 1) treffer = teilsumme(g, p.betrag);
+    }
+    // 4. zwei Buchungen mit ähnlichem Text
+    if (!treffer) {
+      const aeh = kand.filter(b => aehnlich(p.text, b.text) > 0);
+      for (let i = 0; i < aeh.length && !treffer; i++) for (let j = i + 1; j < aeh.length && !treffer; j++)
+        if (Math.abs(aeh[i].betrag) + Math.abs(aeh[j].betrag) === p.betrag) treffer = [aeh[i], aeh[j]];
+    }
+    if (treffer) { treffer.forEach(b => benutzt.add(b.id)); zeilen.push({ posten: p, status: 'summe', buchungen: treffer, sicher: true }); continue; }
+    // Abweichung: ähnlichster Text mit gleichem Vorzeichen
+    const naechste = frei.filter(b => !benutzt.has(b.id) && Math.sign(b.betrag) === vz && aehnlich(p.text, b.text) > 0)
+      .sort((a, b) => aehnlich(p.text, b.text) - aehnlich(p.text, a.text) || Math.abs(Math.abs(a.betrag) - p.betrag) - Math.abs(Math.abs(b.betrag) - p.betrag))[0];
+    if (naechste) { benutzt.add(naechste.id); zeilen.push({ posten: p, status: 'diff', buchungen: [naechste], differenz: Math.abs(naechste.betrag) - p.betrag }); }
+    else zeilen.push({ posten: p, status: 'fehlt', buchungen: [] });
+  }
+  // Bankbuchungen, die das Fest nennen, aber keiner Position entsprechen (und nicht schon zugeordnet sind)
+  const offen = frei.filter(b => !benutzt.has(b.id) && !b.veranstaltung
+    && (veranstaltungImText(b.text, [v]) || /\bfest(l|es)?\b/.test(norm(b.text))));
+  const reihen = { diff: 0, fehlt: 1, summe: 2, ok: 3 };
+  zeilen.sort((a, b) => reihen[a.status] - reihen[b.status] || (a.posten.datum || '').localeCompare(b.posten.datum || ''));
+  return { zeilen, offen };
+}
+function addTage(iso, n) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 // ── CSV-Export ───────────────────────────────────────────────────────────────
 
 export function toCsv(rows) {

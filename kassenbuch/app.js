@@ -15,7 +15,7 @@ import {
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
-  FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel,
+  FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel, bankAbgleich,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -948,7 +948,7 @@ async function leseImportDatei(e) {
       if (k) konto = k.id;
       else ibanWarn = `Der Dateiname enthält die IBAN ${iban}, die keinem Konto zugeordnet ist. Bitte prüfen, ob das gewählte Konto stimmt.`;
     }
-    S.imp = { konto, datei: file.name, table, header: det.header, mapping: det.mapping, ibanWarn };
+    S.imp = { konto, datei: file.name, table, header: det.header, mapping: det.mapping, ibanWarn, iban };
     await pruefeImport();
   } catch (err) { fail(err); }
 }
@@ -1004,6 +1004,10 @@ async function importieren() {
       await batch.commit();
     }
     toast(`${neu.length} Umsätze importiert.`);
+    // IBAN aus dem Dateinamen beim Konto merken, damit es beim nächsten Import automatisch gewählt wird
+    if (I.iban && isAdmin() && !kontoById(I.konto)?.iban && !S.konten.some(k => cleanIban(k.iban) === I.iban)) {
+      updateDoc(doc(db, 'konten', I.konto), { iban: I.iban }).then(() => toast(`IBAN ${I.iban} bei ${kontoById(I.konto)?.name} gespeichert.`)).catch(() => {});
+    }
     S.imp = { konto: I.konto };
     S.filter = { konto: I.konto, kat: kontoById(I.konto)?.ohneKontierung ? '' : '__none', ver: '', q: '', richtung: '' };
     goTab('buchungen');
@@ -1143,6 +1147,8 @@ function viewVeranstaltung(v) {
       ${a.neutralEin || a.neutralAus ? `<tr><td class="muted">nicht im Ergebnis (Durchlaufposten)</td><td class="r muted">${fmt(a.neutralEin)}</td><td class="r muted">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}</tbody></table></div>
     </div>
 
+    ${abgleichKarte(v, edit)}
+
     <div class="card"><h2>Zugeordnete Bankbuchungen</h2>
       <p class="muted small">Zuordnen über <b>🏦 Bankbuchung zuordnen</b> oben oder beim Kontieren einer Buchung (Feld „Festkassabuch der Veranstaltung“).
         💶 = Geld zwischen Bank und Festkassa (steht im Festkassabuch), 🧾 = Einnahme/Ausgabe des Festes direkt über die Bank (z. B. Rechnung Getränke, SumUp).</p>
@@ -1158,6 +1164,7 @@ function viewVeranstaltung(v) {
   $('#zaehlung')?.addEventListener('click', () => zaehlDialog(v, null));
   $('#bankZuordnen')?.addEventListener('click', () => bankZuordnenDialog(v));
   $('#fkExcel')?.addEventListener('click', () => festkassaExcelDialog(v));
+  bindAbgleich(v);
   $('#barumsatz')?.addEventListener('click', async () => {
     if (!await confirmDlg('Barumsatz errechnen', `Es wurde kein (vollständiger) Kassasturz erfasst. Aus Ablieferungen, Barausgaben, Wechselgeld und sonstigen
       Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme (bar, zählt fürs Ergebnis) eingetragen – danach ist der Kassabestand 0.`, 'Eintragen')) return;
@@ -1239,6 +1246,53 @@ function zahlwegLabel(p) {
   if (p.bank) return `🏦 ${esc(kontoById(p.buchung?.konto)?.name || 'Bank')}`;
   if (!p.fluss) return 'bar';
   return p.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar';
+}
+
+// ── Abgleich Festkassabuch ↔ Bank ────────────────────────────────────────────
+
+function abgleichKarte(v, edit) {
+  const ab = bankAbgleich(S.posten[v.id] || [], S.buchungen, v);
+  if (!ab.zeilen.length && !ab.offen.length) return '';
+  const n = s => ab.zeilen.filter(z => z.status === s).length;
+  const bu = b => `<span class="nowrap">${esc(kontoById(b.konto)?.name || '')} ${deDate(b.datum)}</span> ${fmt(Math.abs(b.betrag))} <span class="muted">${esc((splitBankText(b.text).partner || '').slice(0, 30))} ${esc(splitBankText(b.text).zweck.slice(0, 40))}</span>`;
+  const status = { ok: '✓ gleicher Betrag', summe: '✓ Summe mehrerer Buchungen', diff: '⚠ Betrag weicht ab', fehlt: '✗ keine Bankbuchung gefunden' };
+  const probleme = ab.zeilen.filter(z => z.status === 'diff' || z.status === 'fehlt' || (z.status === 'ok' && !z.sicher));
+  const passt = ab.zeilen.filter(z => (z.status === 'ok' && z.sicher) || z.status === 'summe');
+  const zeile = z => `<tr><td class="small">${z.status === 'ok' && !z.sicher ? '≈ nur der Betrag passt – Name prüfen' : status[z.status]}</td>
+    <td class="small">${esc(z.posten.text || z.posten.bereich)}</td><td class="r">${z.posten.art === 'ausgabe' ? '−' : ''}${fmt(z.posten.betrag)}</td>
+    <td class="small">${z.buchungen.map(bu).join('<br>')}${z.status === 'diff' ? `<br><b class="${z.differenz > 0 ? 'minus' : 'plus'}">Differenz ${fmt(z.differenz)}</b>` : ''}</td>
+    <td>${edit && z.status === 'diff' ? `<button class="btn small" data-abg-betrag="${esc(z.posten.id)}" data-abg-wert="${Math.abs(z.buchungen[0].betrag)}">Bankbetrag übernehmen</button>` : ''}</td></tr>`;
+  return `<div class="card"><h2>Abgleich mit der Bank</h2>
+    <p class="muted small">Positionen mit Zahlweg „Überweisung“ im Vergleich mit den Bankbuchungen beider Konten (60 Tage vor bis 120 Tage nach dem Fest).
+      ${n('ok') + n('summe')} von ${ab.zeilen.length} gefunden${ab.zeilen.some(z => z.status === 'ok' && !z.sicher) ? ` (davon ${ab.zeilen.filter(z => z.status === 'ok' && !z.sicher).length} nur über den Betrag)` : ''}${n('diff') ? `, <b>${n('diff')} mit abweichendem Betrag</b>` : ''}${n('fehlt') ? `, <b>${n('fehlt')} ohne Bankbuchung</b>` : ''}.</p>
+    ${probleme.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th>Position</th><th class="r">Betrag</th><th>Bankbuchung</th><th></th></tr></thead><tbody>${probleme.map(zeile).join('')}</tbody></table></div>` : ''}
+    ${ab.offen.length ? `<h3>Bankbuchungen zum Fest ohne Position im Festkassabuch</h3>
+      <div class="tablewrap"><table class="t"><tbody>${ab.offen.map(b => `<tr><td class="small">${bu(b)}</td><td class="r">${money(b.betrag)}</td>
+        <td class="r nowrap">${edit ? `<button class="btn small" data-abg-neu="${esc(b.id)}">+ als Position (Überweisung)</button>` : ''}
+          ${canBook() && !locked() ? `<button class="btn small" data-bid="${esc(b.id)}">Öffnen</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted small">Gehört eine davon zu einem anderen Jahr oder Fest (z. B. „… Wiesenfest 2024“), einfach ignorieren oder beim Kontieren das richtige Fest wählen.</p>` : ''}
+    ${passt.length ? `<details style="margin-top:8px"><summary class="small">Gefundene Zuordnungen anzeigen (${passt.length})</summary>
+      <div class="tablewrap"><table class="t"><tbody>${passt.map(zeile).join('')}</tbody></table></div></details>` : ''}
+  </div>`;
+}
+
+function bindAbgleich(v) {
+  $$('#view [data-abg-betrag]').forEach(btn => btn.addEventListener('click', async () => {
+    const p = (S.posten[v.id] || []).find(x => x.id === btn.dataset.abgBetrag);
+    const neu = Number(btn.dataset.abgWert);
+    if (!confirm(`„${p.text}“ von ${fmt(p.betrag)} auf ${fmt(neu)} (Betrag laut Bank) ändern?`)) return;
+    await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { betrag: neu, geaendertVon: S.uid }).catch(fail);
+    logTo(null, 'festkassa', `${v.name}: ${p.text} ${fmt(p.betrag)} → ${fmt(neu)} (lt. Bank)`);
+  }));
+  $$('#view [data-abg-neu]').forEach(btn => btn.addEventListener('click', async () => {
+    const b = S.buchungen.find(x => x.id === btn.dataset.abgNeu);
+    const { partner, zweck } = splitBankText(b.text);
+    await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'posten')), {
+      art: b.betrag < 0 ? 'ausgabe' : 'einnahme', betrag: Math.abs(b.betrag), datum: b.datum, zeit: '', zahlweg: 'ueberweisung', ergebnis: true,
+      text: [partner, zweck].filter(Boolean).join(' – ').slice(0, 300), bereich: '', beleg: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+    }).catch(fail);
+    logTo(null, 'festkassa', `${v.name}: Position aus Bankbuchung ${deDate(b.datum)} ${fmt(b.betrag)} angelegt`);
+  }));
 }
 
 /** Bisheriges Festkassabuch (Excel) in diese Veranstaltung übernehmen */

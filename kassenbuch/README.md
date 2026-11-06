@@ -158,6 +158,13 @@ Zeilen über „Summe Transparente“ den Bereich „Transparente“. Übersprun
 Steckt in der Zeile „Bank Einzahlung“ zusätzlich eine Überweisung (z. B. Transparente), diese als eigene Position oder
 Bankbuchung (🧾) ergänzen. Erneutes Übernehmen ersetzt die zuvor übernommenen Positionen.
 
+**Abgleich mit der Bank:** Unter dem Festkassabuch vergleicht die App jede Position mit Zahlweg *Überweisung* mit den
+Bankbuchungen beider Konten (60 Tage vor bis 120 Tage nach dem Fest) – gleicher Betrag, Summe mehrerer Buchungen
+(z. B. drei SumUp-Auszahlungen, sechs Getränke-Einkäufe am selben Tag, zwei Brau-Union-Rechnungen) oder ähnlicher Name mit
+abweichendem Betrag. Angezeigt werden Abweichungen (mit „Bankbetrag übernehmen“), Positionen ohne Bankbuchung,
+Treffer nur über den Betrag (Name prüfen) und Bankbuchungen, die das Fest nennen, aber im Festkassabuch fehlen
+(mit „+ als Position“).
+
 **Bankbuchungen dem Festkassabuch zuordnen** – in beiden Konten:
 
 - Beim Import geschieht das automatisch für Wechselgeld, Erlös und Einzahlungen, wenn der **Name der Veranstaltung**
