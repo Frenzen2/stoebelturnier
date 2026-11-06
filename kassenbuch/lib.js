@@ -741,6 +741,87 @@ export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   return r;
 }
 
+// ── Bisheriges Festkassabuch (Excel) übernehmen ─────────────────────────────
+//
+// Erwartet eine Tabelle mit Kopfzeile „Datum | Text | Einnahmen | Ausgaben | (Zahlweg) | Betrag | Zählt“.
+// Der Zahlweg steht in einer Spalte ohne Überschrift: „Überweisung“, „bar in/aus Geldtasche“, „Bank“.
+// Zeilen „Summe …“ geben den darüberliegenden Zeilen ihren Bereich (z. B. „Summe Transparente“).
+// Bankbewegungen (Wechselgeld abheben/zurück, Bareinzahlung) werden NICHT übernommen – sie kommen
+// über die zugeordneten Bankbuchungen ins Festkassabuch.
+
+const ZW_RE = { ueberweisung: /uberweis/, bar: /\bbar\b|geldtasche|kassa bar/, bank: /^bank\b/ };
+const zahlwegAus = v => {
+  const n = norm(v);
+  if (!n) return '';
+  if (ZW_RE.ueberweisung.test(n)) return 'ueberweisung';
+  if (ZW_RE.bar.test(n)) return 'bar';
+  if (ZW_RE.bank.test(n)) return 'bank';
+  return '';
+};
+
+export function festkassaExcel(table, { datumStandard = '' } = {}) {
+  const hi = table.findIndex(r => {
+    const n = r.map(c => norm(c));
+    return n.includes('text') && n.some(c => c.startsWith('einnahme')) && n.some(c => c.startsWith('ausgabe'));
+  });
+  if (hi < 0) return null;
+  const h = table[hi].map(c => norm(c));
+  const col = f => h.findIndex(f);
+  const ci = {
+    datum: col(c => c === 'datum'), text: col(c => c === 'text' || c === 'bezeichnung'),
+    ein: col(c => c.startsWith('einnahme')), aus: col(c => c.startsWith('ausgabe')),
+  };
+  // Zahlweg-Spalte: die Spalte, in der am häufigsten „Überweisung“/„bar …“/„Bank“ steht
+  const width = Math.max(...table.map(r => r.length));
+  let zw = -1, best = 0;
+  for (let c = 0; c < width; c++) {
+    if (Object.values(ci).includes(c)) continue;
+    const n = table.slice(hi + 1).filter(r => zahlwegAus(r[c])).length;
+    if (n > best) { best = n; zw = c; }
+  }
+  const num = v => (v === '' || v == null ? 0 : parseAmount(v) || 0);
+  const zeilen = [];
+  for (let i = hi + 1; i < table.length; i++) {
+    const r = table[i];
+    const text = String(r[ci.text] ?? '').trim();
+    const ein = num(r[ci.ein]), aus = num(r[ci.aus]);
+    const d = r[ci.datum];
+    // Zeilen ohne eigenes Datum bekommen das Datum der Veranstaltung
+    const datum = (d instanceof Date ? isoLocal(d) : parseDate(d)) || datumStandard;
+    if (/^ergebnis/i.test(norm(text))) break;          // darunter stehen nur noch Summen
+    if (/^summe/i.test(norm(text))) {
+      // Bereich für die Zeilen darüber: so weit nach oben, bis deren Beträge genau die Summe ergeben
+      const art = ein ? 'einnahme' : 'ausgabe';
+      const ziel = Math.abs(ein || aus);
+      const bereich = text.replace(/^summe\s*/i, '').trim();
+      if (ziel && bereich) {
+        let acc = 0;
+        for (let j = zeilen.length - 1; j >= 0; j--) {
+          if (zeilen[j].art !== art || zeilen[j].skip) break;
+          acc += zeilen[j].betrag;
+          if (acc === ziel) { for (let k = j; k < zeilen.length; k++) if (!zeilen[k].bereich) zeilen[k].bereich = bereich; break; }
+          if (acc > ziel) break;
+        }
+      }
+      continue;
+    }
+    if (!text) continue;                                // Zeilen ohne Text sind Summen oder leer
+    const zahlweg = zahlwegAus(r[zw]);
+    for (const [art, betrag] of [['einnahme', ein], ['ausgabe', aus]]) {
+      if (!betrag) continue;
+      const z = { quellZeile: i + 1, datum, text, art, betrag: Math.abs(betrag), zahlweg: zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', ergebnis: true, bereich: '' };
+      if (zahlweg === 'bank' || (KASSA_WORT.test(norm(text)) && zahlweg !== 'bar')) {
+        z.skip = 'Bankbewegung (Wechselgeld/Einzahlung) – bitte die Bankbuchung zuordnen 🏦';
+      } else if (!zahlweg) {
+        z.hinweis = 'Zahlweg fehlt – als bar übernommen';
+      }
+      zeilen.push(z);
+    }
+  }
+  if (!zeilen.length) return { zeilen: [] };
+  return { zeilen };
+}
+
 // ── CSV-Export ───────────────────────────────────────────────────────────────
 
 export function toCsv(rows) {

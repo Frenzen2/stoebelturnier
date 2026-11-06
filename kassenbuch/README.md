@@ -146,6 +146,18 @@ Typischer Ablauf, z. B. beim Wiesnfest:
    zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
 6. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
 
+**Ohne Kassasturz – Barumsatz errechnen:** Wird nicht je Stand gezählt, sondern nur der Erlös eingezahlt, fehlt der Barumsatz
+und der Kassabestand wird negativ. **🧮 Barumsatz errechnen** trägt ihn als Einnahme ein:
+Barumsatz = Ablieferungen + Barausgaben − Wechselgeld − sonstige Bareinnahmen. Das Ergebnis ist dann dasselbe wie bei der
+bisherigen Netto-Rechnung im Excel (Einzahlung + Überweisungen − Überweisungs-Ausgaben), die Bar-Positionen stehen aber brutto drin.
+
+**Bisheriges Festkassabuch aus Excel übernehmen** (⬆ Excel übernehmen): Aufbau *Datum | Text | Einnahmen | Ausgaben | Zahlweg*
+mit „Überweisung“, „bar in/aus Geldtasche“ oder „Bank“. Positionen ohne eigenes Datum bekommen das Datum der Veranstaltung,
+Zeilen über „Summe Transparente“ den Bereich „Transparente“. Übersprungen werden die Bankbewegungen
+(Wechselgeld, „Bank“, „Bank Einzahlung“) – dafür die Bankbuchungen zuordnen – sowie Summen- und Ergebniszeilen.
+Steckt in der Zeile „Bank Einzahlung“ zusätzlich eine Überweisung (z. B. Transparente), diese als eigene Position oder
+Bankbuchung (🧾) ergänzen. Erneutes Übernehmen ersetzt die zuvor übernommenen Positionen.
+
 **Bankbuchungen dem Festkassabuch zuordnen** – in beiden Konten:
 
 - Beim Import geschieht das automatisch für Wechselgeld, Erlös und Einzahlungen, wenn der **Name der Veranstaltung**

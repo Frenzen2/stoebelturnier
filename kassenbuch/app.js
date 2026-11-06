@@ -15,7 +15,7 @@ import {
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
-  FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE,
+  FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -1104,6 +1104,7 @@ function viewVeranstaltung(v) {
           <button class="btn" data-neu="wechselgeld" title="Nur für Bargeld, das nicht vom Bankkonto kommt">+ Wechselgeld (bar)</button>
           <button class="btn" data-neu="ablieferung" title="Nur für Bargeld, das nicht über ein Bankkonto läuft">+ Ablieferung (bar)</button>` : ''}
         ${canBook() && !locked() ? `<button class="btn" id="bankZuordnen">🏦 Bankbuchung zuordnen</button>` : ''}
+        ${edit ? `<button class="btn" id="fkExcel" title="Bisheriges Festkassabuch aus Excel übernehmen">⬆ Excel übernehmen</button>` : ''}
         <span style="flex:1"></span>
         ${canBook() && !locked() ? `<button class="btn" id="verEdit">Bearbeiten</button>
           <button class="btn" id="verStatus">${v.status === 'offen' ? '✓ Abschließen' : 'Wieder öffnen'}</button>` : ''}
@@ -1112,7 +1113,8 @@ function viewVeranstaltung(v) {
       </div>
       <div class="grid">
         <div class="stat"><div class="lbl">Ergebnis (Gewinn/Verlust)</div><div class="val">${money(a.ergebnis)} €</div><div class="sub">Einnahmen ${fmt(a.einnahmen)} − Ausgaben ${fmt(a.ausgaben)}</div></div>
-        <div class="stat"><div class="lbl">Kassabestand Festkassa</div><div class="val ${a.bestand < 0 ? 'minus' : ''}">${eur(a.bestand)}</div><div class="sub">${a.bestand < 0 ? '⚠ negativ – es wurde mehr ausgegeben/abgeliefert als eingenommen. Fehlt eine Einnahme?' : a.bestand ? 'muss noch abgeliefert werden' : 'alles abgeliefert ✓'}</div></div>
+        <div class="stat"><div class="lbl">Kassabestand Festkassa</div><div class="val ${a.bestand < 0 ? 'minus' : ''}">${eur(a.bestand)}</div><div class="sub">${a.bestand < 0 ? '⚠ negativ – es wurde mehr ausgegeben/abgeliefert als eingenommen. Fehlt der Barumsatz (Kassasturz)?' : a.bestand ? 'muss noch abgeliefert werden' : 'alles abgeliefert ✓'}</div>
+          ${a.bestand < 0 && edit ? `<button class="btn small" id="barumsatz" style="margin-top:6px" title="Ohne Kassasturz: Barumsatz = Ablieferung + Barausgaben − Wechselgeld − sonstige Bareinnahmen">🧮 Barumsatz errechnen (${fmt(-a.bestand)})</button>` : ''}</div>
         <div class="stat"><div class="lbl">Bar: Einnahmen / Ausgaben</div><div class="val" style="font-size:1.2rem">${fmt(a.barEinnahmen)} / ${fmt(a.barAusgaben)}</div><div class="sub">Wechselgeld ${fmt(a.wechselgeld)} · abgeliefert ${fmt(a.ablieferung)}</div></div>
         <div class="stat"><div class="lbl">Überweisung / Bank: Einnahmen / Ausgaben</div><div class="val" style="font-size:1.2rem">${fmt(a.ueberwEinnahmen + a.bankEinnahmen)} / ${fmt(a.ueberwAusgaben + a.bankAusgaben)}</div>
           <div class="sub">Positionen mit Überweisung und zugeordnete Bankbuchungen${a.neutralEin || a.neutralAus ? ` · nicht im Ergebnis: +${fmt(a.neutralEin)} / −${fmt(a.neutralAus)}` : ''}</div></div>
@@ -1155,6 +1157,17 @@ function viewVeranstaltung(v) {
   $$('#view [data-neu]').forEach(b => b.addEventListener('click', () => postenDialog(v, { art: b.dataset.neu })));
   $('#zaehlung')?.addEventListener('click', () => zaehlDialog(v, null));
   $('#bankZuordnen')?.addEventListener('click', () => bankZuordnenDialog(v));
+  $('#fkExcel')?.addEventListener('click', () => festkassaExcelDialog(v));
+  $('#barumsatz')?.addEventListener('click', async () => {
+    if (!await confirmDlg('Barumsatz errechnen', `Es wurde kein (vollständiger) Kassasturz erfasst. Aus Ablieferungen, Barausgaben, Wechselgeld und sonstigen
+      Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme (bar, zählt fürs Ergebnis) eingetragen – danach ist der Kassabestand 0.`, 'Eintragen')) return;
+    await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'posten')), {
+      art: 'einnahme', zahlweg: 'bar', ergebnis: true, betrag: -a.bestand, datum: v.bis || v.von || today(), zeit: '',
+      bereich: 'Barumsatz', text: 'Barumsatz errechnet aus Ablieferung (ohne Kassasturz)', beleg: '', errechnet: true,
+      erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+    }).catch(fail);
+    logTo(null, 'festkassa', `${v.name}: Barumsatz errechnet ${fmt(-a.bestand)}`);
+  });
   $$('#view [data-posten]').forEach(tr => tr.addEventListener('click', () => {
     const p = (S.posten[v.id] || []).find(x => x.id === tr.dataset.posten);
     if (p.stueckelung) zaehlDialog(v, p); else postenDialog(v, p);
@@ -1226,6 +1239,72 @@ function zahlwegLabel(p) {
   if (p.bank) return `🏦 ${esc(kontoById(p.buchung?.konto)?.name || 'Bank')}`;
   if (!p.fluss) return 'bar';
   return p.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar';
+}
+
+/** Bisheriges Festkassabuch (Excel) in diese Veranstaltung übernehmen */
+function festkassaExcelDialog(v) {
+  let X = null;
+  const vorhanden = (S.posten[v.id] || []).filter(p => p.quelle === 'excel');
+  const zeichne = () => {
+    if (!X) { $('#fxPrev').innerHTML = ''; return; }
+    if (!X.res) { $('#fxPrev').innerHTML = '<div class="warnbox">In diesem Blatt wurde keine Kopfzeile mit „Text“, „Einnahmen“ und „Ausgaben“ gefunden.</div>'; return; }
+    const z = X.res.zeilen, uebern = z.filter(r => !r.skip);
+    const s = (f, a) => fmt(uebern.filter(r => r.art === a && f(r)).reduce((x, r) => x + r.betrag, 0));
+    $('#fxPrev').innerHTML = `<p><b>${uebern.length}</b> Positionen werden übernommen, <b>${z.length - uebern.length}</b> übersprungen.<br>
+        Überweisung: Einnahmen ${s(r => r.zahlweg === 'ueberweisung', 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'ueberweisung', 'ausgabe')}<br>
+        Bar: Einnahmen ${s(r => r.zahlweg === 'bar', 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'bar', 'ausgabe')}</p>
+      <div class="tablewrap" style="max-height:340px;overflow:auto"><table class="t"><thead><tr><th>Zeile</th><th>Text</th><th>Bereich</th><th>Art</th><th>Zahlweg</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
+      ${z.map(r => `<tr class="${r.skip ? 'muted' : ''}"><td class="small">${r.quellZeile}</td><td class="small">${esc(r.text)}</td><td class="small">${esc(r.bereich)}</td>
+        <td class="small">${r.art === 'einnahme' ? 'Einnahme' : 'Ausgabe'}</td><td class="small">${r.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar'}</td>
+        <td class="r">${fmt(r.betrag)}</td><td class="small">${r.skip ? '⏭ ' + esc(r.skip) : r.hinweis ? esc(r.hinweis) : ''}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+  const lesen = () => {
+    const t = X.tables[$('#fxSheet').value];
+    X.res = festkassaExcel(t, { datumStandard: v.bis || v.von || today() });
+    zeichne();
+  };
+  modal(`Festkassabuch „${v.name}“ aus Excel übernehmen`, `
+    <p class="muted small">Erwartet wird der Aufbau eures bisherigen Festkassabuchs: <b>Datum | Text | Einnahmen | Ausgaben | Zahlweg</b>
+      („Überweisung“, „bar in/aus Geldtasche“, „Bank“). Alle Positionen zählen fürs Ergebnis; bar kassierte bzw. bar bezahlte
+      Positionen ändern den Kassabestand. Zeilen mit Zahlweg „Bank“ und die Bareinzahlung werden übersprungen – die kommen über die
+      zugeordneten Bankbuchungen. Fehlt danach der Barumsatz, rechnet ihn „🧮 Barumsatz errechnen“ aus.</p>
+    <div class="row"><label>Excel-Datei<input type="file" id="fxFile" accept=".xlsx,.xls,.ods"></label>
+      <label>Blatt<select id="fxSheet"></select></label></div>
+    ${vorhanden.length ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="fxErsetzen" checked> ${vorhanden.length} früher aus Excel übernommene Positionen vorher löschen</label>` : ''}
+    <div id="fxPrev" style="margin-top:10px"></div>`, {
+    wide: true, ok: 'Übernehmen',
+    onOk: async () => {
+      const neu = X?.res?.zeilen?.filter(r => !r.skip) || [];
+      if (!neu.length) { toast('Keine Positionen zum Übernehmen.', true); return false; }
+      const ops = [];
+      if ($('#fxErsetzen')?.checked) vorhanden.forEach(p => ops.push(b => b.delete(doc(db, 'veranstaltungen', v.id, 'posten', p.id))));
+      neu.forEach((r, i) => ops.push(b => b.set(doc(collection(db, 'veranstaltungen', v.id, 'posten')), {
+        art: r.art, betrag: r.betrag, datum: r.datum, zeit: '', text: r.text.slice(0, 300), bereich: r.bereich.slice(0, 60), beleg: '',
+        zahlweg: r.zahlweg, ergebnis: r.ergebnis, quelle: 'excel', nr: i + 1, erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+      })));
+      for (let i = 0; i < ops.length; i += 200) {
+        const batch = writeBatch(db);
+        ops.slice(i, i + 200).forEach(f => f(batch));
+        if (i === 0) logTo(batch, 'festkassa', `${v.name}: ${neu.length} Positionen aus ${X.datei} übernommen`);
+        await batch.commit();
+      }
+      toast(`${neu.length} Positionen übernommen.`);
+    },
+    onOpen: () => {
+      $('#fxFile').addEventListener('change', async e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        if (!window.XLSX) { toast('Excel-Bibliothek nicht geladen – bitte Seite neu laden.', true); return; }
+        const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+        const tables = Object.fromEntries(wb.SheetNames.map(n => [n, window.XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })]));
+        const passend = wb.SheetNames.find(n => festkassaExcel(tables[n])?.zeilen?.length) || wb.SheetNames[0];
+        X = { tables, datei: f.name };
+        $('#fxSheet').innerHTML = wb.SheetNames.map(n => `<option ${n === passend ? 'selected' : ''}>${esc(n)}</option>`).join('');
+        lesen();
+      });
+      $('#fxSheet').addEventListener('change', lesen);
+    },
+  });
 }
 
 function bereichListe(v) {

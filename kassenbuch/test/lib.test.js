@@ -302,3 +302,49 @@ test('Festkassa: eigene Positionen bar/Überweisung, mit und ohne Ergebnis', () 
   const b2 = festkassaBuch([{ art: 'ausgabe', betrag: 1, datum: '2026-06-14', text: 'zurück', erfasstAm: 2000 }, { art: 'einnahme', betrag: 1, datum: '2026-06-14', text: 'Pfand', erfasstAm: 1000 }]);
   assert.deepEqual(b2.map(p => p.text), ['Pfand', 'zurück']);
 });
+
+test('Bisheriges Festkassabuch (Excel) übernehmen', async () => {
+  const { festkassaExcel } = await import('../lib.js');
+  const t = [
+    ['', 'Musterfest 2026', '', '', '', '', 'Zählt'],
+    ['Datum', 'Text', 'Einnahmen', 'Ausgaben', '', 'Betrag', 'JA/NEIN'],
+    [new Date(2026, 8, 10), 'Wechselgeld', '', 1000, 'Bank', -1000, 1],
+    [new Date(2026, 8, 23), 'Bank', 1000, '', 'Bank', 1000, 1],
+    ['', 'Bank Einzahlung', 5000, '', 'Überweisung', 5000, 1],
+    ['', 'Bankomat Kassa', 300.5, '', 'Überweisung', 300.5, 1],
+    ['', 'Firma A', 100, '', 'Überweisung', 100, 1],
+    ['', 'Firma B', 50, '', 'bar in Geldtasche', 0, 0],
+    ['', 'Firma C', 0, '', 'Überweisung', 0, 1],
+    ['', 'Summe Transparente', 150, '', '', 0, 0],
+    ['', 'Musik', '', 400, 'bar aus Geldtasche', 0, 0],
+    ['', 'Getränke', '', 1200, 'Überweisung', -1200, 1],
+    ['', 'Klowagen / Zeche', 80, 60, 'Überweisung', 20, 1],
+    ['', 'Ergebnis', '', '', '', 4220.5, ''],
+    ['', '', 6530.5, 2660, '', '', ''],
+  ];
+  const { zeilen } = festkassaExcel(t, { datumStandard: '2026-09-21' });
+  const ok = zeilen.filter(z => !z.skip);
+  assert.deepEqual(zeilen.filter(z => z.skip).map(z => z.text), ['Wechselgeld', 'Bank', 'Bank Einzahlung']);
+  assert.deepEqual(ok.map(z => [z.text, z.art, z.zahlweg, z.betrag, z.bereich]), [
+    ['Bankomat Kassa', 'einnahme', 'ueberweisung', 30050, ''],
+    ['Firma A', 'einnahme', 'ueberweisung', 10000, 'Transparente'],
+    ['Firma B', 'einnahme', 'bar', 5000, 'Transparente'],
+    ['Musik', 'ausgabe', 'bar', 40000, ''],
+    ['Getränke', 'ausgabe', 'ueberweisung', 120000, ''],
+    ['Klowagen / Zeche', 'einnahme', 'ueberweisung', 8000, ''],
+    ['Klowagen / Zeche', 'ausgabe', 'ueberweisung', 6000, ''],
+  ]);
+  assert.equal(ok[0].datum, '2026-09-21');   // ohne eigenes Datum: Datum der Veranstaltung
+  // Mit Bankbuchungen (Wechselgeld ab/zurück, Bareinzahlung) und errechnetem Barumsatz = Ergebnis wie im Excel
+  const bank = [
+    { festArt: 'kassa', betrag: -100000, buchung: { id: 'w', datum: '2026-09-10', text: 'Wechselgeld' } },
+    { festArt: 'kassa', betrag: 100000, buchung: { id: 'r', datum: '2026-09-23', text: 'Wechselgeld retour' } },
+    { festArt: 'kassa', betrag: 500000, buchung: { id: 'e', datum: '2026-09-23', text: 'Einzahlung' } },
+  ];
+  const posten = ok.map((z, i) => ({ ...z, nr: i + 1 }));
+  let a = veranstaltungsAbrechnung(posten, bank);
+  posten.push({ art: 'einnahme', zahlweg: 'bar', ergebnis: true, betrag: -a.bestand, datum: '2026-09-21' });
+  a = veranstaltungsAbrechnung(posten, bank);
+  assert.equal(a.bestand, 0);
+  assert.equal(a.ergebnis, 422050);
+});
