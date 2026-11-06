@@ -607,6 +607,20 @@ export const POSTEN_ARTEN = {
   ablieferung: { name: 'Ablieferung an Bank', vz: -1 },
 };
 
+// Eigene Positionen (Einnahme/Ausgabe) haben zusätzlich
+//  zahlweg  'bar' (aus/in die Festkassa – ändert den Kassabestand) oder 'ueberweisung' (über ein Bankkonto –
+//           steht im Festkassabuch, ändert den Kassabestand nicht)
+//  ergebnis true = zählt zum Ergebnis des Festes; false = Durchlaufposten (Pfand, Kaution, weitergeleitetes Geld …)
+// Wechselgeld und Ablieferung sind immer Bargeld und zählen nie zum Ergebnis.
+export const ZAHLWEGE = { bar: 'Bar aus der Festkassa', ueberweisung: 'Überweisung (Bankkonto)' };
+
+/** Zahlungsweg, Ergebnis-Wirkung und ob die Position den Kassabestand ändert. */
+export function postenInfo(p) {
+  const fluss = p.art === 'einnahme' || p.art === 'ausgabe';
+  const zahlweg = p.bank ? 'bank' : fluss ? (p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar') : 'bar';
+  return { fluss, zahlweg, ergebnis: fluss && p.ergebnis !== false, kassa: !(fluss && zahlweg === 'ueberweisung') };
+}
+
 export const STUECKELUNG = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
 
 export function stueckelungSumme(st) {
@@ -665,15 +679,21 @@ export function bankPosten(bankTeile) {
 }
 
 /** Sortiert Posten chronologisch und rechnet den laufenden Kassabestand mit. */
+const erfasst = p => (p.erfasstAm?.toMillis ? p.erfasstAm.toMillis() : Number(p.erfasstAm) || 0);
+
 export function festkassaBuch(posten) {
   const sorted = [...posten].sort((a, b) =>
     (a.datum || '').localeCompare(b.datum || '') || (a.zeit || '').localeCompare(b.zeit || '')
-    || (a.nr || 0) - (b.nr || 0));
+    // gleiche Zeit: in der Reihenfolge der Erfassung (Bankzeilen am selben Tag zuerst)
+    || erfasst(a) - erfasst(b) || (a.nr || 0) - (b.nr || 0));
   let bestand = 0;
   return sorted.map((p, i) => {
     const vz = POSTEN_ARTEN[p.art]?.vz || 0;
-    bestand += vz * Math.abs(p.betrag || 0);
-    return { ...p, lfd: i + 1, wirkung: vz * Math.abs(p.betrag || 0), bestand };
+    const info = postenInfo(p);
+    const betrag = vz * Math.abs(p.betrag || 0);       // Eingang (+) / Ausgang (−)
+    const wirkung = info.kassa ? betrag : 0;            // Änderung des Kassabestands
+    bestand += wirkung;
+    return { ...p, ...info, lfd: i + 1, betragVz: betrag, wirkung, bestand };
   });
 }
 
@@ -687,29 +707,37 @@ export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   const posten = [...eigenePosten, ...bankPosten(bankTeile)];
   const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const abs = p => Math.abs(p.betrag || 0);
-  const by = art => posten.filter(p => p.art === art);
+  const mit = posten.map(p => ({ p, i: postenInfo(p) }));
+  const pick = (art, f) => sum(mit.filter(x => x.p.art === art && f(x.i)), x => abs(x.p));
   const bereiche = new Map();
-  for (const p of posten) {
-    if (p.art !== 'einnahme' && p.art !== 'ausgabe') continue;
+  for (const { p, i } of mit) {
+    if (!i.ergebnis) continue;
     const key = p.bereich || (p.art === 'einnahme' ? 'Einnahmen allgemein' : 'Ausgaben allgemein');
     if (!bereiche.has(key)) bereiche.set(key, { bereich: key, einnahmen: 0, ausgaben: 0 });
     bereiche.get(key)[p.art === 'einnahme' ? 'einnahmen' : 'ausgaben'] += abs(p);
   }
   const bankRelevant = bankTeile.filter(t => t.festArt !== 'kassa');
   const r = {
-    wechselgeld: sum(by('wechselgeld'), abs),
-    barEinnahmen: sum(by('einnahme'), abs),
-    barAusgaben: sum(by('ausgabe'), abs),
-    ablieferung: sum(by('ablieferung'), abs),
+    wechselgeld: pick('wechselgeld', () => true),
+    ablieferung: pick('ablieferung', () => true),
+    barEinnahmen: pick('einnahme', i => i.ergebnis && i.zahlweg === 'bar'),
+    barAusgaben: pick('ausgabe', i => i.ergebnis && i.zahlweg === 'bar'),
+    ueberwEinnahmen: pick('einnahme', i => i.ergebnis && i.zahlweg === 'ueberweisung'),
+    ueberwAusgaben: pick('ausgabe', i => i.ergebnis && i.zahlweg === 'ueberweisung'),
+    neutralEin: pick('einnahme', i => !i.ergebnis),
+    neutralAus: pick('ausgabe', i => !i.ergebnis),
     bankEinnahmen: sum(bankRelevant.filter(t => t.betrag > 0), t => t.betrag),
     bankAusgaben: -sum(bankRelevant.filter(t => t.betrag < 0), t => t.betrag),
     bereiche: [...bereiche.values()].sort((a, b) => a.bereich.localeCompare(b.bereich, 'de')),
   };
-  r.bestand = r.wechselgeld + r.barEinnahmen - r.barAusgaben - r.ablieferung;
-  r.einnahmen = r.barEinnahmen + r.bankEinnahmen;
-  r.ausgaben = r.barAusgaben + r.bankAusgaben;
+  r.einnahmen = r.barEinnahmen + r.ueberwEinnahmen + r.bankEinnahmen;
+  r.ausgaben = r.barAusgaben + r.ueberwAusgaben + r.bankAusgaben;
   r.ergebnis = r.einnahmen - r.ausgaben;
   r.buch = festkassaBuch(posten);
+  r.bestand = r.buch.length ? r.buch.at(-1).bestand : 0;
+  // Mögliche Doppelerfassung: Überweisung im Festkassabuch UND gleiche Bankbuchung als Einnahme/Ausgabe zugeordnet
+  r.doppelt = mit.filter(({ p, i }) => i.ergebnis && i.zahlweg === 'ueberweisung'
+    && bankRelevant.some(t => Math.abs(t.betrag) === abs(p) && (t.betrag > 0) === (p.art === 'einnahme'))).map(x => x.p);
   return r;
 }
 

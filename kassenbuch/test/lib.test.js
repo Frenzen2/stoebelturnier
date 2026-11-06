@@ -6,7 +6,7 @@ import {
   jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, stueckelungSumme, parts, isKontiert,
   festArtVorschlag, veranstaltungImText, bankPosten,
   DEFAULT_KATEGORIEN, DEFAULT_REGELN, decodeText, ibanFromName, toCsv, splitBankText, suchbegriff,
-  belegNummern, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
+  belegNummern, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung, postenInfo,
 } from '../lib.js';
 
 test('Beträge', () => {
@@ -268,4 +268,37 @@ test('Festkassabuch-Zuordnung vorschlagen', () => {
   assert.equal(festArtVorschlag({ text: 'Zahlungsreferenz: 1,0 % p.a.Habenzinsen ab 2.000', betrag: 7239 }), 'bank');
   assert.equal(festArtVorschlag({ text: 'Empfänger: Bäckerei Neudorfer Verwendungszweck: Brot für Sonnwendfeuer', betrag: -23672 }), 'bank');
   assert.equal(festArtVorschlag({ text: 'Auftraggeber: Muster GmbH Zahlungsreferenz: Transparentwerbung Wiesnfest', betrag: 5000 }), 'bank');
+});
+
+test('Festkassa: eigene Positionen bar/Überweisung, mit und ohne Ergebnis', () => {
+  const posten = [
+    { art: 'wechselgeld', betrag: 50000, datum: '2026-06-12' },
+    { art: 'einnahme', betrag: 300000, datum: '2026-06-13', bereich: 'Schank' },                                      // bar, Ergebnis
+    { art: 'ausgabe', betrag: 20000, datum: '2026-06-13', bereich: 'Musik' },                                         // bar, Ergebnis
+    { art: 'ausgabe', betrag: 421000, datum: '2026-06-20', bereich: 'Getränke', zahlweg: 'ueberweisung' },           // Überweisung, Ergebnis
+    { art: 'einnahme', betrag: 10000, datum: '2026-06-13', bereich: 'Pfand', ergebnis: false },                      // bar, Durchlauf
+    { art: 'ausgabe', betrag: 10000, datum: '2026-06-14', bereich: 'Pfand', ergebnis: false },                       // bar, Durchlauf
+    { art: 'einnahme', betrag: 5000, datum: '2026-06-15', zahlweg: 'ueberweisung', ergebnis: false },                // Überweisung, Durchlauf
+  ];
+  const r = veranstaltungsAbrechnung(posten, []);
+  assert.equal(r.bestand, 50000 + 300000 - 20000 + 10000 - 10000);          // Überweisungen ändern den Bestand nicht
+  assert.equal(r.barEinnahmen, 300000);
+  assert.equal(r.barAusgaben, 20000);
+  assert.equal(r.ueberwAusgaben, 421000);
+  assert.equal(r.neutralEin, 15000);
+  assert.equal(r.neutralAus, 10000);
+  assert.equal(r.einnahmen, 300000);
+  assert.equal(r.ausgaben, 20000 + 421000);
+  assert.equal(r.ergebnis, 300000 - 441000);
+  assert.deepEqual(r.bereiche.map(b => b.bereich), ['Getränke', 'Musik', 'Schank']);   // Pfand nicht im Ergebnis
+  const ue = r.buch.find(p => p.bereich === 'Getränke');
+  assert.equal(ue.betragVz, -421000);
+  assert.equal(ue.wirkung, 0);
+  assert.deepEqual(postenInfo({ art: 'wechselgeld' }), { fluss: false, zahlweg: 'bar', ergebnis: false, kassa: true });
+  // Überweisung im Festkassabuch UND gleiche Bankbuchung als Ausgabe zugeordnet → Hinweis auf Doppelerfassung
+  const d = veranstaltungsAbrechnung(posten, [{ festArt: 'bank', betrag: -421000 }]);
+  assert.equal(d.doppelt.length, 1);
+  // gleicher Tag ohne Uhrzeit: Reihenfolge der Erfassung
+  const b2 = festkassaBuch([{ art: 'ausgabe', betrag: 1, datum: '2026-06-14', text: 'zurück', erfasstAm: 2000 }, { art: 'einnahme', betrag: 1, datum: '2026-06-14', text: 'Pfand', erfasstAm: 1000 }]);
+  assert.deepEqual(b2.map(p => p.text), ['Pfand', 'zurück']);
 });

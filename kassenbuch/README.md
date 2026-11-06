@@ -137,7 +137,11 @@ Typischer Ablauf, z. B. beim Wiesnfest:
    zugeordnet und erscheint dort automatisch als *Wechselgeld / Vorschuss* (🏦). Nichts doppelt eintragen.
 3. Nach dem Fest je Stand einen **🧮 Kassasturz** machen: Anzahl der Scheine und Münzen eingeben,
    das enthaltene Wechselgeld abziehen. Daraus wird die Einnahme. Alternativ Einnahmen mit **+ Einnahme** eintragen.
-4. **+ Barausgabe** für alles, was bar aus der Festkassa bezahlt wurde (mit Beleg-Nr.).
+4. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
+   - **Zahlweg**: *Bar aus der Festkassa* (ändert den Kassabestand) oder *Überweisung* (steht im Festkassabuch,
+     ändert den Kassabestand nicht – z. B. die Getränkerechnung, die der Kassier überweist);
+   - **zählt fürs Ergebnis**: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
+     Sie ändern (bar) den Kassabestand, aber nicht das Ergebnis und stehen in der Abrechnung getrennt.
 5. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
    zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
 6. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
@@ -153,6 +157,8 @@ Typischer Ablauf, z. B. beim Wiesnfest:
   - 💶 **Geld zwischen Bank und Festkassa** (Wechselgeld/Ablieferung) – steht im Festkassabuch, zählt nicht zum Ergebnis;
   - 🧾 **Einnahme/Ausgabe der Veranstaltung über die Bank** (Rechnung Getränke, SumUp …) – zählt zum Ergebnis des Festes,
     ändert den Kassabestand nicht. Wird nur von Hand zugeordnet.
+  - Eine Rechnung entweder als Position mit Zahlweg *Überweisung* eintragen **oder** die Bankbuchung als 🧾 zuordnen –
+    nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
 - In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
   Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
 - Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.
@@ -193,7 +199,7 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
 | `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), festArt (kassa/bank), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
-| `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, stueckelung |
+| `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false), stueckelung |
 | `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden |
 | `log/{id}` | Änderungsprotokoll: uid, name, wann, aktion, text |
 
