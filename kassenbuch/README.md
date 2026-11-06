@@ -20,7 +20,7 @@ eigenen Server, nur statische Dateien.
   Bereits importierte Umsätze werden übersprungen, überlappende Zeiträume sind also kein Problem.
 - **Kontenplan wie im Feuerwehr-Rechnungsabschluss**: Die Feuerwehrkassa wird nach den **Voranschlagsposten (V-P)**
   der Gemeinde kontiert (Einnahmen 298 … 871, Ausgaben 10 … 729). Die **Mannschaftskassa muss nicht kontiert werden**:
-  ihre Buchungen zählen nie als „unkontiert“. Festkassa oder Veranstaltung lassen sich bei Bedarf trotzdem zuordnen.
+  ihre Buchungen zählen nie als „unkontiert“; zuordnen lassen sie sich nur dem Festkassabuch einer Veranstaltung.
 - **Laufende Belegnummern** je Konto und Jahr in ELBA-Reihenfolge, wie in der bisherigen Excel-Liste.
 - **Kontieren**: Jede Buchung bekommt eine Kategorie aus dem Kontenplan und optional eine Veranstaltung.
   Mehrere Buchungen auf einmal kontieren, eine Buchung auf mehrere Kategorien aufteilen,
@@ -110,10 +110,10 @@ Wird er erneut importiert, wird er übersprungen. Zwei gleiche Umsätze am selbe
 
 **Kontenplan:** Für die Feuerwehrkassa sind die Voranschlagsposten des Feuerwehr-Rechnungsabschlusses angelegt
 (z. B. 753 lfd. Transferz. v. Gemeinden, 823 Zinsen, 829 Sonst. Einnahmen; 409 Ersatzteile, 616 Instandh. Geräte,
-728 Entgelte für sonst. Leistungen, 729 Sonst. Ausgaben). Die Mannschaftskassa wird nicht kontiert; dort kann man optional die Festkassa-Kategorie und eine Veranstaltung wählen.
+728 Entgelte für sonst. Leistungen, 729 Sonst. Ausgaben). Die Mannschaftskassa wird nicht kontiert; dort ordnet man nur Buchungen dem Festkassabuch einer Veranstaltung zu.
 Ob ein Konto kontiert werden muss, stellt man unter *Verwaltung → Bankkonten* ein („muss nicht kontiert werden“).
-Die Festkassa-Kategorie (Wechselgeld, Ablieferung) erscheint im Gemeinde-Abschluss bei Eingängen unter 829 und bei Ausgängen unter 729,
-so wie bisher in der Excel. Das lässt sich unter Verwaltung → Kategorien ändern.
+Wechselgeld-Abhebungen werden wie bisher mit 729, Einzahlungen von Festerlösen und Wechselgeld retour mit 829 kontiert;
+die Zuordnung zum Festkassabuch ist davon unabhängig (siehe „Festkassa für Veranstaltungen“).
 
 **Bisherige Excel übernehmen:** Raika-CSV des Jahres importieren, dann unter *Raika-Import → Kontierung aus der bisherigen Excel übernehmen*
 Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird über Datum und Betrag.
@@ -130,22 +130,32 @@ Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird übe
 
 ## Festkassa für Veranstaltungen
 
-Typischer Ablauf, z. B. beim Zeltfest:
+Typischer Ablauf, z. B. beim Wiesnfest:
 
-1. **Festkassa → + Veranstaltung** (Name, Datum, Verantwortlicher).
-2. **+ Wechselgeld**: Wechselgeld, das in die Kassen gegeben wird (je Stand oder gesamt).
+1. **Festkassa → + Veranstaltung** anlegen (Name, Datum, Verantwortlicher) – am besten **vor** dem Raika-Import.
+2. **Wechselgeld** wird von der Feuerwehr- oder Mannschaftskassa abgehoben. Diese Bankbuchung wird dem Festkassabuch
+   zugeordnet und erscheint dort automatisch als *Wechselgeld / Vorschuss* (🏦). Nichts doppelt eintragen.
 3. Nach dem Fest je Stand einen **🧮 Kassasturz** machen: Anzahl der Scheine und Münzen eingeben,
-   das enthaltene Wechselgeld abziehen. Daraus wird die Einnahme.
-   Alternativ Einnahmen direkt mit **+ Einnahme** eintragen.
+   das enthaltene Wechselgeld abziehen. Daraus wird die Einnahme. Alternativ Einnahmen mit **+ Einnahme** eintragen.
 4. **+ Barausgabe** für alles, was bar aus der Festkassa bezahlt wurde (mit Beleg-Nr.).
-5. **+ Ablieferung an Bank**, wenn das Geld eingezahlt wird. Danach sollte der Kassabestand 0 sein.
-6. Beim Kontieren der Bankbuchungen:
-   - die Einzahlung (und eine Wechselgeld-Abhebung) mit **„Festkassa: Ablieferung / Wechselgeld“**
-     und der Veranstaltung kontieren, damit sie nicht doppelt zählt;
-   - Rechnungen, die über die Bank bezahlt wurden (Getränke, Zelt, Musik), mit
-     **„Veranstaltungen – Ausgaben (Bank)“** und der Veranstaltung kontieren.
-7. Die Abrechnung zeigt dann das **Gesamtergebnis** aus Bar- und Bankbewegungen.
-   **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
+5. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
+   zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
+6. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
+
+**Bankbuchungen dem Festkassabuch zuordnen** – in beiden Konten:
+
+- Beim Import geschieht das automatisch für Wechselgeld, Erlös und Einzahlungen, wenn der **Name der Veranstaltung**
+  im Bank-Text steht (z. B. „Wechselgeld für Wiesnfest“, „Erlös Sonnwendfeuer“, „Zahlungsreferenz: Wiesnfest“).
+- Alles andere (z. B. „Wechselgeld retour“) im Festkassabuch über **🏦 Bankbuchung zuordnen**: Die App schlägt Buchungen
+  beider Konten rund um das Fest vor, die wahrscheinlichsten sind schon angehakt.
+- Oder beim Kontieren einer Buchung im Feld **„Festkassabuch der Veranstaltung“**.
+- Art der Zuordnung:
+  - 💶 **Geld zwischen Bank und Festkassa** (Wechselgeld/Ablieferung) – steht im Festkassabuch, zählt nicht zum Ergebnis;
+  - 🧾 **Einnahme/Ausgabe der Veranstaltung über die Bank** (Rechnung Getränke, SumUp …) – zählt zum Ergebnis des Festes,
+    ändert den Kassabestand nicht. Wird nur von Hand zugeordnet.
+- In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
+  Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
+- Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.
 
 ## Jahresabschluss
 
@@ -181,7 +191,7 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/F/U, konto, vp, vpE, vpA, inaktiv}] |
 | `config/allgemein` | ffName, gemeinde, ort (Kopf der Ausdrucke) |
 | `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
-| `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
+| `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), festArt (kassa/bank), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
 | `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, stueckelung |
 | `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden |

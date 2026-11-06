@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   parseAmount, parseDate, parseCsv, detectColumns, applyMapping, importIds, matchRule,
   jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, stueckelungSumme, parts, isKontiert,
+  festArtVorschlag, veranstaltungImText, bankPosten,
   DEFAULT_KATEGORIEN, DEFAULT_REGELN, decodeText, ibanFromName, toCsv, splitBankText, suchbegriff,
   belegNummern, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
 } from '../lib.js';
@@ -51,12 +52,17 @@ test('ELBA-CSV ohne Kopfzeile wird erkannt (echtes Format)', () => {
   assert.equal(matchRule(DEFAULT_REGELN, fw[0]).kategorie, 'vp_a728');   // Hilfssäckel
   assert.equal(matchRule(DEFAULT_REGELN, fw[1]).kategorie, 'vp_e753');   // Subvention
   assert.equal(matchRule(DEFAULT_REGELN, fw[3]).kategorie, 'vp_e823');   // Habenzinsen
-  assert.equal(matchRule(DEFAULT_REGELN, fw[6]).kategorie, 'festkassa');
+  // Wechselgeld-Abhebung: in der Feuerwehrkassa V-P 729 und Geld für die Festkassa
+  assert.equal(matchRule(DEFAULT_REGELN, fw[6]).kategorie, 'vp_a729');
+  assert.equal(matchRule(DEFAULT_REGELN, fw[6]).fest, 'kassa');
+  assert.equal(matchRule(DEFAULT_REGELN, fw[8]).kategorie, 'vp_e829');   // Wechselgeld retour
   assert.equal(matchRule(DEFAULT_REGELN, fw[9]).kategorie, 'vp_e829');   // Transparentwerbung
   // Mannschaftskassa wird nicht kontiert – nur Festkassa-Bewegungen werden erkannt
   assert.equal(matchRule(DEFAULT_REGELN, { ...rows[5], konto: 'mannschaft' }), null);
-  assert.equal(matchRule(DEFAULT_REGELN, { ...rows[6], konto: 'mannschaft' }).kategorie, 'festkassa');
-  assert.ok(DEFAULT_REGELN.every(r => DEFAULT_KATEGORIEN.some(k => k.id === r.kategorie)));
+  const ms = matchRule(DEFAULT_REGELN, { ...rows[6], konto: 'mannschaft' });
+  assert.equal(ms.kategorie, '');
+  assert.equal(ms.fest, 'kassa');
+  assert.ok(DEFAULT_REGELN.every(r => !r.kategorie || DEFAULT_KATEGORIEN.some(k => k.id === r.kategorie)));
 });
 
 test('Bank-Text zerlegen', () => {
@@ -129,15 +135,16 @@ test('Jahresabschluss', () => {
     { konto: 'feuerwehr', betrag: -50000, kategorie: 'umbuchung' },
     { konto: 'mannschaft', betrag: 50000, kategorie: 'umbuchung' },
     { konto: 'mannschaft', betrag: -890 },
-    { konto: 'mannschaft', betrag: 1248050, kategorie: 'festkassa', veranstaltung: 'v1' },
+    { konto: 'mannschaft', betrag: 1248050, veranstaltung: 'v1', festArt: 'kassa' },
   ];
   const r = jahresabschluss({ buchungen, konten, kategorien: DEFAULT_KATEGORIEN, anfang: { feuerwehr: 100000, mannschaft: 20000 } });
   assert.equal(r.proKonto.feuerwehr.ende, 100000 + 350000 - 41280 - 50000);
   assert.equal(r.proKonto.mannschaft.ende, 20000 + 50000 - 890 + 1248050);
+  assert.equal(parts(buchungen[5])[0].festArt, 'kassa');
   assert.equal(r.proKonto.feuerwehr.einnahmen, 350000);
   assert.equal(r.proKonto.feuerwehr.ausgaben, -41280);
   assert.equal(r.summeUmbuchungen.summe, 0);
-  assert.equal(r.gesamt.unkontiert, 1);
+  assert.equal(r.gesamt.unkontiert, 2);
   // Prüfsumme: Anfang + Einnahmen + Ausgaben + Umbuchungen = Ende
   for (const k of Object.values(r.proKonto)) assert.equal(k.anfang + k.einnahmen + k.ausgaben + k.umbuchungen, k.ende);
   assert.equal(r.ausgaben.at(-1).name, '⚠ noch nicht kontiert');
@@ -160,16 +167,28 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   ];
   const buch = festkassaBuch(posten);
   assert.equal(buch.at(-1).bestand, 70000);
+  // Bank: Einzahlung des Erlöses (Festkassa ↔ Bank) und Rechnungen/Einnahmen des Festes über die Bank
+  const bu = { id: 'b1', datum: '2026-06-15', text: 'Zahlungsreferenz: Erlös Zeltfest', konto: 'mannschaft' };
   const bank = [
-    { kategorie: 'festkassa', betrag: 1248050 },
-    { kategorie: 'a_fest', betrag: -421000 },
-    { kategorie: 'e_fest', betrag: 50000 },
+    { festArt: 'kassa', betrag: 1248050, buchung: bu },
+    { festArt: 'bank', kategorie: 'vp_a729', betrag: -421000 },
+    { festArt: 'bank', betrag: 50000 },
   ];
-  const r = veranstaltungsAbrechnung(posten, bank, DEFAULT_KATEGORIEN);
+  // Ablieferung jetzt aus der Bank statt händisch
+  const ohneAbl = posten.filter(p => p.art !== 'ablieferung');
+  const r = veranstaltungsAbrechnung(ohneAbl, bank);
   assert.equal(r.bestand, 70000);
+  assert.equal(r.ablieferung, 1248050);
   assert.equal(r.einnahmen, 820000 + 478050 + 50000);
   assert.equal(r.ausgaben, 30000 + 421000);
   assert.equal(r.ergebnis, 1348050 - 451000);
+  assert.equal(r.buch.length, 5);
+  const bankZeile = r.buch.find(p => p.bank);
+  assert.equal(bankZeile.art, 'ablieferung');
+  assert.equal(bankZeile.text, 'Erlös Zeltfest');
+  assert.equal(bankZeile.bestand, 70000);
+  // Abhebung (negativ) wird Wechselgeld in die Festkassa
+  assert.equal(bankPosten([{ festArt: 'kassa', betrag: -50000, buchung: { id: 'x', datum: '2026-06-11', text: 'Wechselgeld' } }])[0].art, 'wechselgeld');
   assert.equal(r.bereiche.length, 3);
 });
 
@@ -193,8 +212,8 @@ test('Feuerwehr-Rechnungsabschluss (Gemeinde)', () => {
     { konto: 'feuerwehr', betrag: 272723, kategorie: 'vp_e753' },
     { konto: 'feuerwehr', betrag: 13401, kategorie: 'vp_e823' },
     { konto: 'feuerwehr', betrag: -3535, kategorie: 'vp_a728' },
-    { konto: 'feuerwehr', betrag: -658500, kategorie: 'festkassa' },   // Wechselgeld → 729
-    { konto: 'feuerwehr', betrag: 658500, kategorie: 'festkassa' },    // retour → 829
+    { konto: 'feuerwehr', betrag: -658500, kategorie: 'vp_a729', veranstaltung: 'v1', festArt: 'kassa' },   // Wechselgeld
+    { konto: 'feuerwehr', betrag: 658500, kategorie: 'vp_e829', veranstaltung: 'v1', festArt: 'kassa' },    // retour
     { konto: 'feuerwehr', betrag: -1000, kategorie: 'umbuchung' },     // ohne V-P
     { konto: 'feuerwehr', betrag: -2000 },                             // unkontiert
   ];
@@ -236,4 +255,17 @@ test('Kontierung aus Excel übernehmen', () => {
   assert.deepEqual(r.treffer.map(t => [t.buchung.id, t.kategorie]), [['u1', 'vp_a728'], ['u2', 'vp_a729'], ['z1', 'vp_e823'], ['z2', 'vp_e823']]);
   assert.equal(r.ohneBuchung.length, 1);   // anderes Konto
   assert.equal(r.unbekannt.length, 1);     // 999
+});
+
+test('Festkassabuch-Zuordnung vorschlagen', () => {
+  const ver = [{ id: 'w', name: 'Wiesnfest 2025' }, { id: 's', name: 'Sonnwendfeuer 2025' }];
+  assert.equal(veranstaltungImText('Zahlungsreferenz: Wechselgeld für Wiesnfest', ver).id, 'w');
+  assert.equal(veranstaltungImText('Transparentwerbung Wiesenfest 2025', ver).id, 'w');
+  assert.equal(veranstaltungImText('Zahlungsreferenz: Erlös Sonnwendfeuer', ver).id, 's');
+  assert.equal(veranstaltungImText('Zahlungsreferenz: Wechselgeld retour', ver), null);
+  assert.equal(festArtVorschlag({ text: 'Zahlungsreferenz: Erlös Sonnwendfeuer', betrag: 296288 }), 'kassa');
+  assert.equal(festArtVorschlag({ text: 'Zahlungsreferenz: Wiesnfest', betrag: 1467298 }, true), 'kassa');
+  assert.equal(festArtVorschlag({ text: 'Zahlungsreferenz: 1,0 % p.a.Habenzinsen ab 2.000', betrag: 7239 }), 'bank');
+  assert.equal(festArtVorschlag({ text: 'Empfänger: Bäckerei Neudorfer Verwendungszweck: Brot für Sonnwendfeuer', betrag: -23672 }), 'bank');
+  assert.equal(festArtVorschlag({ text: 'Auftraggeber: Muster GmbH Zahlungsreferenz: Transparentwerbung Wiesnfest', betrag: 5000 }), 'bank');
 });

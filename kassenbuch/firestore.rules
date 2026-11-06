@@ -85,6 +85,7 @@ service cloud.firestore {
           && shortText(b().text, 500)
           && optText(b(), 'kategorie', 40)
           && optText(b(), 'veranstaltung', 40)
+          && (!('festArt' in b()) || b().festArt in ['', 'kassa', 'bank'])
           && optText(b(), 'notiz', 1000)
           && optText(b(), 'beleg', 40)
           && (!('splits' in b()) || (b().splits is list && b().splits.size() <= 20));

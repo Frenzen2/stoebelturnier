@@ -310,7 +310,7 @@ export function suchbegriff(text) {
 export function matchRule(regeln, b) {
   const t = norm(b.text);
   for (const r of regeln || []) {
-    if (!r.muster || !r.kategorie) continue;
+    if (!r.muster || !(r.kategorie || r.fest)) continue;
     if (r.richtung === '+' && b.betrag < 0) continue;
     if (r.richtung === '-' && b.betrag > 0) continue;
     if (r.konto && r.konto !== b.konto) continue;
@@ -346,7 +346,6 @@ export const DEFAULT_KATEGORIEN = [
   ...vpE.map(([nr, name]) => ({ id: `vp_e${nr}`, nr, vp: nr, name, art: 'E', konto: 'feuerwehr' })),
   ...vpA.map(([nr, name]) => ({ id: `vp_a${nr}`, nr, vp: nr, name, art: 'A', konto: 'feuerwehr' })),
   // beide Konten
-  { id: 'festkassa', nr: 'F', name: 'Festkassa: Ablieferung / Wechselgeld', art: 'F', konto: '', vpE: '829', vpA: '729' },
   { id: 'umbuchung', nr: 'U', name: 'Umbuchung zwischen eigenen Konten', art: 'U', konto: '' },
 ];
 
@@ -354,7 +353,10 @@ export const DEFAULT_KATEGORIEN = [
 // Reihenfolge zählt: die erste passende Regel gewinnt.
 const FW = 'feuerwehr';
 export const DEFAULT_REGELN = [
-  { muster: 'Wechselgeld|Erlös', kategorie: 'festkassa', richtung: '', konto: '' },
+  // Geld zwischen Bank und Festkassa: in der Feuerwehrkassa wie bisher 729 (Abhebung) / 829 (Einzahlung)
+  { muster: 'Wechselgeld', kategorie: 'vp_a729', richtung: '-', konto: FW, fest: 'kassa' },
+  { muster: 'Wechselgeld|Erlös|Bareinzahlung|Ablieferung', kategorie: 'vp_e829', richtung: '+', konto: FW, fest: 'kassa' },
+  { muster: 'Wechselgeld|Erlös|Bareinzahlung|Ablieferung', kategorie: '', richtung: '', konto: '', fest: 'kassa' },
   { muster: 'Umlage|BEWERB|Startgeld|Abzeichen|ASLP|-LG.|Lehrgang|Brennpunkt|Wix.com', kategorie: 'vp_a729', richtung: '-', konto: FW },
   { muster: 'Kontoführung|Buchungsentgelt|Kapitalertragsteuer|Kontoentgelt|Hilfssäckel|Jahrbuch', kategorie: 'vp_a728', richtung: '-', konto: FW },
   { muster: 'Befüllung', kategorie: 'vp_a409', richtung: '-', konto: FW },
@@ -382,11 +384,11 @@ export const DEFAULT_KONTEN = [
 export function parts(b) {
   if (Array.isArray(b.splits) && b.splits.length) {
     const sum = b.splits.reduce((a, s) => a + (s.betrag || 0), 0);
-    const out = b.splits.map(s => ({ kategorie: s.kategorie || '', veranstaltung: s.veranstaltung || '', betrag: s.betrag || 0, notiz: s.notiz || '' }));
-    if (sum !== b.betrag) out.push({ kategorie: '', veranstaltung: '', betrag: b.betrag - sum, notiz: 'Rest (nicht aufgeteilt)' });
+    const out = b.splits.map(s => ({ kategorie: s.kategorie || '', veranstaltung: s.veranstaltung || '', festArt: s.veranstaltung ? (s.festArt || 'bank') : '', betrag: s.betrag || 0, notiz: s.notiz || '' }));
+    if (sum !== b.betrag) out.push({ kategorie: '', veranstaltung: '', festArt: '', betrag: b.betrag - sum, notiz: 'Rest (nicht aufgeteilt)' });
     return out;
   }
-  return [{ kategorie: b.kategorie || '', veranstaltung: b.veranstaltung || '', betrag: b.betrag, notiz: '' }];
+  return [{ kategorie: b.kategorie || '', veranstaltung: b.veranstaltung || '', festArt: b.veranstaltung ? (b.festArt || (b.kategorie === 'festkassa' ? 'kassa' : 'bank')) : '', betrag: b.betrag, notiz: '' }];
 }
 
 /** Konten mit ohneKontierung (z. B. Mannschaftskassa) gelten immer als kontiert. */
@@ -611,6 +613,57 @@ export function stueckelungSumme(st) {
   return STUECKELUNG.reduce((a, w) => a + w * (Number(st?.[w]) || 0), 0);
 }
 
+// ── Bankbuchungen und Festkassabuch ──────────────────────────────────────────
+//
+// Eine Bankbuchung (oder ein Teil davon) kann einer Veranstaltung zugeordnet werden:
+//  festArt 'kassa' – Geld zwischen Bank und Festkassa: eine Abhebung (z. B. Wechselgeld) bringt Geld IN die
+//                    Festkassa, eine Einzahlung (Erlös, Wechselgeld retour) ist eine Ablieferung AUS der Festkassa.
+//                    Erscheint automatisch als Zeile im Festkassabuch, zählt nicht zum Ergebnis.
+//  festArt 'bank'  – Einnahme/Ausgabe der Veranstaltung direkt über die Bank (Rechnung Getränke, SumUp …).
+//                    Zählt zum Ergebnis, ändert den Kassabestand nicht.
+
+export const FEST_ARTEN = {
+  kassa: 'Geld zwischen Bank und Festkassa (Wechselgeld / Ablieferung)',
+  bank: 'Einnahme/Ausgabe der Veranstaltung über die Bank',
+};
+
+const KASSA_WORT = /wechselgeld|erlos|bareinzahlung|einzahlung|ablieferung|festkassa|kassa retour/;
+
+/**
+ * Vorschlag, ob eine Bankbuchung Geld zwischen Bank und Festkassa ist oder eine Fest-Einnahme/-Ausgabe.
+ * mitName: der Name der Veranstaltung steht im Text.
+ */
+export function festArtVorschlag(b, mitName = false) {
+  const t = norm(b.text);
+  if (KASSA_WORT.test(t)) return 'kassa';
+  // Einzahlung ohne Auftraggeber mit dem Namen des Festes (z. B. „Zahlungsreferenz: Wiesnfest“) ist eine Bareinzahlung
+  if (mitName && b.betrag > 0 && !splitBankText(b.text).partner) return 'kassa';
+  return 'bank';
+}
+
+/** Sucht eine Veranstaltung, deren Name (ein markantes Wort, ohne Jahreszahl) im Bank-Text vorkommt. */
+export function veranstaltungImText(text, veranstaltungen) {
+  const t = norm(text).replace(/wiesenfest/g, 'wiesnfest');
+  const treffer = (veranstaltungen || []).filter(v => norm(v.name).replace(/wiesenfest/g, 'wiesnfest').split(/[\s\-–/]+/)
+    .some(w => w.length >= 5 && !/^\d+$/.test(w) && !['feuerwehr', 'freiwillige'].includes(w) && t.includes(w)));
+  return treffer.length === 1 ? treffer[0] : null;
+}
+
+/** Bankteile einer Veranstaltung, die Geld zwischen Bank und Festkassa sind, als Zeilen fürs Festkassabuch. */
+export function bankPosten(bankTeile) {
+  return bankTeile.filter(t => t.festArt === 'kassa').map(t => ({
+    id: 'bank_' + (t.buchung?.id || ''),
+    art: t.betrag < 0 ? 'wechselgeld' : 'ablieferung',
+    betrag: Math.abs(t.betrag),
+    datum: t.buchung?.datum || '',
+    zeit: '',
+    text: (splitBankText(t.buchung?.text).zweck || t.buchung?.text || '').slice(0, 120),
+    bereich: '',
+    bank: true,
+    buchung: t.buchung,
+  }));
+}
+
 /** Sortiert Posten chronologisch und rechnet den laufenden Kassabestand mit. */
 export function festkassaBuch(posten) {
   const sorted = [...posten].sort((a, b) =>
@@ -626,12 +679,12 @@ export function festkassaBuch(posten) {
 
 /**
  * Abrechnung einer Veranstaltung.
- * posten: Festkassa-Posten; bank: Bankbuchungen (bzw. Teile), die der Veranstaltung zugeordnet sind.
- * Bankteile mit Kategorie 'festkassa' sind nur Geldbewegungen zwischen Bank und Festkassa und zählen
- * nicht zum Ergebnis (sonst wären die Bareinnahmen doppelt gezählt).
+ * posten: im Festkassabuch eingetragene Posten; bankTeile: der Veranstaltung zugeordnete Bankbuchungs-Teile.
+ * Bankteile 'kassa' kommen als Wechselgeld/Ablieferung ins Festkassabuch (zählen nicht zum Ergebnis,
+ * sonst wären die Bareinnahmen doppelt gezählt); Bankteile 'bank' sind Einnahmen/Ausgaben über die Bank.
  */
-export function veranstaltungsAbrechnung(posten, bankTeile, kategorien) {
-  const katById = Object.fromEntries((kategorien || []).map(k => [k.id, k]));
+export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
+  const posten = [...eigenePosten, ...bankPosten(bankTeile)];
   const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const abs = p => Math.abs(p.betrag || 0);
   const by = art => posten.filter(p => p.art === art);
@@ -642,8 +695,7 @@ export function veranstaltungsAbrechnung(posten, bankTeile, kategorien) {
     if (!bereiche.has(key)) bereiche.set(key, { bereich: key, einnahmen: 0, ausgaben: 0 });
     bereiche.get(key)[p.art === 'einnahme' ? 'einnahmen' : 'ausgaben'] += abs(p);
   }
-  const bankRelevant = bankTeile.filter(t => katById[t.kategorie]?.art !== 'F' && katById[t.kategorie]?.art !== 'U');
-  const bankTransfer = bankTeile.filter(t => katById[t.kategorie]?.art === 'F');
+  const bankRelevant = bankTeile.filter(t => t.festArt !== 'kassa');
   const r = {
     wechselgeld: sum(by('wechselgeld'), abs),
     barEinnahmen: sum(by('einnahme'), abs),
@@ -651,16 +703,13 @@ export function veranstaltungsAbrechnung(posten, bankTeile, kategorien) {
     ablieferung: sum(by('ablieferung'), abs),
     bankEinnahmen: sum(bankRelevant.filter(t => t.betrag > 0), t => t.betrag),
     bankAusgaben: -sum(bankRelevant.filter(t => t.betrag < 0), t => t.betrag),
-    bankTransfer: sum(bankTransfer, t => t.betrag),
     bereiche: [...bereiche.values()].sort((a, b) => a.bereich.localeCompare(b.bereich, 'de')),
   };
   r.bestand = r.wechselgeld + r.barEinnahmen - r.barAusgaben - r.ablieferung;
   r.einnahmen = r.barEinnahmen + r.bankEinnahmen;
   r.ausgaben = r.barAusgaben + r.bankAusgaben;
   r.ergebnis = r.einnahmen - r.ausgaben;
-  // Kontrolle: was netto auf der Bank angekommen ist (Ablieferungen − Wechselgeld-Abhebungen)
-  // sollte zu den Festkassa-Bewegungen passen, sobald alles abgeliefert ist.
-  r.bankKontrolle = r.ablieferung - r.wechselgeld;
+  r.buch = festkassaBuch(posten);
   return r;
 }
 

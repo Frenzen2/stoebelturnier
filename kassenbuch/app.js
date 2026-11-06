@@ -15,6 +15,7 @@ import {
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
+  FEST_ARTEN, festArtVorschlag, veranstaltungImText,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -119,6 +120,7 @@ const confirmDlg = (title, text, ok = 'OK') => new Promise(res => {
 });
 
 function katOptions(selected, betrag, konto = '') {
+  if (konto && kontoById(konto)?.ohneKontierung) return '<option value="">— keine Kontierung —</option>';
   const groups = [['E', 'Einnahmen'], ['A', 'Ausgaben'], ['F', 'Festkassa'], ['U', 'Umbuchung']];
   // passende Gruppe zuerst
   if (betrag < 0) groups.unshift(groups.splice(1, 1)[0]);
@@ -378,7 +380,7 @@ function bankTeileVon(vid) {
   return out;
 }
 function abrechnungVon(v) {
-  return veranstaltungsAbrechnung(S.posten[v.id] || [], bankTeileVon(v.id), S.kategorien);
+  return veranstaltungsAbrechnung(S.posten[v.id] || [], bankTeileVon(v.id));
 }
 
 // ── Übersicht ────────────────────────────────────────────────────────────────
@@ -492,16 +494,16 @@ function viewBuchungen() {
       </div>
       ${edit && sel.length ? `<div class="infobox row" style="align-items:center">
         <b>${sel.length} ausgewählt:</b>
-        <select id="bulkKat" style="flex:1 1 220px">${katOptions('', list.find(b => b.id === sel[0])?.betrag, list.find(b => b.id === sel[0])?.konto)}</select>
-        <select id="bulkVer" style="flex:1 1 160px">${verOptions('', 'Veranstaltung: unverändert')}<option value="__clear">Veranstaltung entfernen</option></select>
+        <select id="bulkKat" style="flex:1 1 220px"><option value="__keep">Kategorie: unverändert</option>${katOptions('', list.find(b => b.id === sel[0])?.betrag, list.find(b => b.id === sel[0])?.konto).replace('<option value="">', '<option value="__none">')}</select>
+        <select id="bulkVer" style="flex:1 1 160px">${verOptions('', 'Festkassabuch: unverändert')}<option value="__clear">Zuordnung entfernen</option></select>
         <button class="btn primary small" id="bulkApply">Zuweisen</button>
         <button class="btn small" id="bulkClear">Auswahl aufheben</button></div>` : ''}
       ${locked() ? `<div class="infobox">🔒 Das Jahr ${S.jahr} ist abgeschlossen – Buchungen können nur noch angesehen werden.</div>` : ''}
       <div class="tablewrap"><table class="t">
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
-          <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Veranstaltung</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
+          <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Festkassabuch</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
         <tbody>${list.map(b => {
-          const vs = [...new Set(parts(b).map(p => p.veranstaltung).filter(Boolean))].map(id => verById(id)?.name || '?');
+          const vs = parts(b).filter(p => p.veranstaltung).map(festLabel);
           return `<tr class="click ${S.sel.has(b.id) ? 'sel' : ''}" data-id="${esc(b.id)}">
             ${edit ? `<td><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
             <td class="r small muted">${S.belegNr.get(b.id) || ''}</td>
@@ -509,7 +511,7 @@ function viewBuchungen() {
             <td class="nowrap small">${esc(kontoById(b.konto)?.name || b.konto)}</td>
             <td class="text">${bankText(b.text)}${b.notiz ? `<div class="muted small">📝 ${esc(b.notiz)}</div>` : ''}${b.quelle === 'manuell' ? ' <span class="chip">manuell</span>' : ''}</td>
             <td>${katLabel(b)}</td>
-            <td class="small">${esc(vs.join(', '))}</td>
+            <td class="small">${vs.join(' ')}</td>
             <td class="small">${esc(b.beleg || '')}</td>
             <td class="r">${money(b.betrag)}</td></tr>`;
         }).join('') || `<tr><td colspan="9" class="muted">Keine Buchungen${S.buchungen.length ? ' für diesen Filter' : ` im Jahr ${S.jahr} – unter „Raika-Import“ die CSV-Datei einlesen`}.</td></tr>`}</tbody>
@@ -544,14 +546,16 @@ function viewBuchungen() {
     const kat = $('#bulkKat').value, ver = $('#bulkVer').value;
     const ids = sel;
     const batch = writeBatch(db);
+    if (kat === '__keep' && !ver) { toast('Bitte eine Kategorie oder ein Festkassabuch wählen.', true); return; }
     for (const id of ids) {
-      const upd = { geaendertAm: serverTimestamp(), geaendertVon: S.uid, splits: deleteField() };
-      upd.kategorie = kat;
-      if (ver === '__clear') upd.veranstaltung = '';
-      else if (ver) upd.veranstaltung = ver;
+      const b = S.buchungen.find(x => x.id === id);
+      const upd = { geaendertAm: serverTimestamp(), geaendertVon: S.uid };
+      if (kat !== '__keep' && !kontoById(b.konto)?.ohneKontierung) { upd.kategorie = kat === '__none' ? '' : kat; upd.splits = deleteField(); }
+      if (ver === '__clear') { upd.veranstaltung = ''; upd.festArt = ''; }
+      else if (ver) { upd.veranstaltung = ver; upd.festArt = festArtVorschlag(b); upd.splits = deleteField(); }
       batch.update(doc(db, 'buchungen', id), upd);
     }
-    logTo(batch, 'kontieren', `${ids.length} Buchungen → ${katById(kat)?.name || 'unkontiert'}${ver && ver !== '__clear' ? ' / ' + (verById(ver)?.name || '') : ''}`);
+    logTo(batch, 'kontieren', `${ids.length} Buchungen${kat !== '__keep' ? ' → ' + (katById(kat)?.name || 'unkontiert') : ''}${ver && ver !== '__clear' ? ' / Festkassabuch ' + (verById(ver)?.name || '') : ''}`);
     try { await batch.commit(); S.sel.clear(); toast(`${ids.length} Buchungen kontiert.`); } catch (e) { fail(e); }
   });
 }
@@ -582,6 +586,7 @@ function buchungDialog(b) {
   b = b || { konto: S.filter.konto || S.konten[0]?.id || '', datum: S.jahr === new Date().getFullYear() ? today() : `${S.jahr}-12-31`, betrag: 0, text: '', quelle: 'manuell' };
   let splits = (b.splits || []).map(s => ({ ...s }));
   const ro = !edit ? 'disabled' : '';
+  const ohneKont = !!kontoById(b.konto)?.ohneKontierung;
   const html = `
     ${imported ? `<dl class="kv">
         <dt>Konto</dt><dd>${esc(kontoById(b.konto)?.name || b.konto)} · lfd. Nr. ${S.belegNr.get(b.id) || '–'}</dd>
@@ -596,9 +601,15 @@ function buchungDialog(b) {
       </div>
       <label>Buchungstext<input id="bText" value="${esc(b.text)}" maxlength="500" ${ro}></label>`}
     <div id="singleKat" class="${splits.length ? 'hidden' : ''}">
-      <div class="row">
-        <label>Kategorie${kontoById(b.konto)?.ohneKontierung ? ' (optional)' : ''}<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag, b.konto)}</select></label>
-        <label>Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '')}</select></label>
+      <div class="row ${ohneKont ? 'hidden' : ''}" id="katRow">
+        <label>Kategorie (V-P)<select id="bKat" ${ro}>${katOptions(b.kategorie || '', b.betrag, b.konto)}</select></label>
+      </div>
+      <div class="infobox" style="margin-top:10px">
+        <div class="row">
+          <label>Festkassabuch der Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '', '— nicht zugeordnet —')}</select></label>
+          <label>Art<select id="bFestArt" ${ro}>${Object.entries(FEST_ARTEN).map(([k, n]) => `<option value="${k}" ${(b.festArt || festArtVorschlag(b)) === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        </div>
+        <div class="small" id="bFestHint" style="margin-top:6px"></div>
       </div>
     </div>
     <div id="splitBox" class="${splits.length ? '' : 'hidden'}">
@@ -609,12 +620,12 @@ function buchungDialog(b) {
         <span class="muted small" id="splitRest"></span>
       </div>
     </div>
-    ${edit ? `<p style="margin:8px 0 0"><a href="#" id="splitToggle" class="small">${splits.length ? 'Aufteilung entfernen' : 'Auf mehrere Kategorien aufteilen …'}</a></p>` : ''}
+    ${edit && !ohneKont ? `<p style="margin:8px 0 0"><a href="#" id="splitToggle" class="small">${splits.length ? 'Aufteilung entfernen' : 'Auf mehrere Kategorien aufteilen …'}</a></p>` : ''}
     <div class="row">
       <label style="flex:0 1 140px">Beleg-Nr.<input id="bBeleg" value="${esc(b.beleg || '')}" maxlength="40" ${ro}></label>
       <label>Notiz<input id="bNotiz" value="${esc(b.notiz || '')}" maxlength="1000" ${ro}></label>
     </div>
-    ${edit && imported ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
+    ${edit && imported && !ohneKont ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
       <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
 
@@ -654,10 +665,11 @@ function buchungDialog(b) {
         const clean = splits.filter(s => s.betrag);
         if (clean.reduce((a, s) => a + s.betrag, 0) !== data.betrag && !confirm('Die Aufteilung ergibt nicht den vollen Betrag. Der Rest bleibt unkontiert. Trotzdem speichern?')) return false;
         data.splits = clean;
-        data.kategorie = ''; data.veranstaltung = '';
+        data.kategorie = ''; data.veranstaltung = ''; data.festArt = '';
       } else {
-        data.kategorie = $('#bKat').value;
+        data.kategorie = kontoById(data.konto)?.ohneKontierung ? '' : $('#bKat').value;
         data.veranstaltung = $('#bVer').value;
+        data.festArt = data.veranstaltung ? $('#bFestArt').value : '';
         delete data.splits;
       }
       data.geaendertAm = serverTimestamp();
@@ -673,8 +685,9 @@ function buchungDialog(b) {
         const changed = imported ? `${deDate(b.datum)} ${fmt(b.betrag)}: ${data.splits ? 'aufgeteilt' : (katById(data.kategorie)?.name || 'unkontiert')}` : `${deDate(data.datum)} ${fmt(data.betrag)} ${data.text}`;
         logTo(batch, 'kontieren', changed);
       }
-      if ($('#bRegel')?.checked && $('#bRegelText').value.trim() && !data.splits && data.kategorie) {
-        const regel = { muster: $('#bRegelText').value.trim(), kategorie: data.kategorie, richtung: data.betrag < 0 ? '-' : '+', konto: '' };
+      if ($('#bRegel')?.checked && $('#bRegelText').value.trim() && !data.splits && (data.kategorie || data.festArt === 'kassa')) {
+        const regel = { muster: $('#bRegelText').value.trim(), kategorie: data.kategorie, richtung: data.betrag < 0 ? '-' : '+', konto: data.konto,
+          ...(data.festArt === 'kassa' ? { fest: 'kassa' } : {}) };
         batch.set(doc(db, 'config', 'regeln'), { list: [...S.regeln, regel] });
       }
       await batch.commit();
@@ -705,10 +718,30 @@ function buchungDialog(b) {
     $$('#splitRows .sBet').forEach(x => x.addEventListener('change', () => { readSplits(); drawSplits(); }));
   }
   if (splits.length) drawSplits();
+  // Hinweis, wie die Buchung im Festkassabuch erscheint
+  const festHint = () => {
+    const betrag = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
+    const v = $('#bVer').value, art = $('#bFestArt').value;
+    $('#bFestArt').closest('label').classList.toggle('hidden', !v);
+    $('#bFestHint').innerHTML = !v ? 'Wechselgeld-Abhebungen, Einzahlungen von Festerlösen oder Rechnungen eines Festes hier einer Veranstaltung zuordnen.'
+      : art === 'kassa'
+        ? (betrag < 0 ? '➜ Erscheint im Festkassabuch als <b>Wechselgeld / Vorschuss</b> (Eingang in die Festkassa).' : '➜ Erscheint im Festkassabuch als <b>Ablieferung an die Bank</b> (Ausgang aus der Festkassa).')
+          + ' Zählt nicht zum Ergebnis des Festes.'
+        : `➜ Zählt als <b>${betrag < 0 ? 'Ausgabe' : 'Einnahme'} der Veranstaltung über die Bank</b>; der Kassabestand bleibt unverändert.`;
+  };
+  $('#bVer').addEventListener('change', () => {
+    const ver = verById($('#bVer').value);
+    if (ver && !b.festArt) $('#bFestArt').value = festArtVorschlag({ ...b, betrag: imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0) }, !!veranstaltungImText(b.text, [ver]));
+    festHint();
+  });
+  $('#bFestArt').addEventListener('change', festHint);
+  $('#bBetrag')?.addEventListener('input', festHint);
+  festHint();
   // Kategorien passend zum Konto anbieten
   $('#bKonto')?.addEventListener('change', () => {
     const cur = $('#bKat').value;
     $('#bKat').innerHTML = katOptions(cur, parseAmount($('#bBetrag').value) || 0, $('#bKonto').value);
+    $('#katRow').classList.toggle('hidden', !!kontoById($('#bKonto').value)?.ohneKontierung);
     if (splits.length) { readSplits(); drawSplits(); }
   });
   $('#splitAdd')?.addEventListener('click', () => {
@@ -728,6 +761,24 @@ function buchungDialog(b) {
   });
 }
 
+/**
+ * Automatische Festkassabuch-Zuordnung (Import, Regeln): nur Geld zwischen Bank und Festkassa
+ * (Wechselgeld, Erlös, Einzahlung vom Fest) und nur, wenn der Name der Veranstaltung im Text steht.
+ * Fest-Rechnungen oder Sponsoring ordnet man bei Bedarf selbst zu.
+ */
+function festVorschlag(b, regel) {
+  const jahr = Number(String(b.datum).slice(0, 4));
+  const v = veranstaltungImText(b.text, S.veranstaltungen.filter(x => x.jahr === jahr));
+  if (!v) return null;
+  const art = regel?.fest || festArtVorschlag(b, true);
+  return art === 'kassa' ? { veranstaltung: v.id, festArt: 'kassa' } : null;
+}
+function festLabel(p) {
+  const v = verById(p.veranstaltung);
+  if (!v) return '';
+  return `<span class="chip ${p.festArt === 'kassa' ? 'ok' : ''}" title="${esc(FEST_ARTEN[p.festArt] || '')}">${p.festArt === 'kassa' ? '💶 ' : '🧾 '}${esc(v.name)}</span>`;
+}
+
 /** Bank-Text kompakt: Auftraggeber/Empfänger fett, dann Verwendungszweck. Voller Text als Tooltip. */
 function bankText(text) {
   const { partner, zweck } = splitBankText(text);
@@ -739,21 +790,25 @@ async function regelnAnwenden() {
   if (!S.regeln.length) { toast('Es sind noch keine Regeln angelegt (Verwaltung → Kontierungsregeln).', true); return; }
   const treffer = [];
   for (const b of S.buchungen) {
-    if (isKontiert(b, S.konten) || b.splits?.length) continue;
+    if (b.splits?.length) continue;
     const r = matchRule(S.regeln, b);
-    if (r) treffer.push([b, r]);
+    const upd = {};
+    if (!isKontiert(b, S.konten) && r?.kategorie && !kontoById(b.konto)?.ohneKontierung) upd.kategorie = r.kategorie;
+    const f = !b.veranstaltung && festVorschlag(b, r);
+    if (f) Object.assign(upd, f);
+    if (Object.keys(upd).length) treffer.push([b, upd]);
   }
-  if (!treffer.length) { toast('Keine unkontierte Buchung passt zu einer Regel.'); return; }
-  if (!await confirmDlg('Regeln anwenden', `${treffer.length} unkontierte Buchungen passen zu einer Regel und werden kontiert.`, 'Kontieren')) return;
+  if (!treffer.length) { toast('Keine offene Buchung passt zu einer Regel oder Veranstaltung.'); return; }
+  if (!await confirmDlg('Regeln anwenden', `${treffer.length} Buchungen werden kontiert bzw. einem Festkassabuch zugeordnet (nur bisher offene).`, 'Anwenden')) return;
   for (let i = 0; i < treffer.length; i += 200) {
     const batch = writeBatch(db);
-    for (const [b, r] of treffer.slice(i, i + 200)) {
-      batch.update(doc(db, 'buchungen', b.id), { kategorie: r.kategorie, ...(r.veranstaltung ? { veranstaltung: r.veranstaltung } : {}), geaendertAm: serverTimestamp(), geaendertVon: S.uid });
+    for (const [b, upd] of treffer.slice(i, i + 200)) {
+      batch.update(doc(db, 'buchungen', b.id), { ...upd, geaendertAm: serverTimestamp(), geaendertVon: S.uid });
     }
     if (i === 0) logTo(batch, 'kontieren', `${treffer.length} Buchungen per Regel kontiert`);
     await batch.commit().catch(fail);
   }
-  toast(`${treffer.length} Buchungen kontiert.`);
+  toast(`${treffer.length} Buchungen aktualisiert.`);
 }
 
 // ── Raika-Import ─────────────────────────────────────────────────────────────
@@ -784,12 +839,12 @@ function viewImport() {
       html += `<div class="card"><h2>Vorschau</h2>
         ${I.result.errors.map(e => `<div class="warnbox">${esc(e)}</div>`).join('')}
         ${I.ibanWarn ? `<div class="warnbox">${esc(I.ibanWarn)}</div>` : ''}
-        <p><b>${neu.length}</b> neue Umsätze${auto.length ? ` (davon <b>${auto.length}</b> automatisch kontiert)` : ''} · ${dup.length} bereits vorhanden${gesp.length ? ` · <span class="minus">${gesp.length} in abgeschlossenen Jahren (werden nicht importiert)</span>` : ''}</p>
+        <p><b>${neu.length}</b> neue Umsätze${auto.length ? ` (davon <b>${auto.length}</b> automatisch kontiert)` : ''}${neu.some(r => r.veranstaltung) ? ` · <b>${neu.filter(r => r.veranstaltung).length}</b> einem Festkassabuch zugeordnet` : ''} · ${dup.length} bereits vorhanden${gesp.length ? ` · <span class="minus">${gesp.length} in abgeschlossenen Jahren (werden nicht importiert)</span>` : ''}</p>
         <div class="row" style="margin-bottom:10px"><button class="btn primary" id="impGo" ${neu.length && I.konto ? '' : 'disabled'}>${neu.length} Umsätze importieren</button>
           ${!I.konto ? '<span class="minus">Bitte oben das Konto wählen.</span>' : ''}</div>
-        <div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th>Datum</th><th>Text</th><th>Kategorie (Regel)</th><th class="r">Betrag</th></tr></thead><tbody>
+        <div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th>Datum</th><th>Text</th><th>Kategorie (Regel)</th><th>Festkassabuch</th><th class="r">Betrag</th></tr></thead><tbody>
         ${rows.map(r => `<tr class="${r.status !== 'neu' ? 'muted' : ''}"><td>${r.status === 'neu' ? '<span class="chip ok">neu</span>' : r.status === 'vorhanden' ? '<span class="chip">vorhanden</span>' : '<span class="chip lock">gesperrt</span>'}</td>
-          <td class="nowrap">${deDate(r.datum)}</td><td class="text small">${bankText(r.text)}</td><td class="small">${esc(katById(r.kategorie)?.name || '')}</td><td class="r">${money(r.betrag)}</td></tr>`).join('')}
+          <td class="nowrap">${deDate(r.datum)}</td><td class="text small">${bankText(r.text)}</td><td class="small">${esc(katById(r.kategorie)?.name || '')}</td><td class="small">${festLabel(r)}</td><td class="r">${money(r.betrag)}</td></tr>`).join('')}
         </tbody></table></div></div>`;
     }
   }
@@ -922,7 +977,9 @@ async function pruefeImport() {
       const id = ids[i];
       const status = existing.has(id) ? 'vorhanden' : gesperrt.has(Number(r.datum.slice(0, 4))) ? 'gesperrt' : 'neu';
       const regel = matchRule(S.regeln, { ...r, konto: I.konto });
-      return { ...r, id, status, kategorie: regel?.kategorie || '', veranstaltung: regel?.veranstaltung || '' };
+      const fest = festVorschlag(r, regel);
+      return { ...r, id, status, kategorie: kontoById(I.konto)?.ohneKontierung ? '' : (regel?.kategorie || ''),
+        veranstaltung: fest?.veranstaltung || '', festArt: fest?.festArt || '' };
     }).sort((a, b) => b.datum.localeCompare(a.datum)),
   };
   render(true);
@@ -939,7 +996,7 @@ async function importieren() {
         batch.set(doc(db, 'buchungen', r.id), {
           konto: I.konto, datum: r.datum, valuta: r.valuta, betrag: r.betrag, text: r.text, zeitstempel: r.zeitstempel || '', seq: r.zeile,
           jahr: Number(r.datum.slice(0, 4)), quelle: 'import', datei: I.datei.slice(0, 120),
-          kategorie: r.kategorie, veranstaltung: r.veranstaltung || '',
+          kategorie: r.kategorie, veranstaltung: r.veranstaltung || '', festArt: r.festArt || '',
           importiertAm: serverTimestamp(), importiertVon: S.uid,
         });
       }
@@ -1030,8 +1087,8 @@ function veranstaltungDialog(v) {
 function viewVeranstaltung(v) {
   const offen = v.status === 'offen' && !locked();
   const edit = canFest() && offen;
-  const buch = festkassaBuch(S.posten[v.id] || []);
   const a = abrechnungVon(v);
+  const buch = a.buch;
   const bank = bankTeileVon(v.id);
   $('#view').innerHTML = `
     <div class="card">
@@ -1044,8 +1101,9 @@ function viewVeranstaltung(v) {
         ${edit ? `<button class="btn primary" data-neu="einnahme">+ Einnahme</button>
           <button class="btn primary" id="zaehlung">🧮 Kassasturz / Zählprotokoll</button>
           <button class="btn" data-neu="ausgabe">+ Barausgabe</button>
-          <button class="btn" data-neu="wechselgeld">+ Wechselgeld</button>
-          <button class="btn" data-neu="ablieferung">+ Ablieferung an Bank</button>` : ''}
+          <button class="btn" data-neu="wechselgeld" title="Nur für Bargeld, das nicht vom Bankkonto kommt">+ Wechselgeld (bar)</button>
+          <button class="btn" data-neu="ablieferung" title="Nur für Bargeld, das nicht über ein Bankkonto läuft">+ Ablieferung (bar)</button>` : ''}
+        ${canBook() && !locked() ? `<button class="btn" id="bankZuordnen">🏦 Bankbuchung zuordnen</button>` : ''}
         <span style="flex:1"></span>
         ${canBook() && !locked() ? `<button class="btn" id="verEdit">Bearbeiten</button>
           <button class="btn" id="verStatus">${v.status === 'offen' ? '✓ Abschließen' : 'Wieder öffnen'}</button>` : ''}
@@ -1062,11 +1120,12 @@ function viewVeranstaltung(v) {
 
     <div class="card"><h2>Festkassabuch</h2>
       <div class="tablewrap"><table class="t"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
-      <tbody>${buch.map(p => `<tr class="click" data-posten="${esc(p.id)}"><td>${p.lfd}</td><td class="nowrap">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}</td>
-        <td class="small">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small">${esc(p.bereich || '')}</td>
+      <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td>${p.lfd}</td><td class="nowrap">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}</td>
+        <td class="small">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
         <td class="small">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}</td><td class="small">${esc(p.beleg || '')}</td>
         <td class="r">${p.wirkung > 0 ? fmt(p.wirkung) : ''}</td><td class="r">${p.wirkung < 0 ? fmt(-p.wirkung) : ''}</td><td class="r"><b>${fmt(p.bestand)}</b></td></tr>`).join('')
-        || `<tr><td colspan="9" class="muted">Noch keine Einträge. Üblicher Ablauf: <b>Wechselgeld</b> eintragen → nach dem Fest je Stand einen <b>Kassasturz</b> machen → <b>Barausgaben</b> mit Beleg erfassen → Geld als <b>Ablieferung</b> auf die Bank bringen.</td></tr>`}</tbody></table></div>
+        || `<tr><td colspan="9" class="muted">Noch keine Einträge. Üblicher Ablauf: Wechselgeld von der Bank abheben (Bankbuchung zuordnen) → nach dem Fest je Stand einen <b>Kassasturz</b> machen → <b>Barausgaben</b> mit Beleg erfassen → Geld auf die Bank einzahlen (Bankbuchung zuordnen).</td></tr>`}</tbody></table></div>
+      <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen (Feuerwehr- oder Mannschaftskassa): eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung. Sie müssen nicht noch einmal eingetragen werden.</p>
     </div>
 
     <div class="card"><h2>Abrechnung nach Bereichen</h2>
@@ -1077,20 +1136,19 @@ function viewVeranstaltung(v) {
     </div>
 
     <div class="card"><h2>Zugeordnete Bankbuchungen</h2>
-      <p class="muted small">Unter „Buchungen“ beim Kontieren die Veranstaltung „${esc(v.name)}“ wählen. Die Einzahlung des Festkassa-Geldes (und eine Wechselgeld-Abhebung)
-        mit der Kategorie <b>„Festkassa: Ablieferung / Wechselgeld“</b> kontieren – sie zählt dann nicht doppelt.</p>
-      <div class="tablewrap"><table class="t"><thead><tr><th>Datum</th><th>Konto</th><th>Text</th><th>Kategorie</th><th class="r">Betrag</th></tr></thead><tbody>
+      <p class="muted small">Zuordnen über <b>🏦 Bankbuchung zuordnen</b> oben oder beim Kontieren einer Buchung (Feld „Festkassabuch der Veranstaltung“).
+        💶 = Geld zwischen Bank und Festkassa (steht im Festkassabuch), 🧾 = Einnahme/Ausgabe des Festes direkt über die Bank (z. B. Rechnung Getränke, SumUp).</p>
+      <div class="tablewrap"><table class="t"><thead><tr><th>Datum</th><th>Konto</th><th>Text</th><th>Art</th><th>Kontierung</th><th class="r">Betrag</th></tr></thead><tbody>
       ${bank.map(t => `<tr class="click" data-bid="${esc(t.buchung.id)}"><td class="nowrap">${deDate(t.buchung.datum)}</td><td class="small">${esc(kontoById(t.buchung.konto)?.name || '')}</td>
-        <td class="small">${esc(t.buchung.text)}</td><td class="small">${esc(katById(t.kategorie)?.name || 'unkontiert')}</td><td class="r">${money(t.betrag)}</td></tr>`).join('')
-        || '<tr><td colspan="5" class="muted">Keine.</td></tr>'}</tbody></table></div>
-      ${a.ablieferung && a.bankTransfer !== a.bankKontrolle && a.bankTransfer !== a.ablieferung ? `<div class="warnbox">Kontrolle: Laut Festkassabuch wurden ${fmt(a.ablieferung)} € abgeliefert${a.wechselgeld ? ` (abzüglich Wechselgeld ${fmt(a.wechselgeld)} € = netto ${fmt(a.bankKontrolle)} €)` : ''}.
-        Auf der Bank sind bei dieser Veranstaltung als „Festkassa“ kontiert: ${fmt(a.bankTransfer)} €.
-        ${a.bankTransfer === 0 ? 'Die Bankeinzahlung ist vermutlich noch nicht importiert oder nicht dieser Veranstaltung zugeordnet.' : 'Bitte prüfen, ob eine Einzahlung oder Wechselgeld-Abhebung fehlt.'}</div>` : ''}
+        <td class="small">${bankText(t.buchung.text)}</td><td class="small">${t.festArt === 'kassa' ? (t.betrag < 0 ? '💶 Wechselgeld' : '💶 Ablieferung') : (t.betrag < 0 ? '🧾 Ausgabe' : '🧾 Einnahme')}</td>
+        <td class="small">${esc(katById(t.kategorie)?.nr || '')}</td><td class="r">${money(t.betrag)}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="muted">Keine.</td></tr>'}</tbody></table></div>
     </div>`;
 
   $('#back').addEventListener('click', () => { S.festSel = null; render(true); });
   $$('#view [data-neu]').forEach(b => b.addEventListener('click', () => postenDialog(v, { art: b.dataset.neu })));
   $('#zaehlung')?.addEventListener('click', () => zaehlDialog(v, null));
+  $('#bankZuordnen')?.addEventListener('click', () => bankZuordnenDialog(v));
   $$('#view [data-posten]').forEach(tr => tr.addEventListener('click', () => {
     const p = (S.posten[v.id] || []).find(x => x.id === tr.dataset.posten);
     if (p.stueckelung) zaehlDialog(v, p); else postenDialog(v, p);
@@ -1111,6 +1169,49 @@ function viewVeranstaltung(v) {
     buch.forEach(p => rows.push([p.lfd, deDate(p.datum), p.zeit || '', POSTEN_ARTEN[p.art]?.name, p.bereich || '', p.text || '', p.beleg || '',
       p.wirkung > 0 ? fmt(p.wirkung) : '', p.wirkung < 0 ? fmt(-p.wirkung) : '', fmt(p.bestand)]));
     download(`Festkassa_${v.name.replace(/[^\wäöüÄÖÜß-]+/g, '_')}.csv`, toCsv(rows));
+  });
+}
+
+/** Bankbuchungen (beider Konten) dem Festkassabuch dieser Veranstaltung zuordnen */
+function bankZuordnenDialog(v) {
+  const tage = d => Math.abs((new Date(d) - new Date(v.von || d)) / 864e5);
+  const offen = S.buchungen.filter(b => !b.veranstaltung && !b.splits?.length);
+  const info = b => {
+    const name = !!veranstaltungImText(b.text, [v]);
+    const art = festArtVorschlag(b, name);
+    const nah = tage(b.datum) <= 21;
+    // vorausgewählt: Festkassa-Bewegung rund um das Fest (Wechselgeld, Erlös, Einzahlung …)
+    const sc = (art === 'kassa' && (name || nah)) ? 0 : name ? 1 : nah ? 2 : 9;
+    return { b, art, sc };
+  };
+  const liste = offen.map(info).sort((x, y) => x.sc - y.sc || tage(x.b.datum) - tage(y.b.datum));
+  const zeige = alle => (alle ? liste : liste.filter(x => x.sc <= 2)).slice(0, 150);
+  const artText = b => ({ kassa: b.betrag < 0 ? '💶 Wechselgeld in die Festkassa' : '💶 Ablieferung aus der Festkassa', bank: b.betrag < 0 ? '🧾 Ausgabe über Bank' : '🧾 Einnahme über Bank' });
+  const draw = alle => {
+    $('#zuoRows').innerHTML = zeige(alle).map(({ b, sc, art }) => `<tr><td><input type="checkbox" data-zb="${esc(b.id)}" ${sc === 0 ? 'checked' : ''}></td>
+      <td class="nowrap small">${deDate(b.datum)}</td><td class="small">${esc(kontoById(b.konto)?.name || '')}</td><td class="small">${bankText(b.text)}</td>
+      <td><select data-za="${esc(b.id)}">${Object.entries(artText(b)).map(([k, n]) => `<option value="${k}" ${art === k ? 'selected' : ''}>${n}</option>`).join('')}</select></td>
+      <td class="r">${money(b.betrag)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Keine passenden offenen Bankbuchungen.</td></tr>';
+  };
+  modal(`Bankbuchungen „${v.name}“ zuordnen`, `
+    <p class="muted small">Vorausgewählt sind Festkassa-Bewegungen beider Konten rund um das Fest (Wechselgeld, Erlös, Einzahlung).
+      Darunter weitere Buchungen, die das Fest erwähnen oder zeitlich nah sind – z. B. Rechnungen, die man als „Ausgabe über Bank“ zuordnen kann.
+      Die Kontierung (V-P) der Feuerwehrkassa bleibt unverändert.</p>
+    <label class="check"><input type="checkbox" id="zuoAlle"> alle offenen Bankbuchungen ${S.jahr} anzeigen</label>
+    <div class="tablewrap" style="margin-top:8px"><table class="t"><thead><tr><th></th><th>Datum</th><th>Konto</th><th>Text</th><th>Art</th><th class="r">Betrag</th></tr></thead><tbody id="zuoRows"></tbody></table></div>`, {
+    wide: true, ok: 'Zuordnen',
+    onOk: async () => {
+      const ids = $$('#zuoRows [data-zb]:checked').map(c => c.dataset.zb);
+      if (!ids.length) { toast('Bitte mindestens eine Buchung auswählen.', true); return false; }
+      const batch = writeBatch(db);
+      for (const id of ids) {
+        batch.update(doc(db, 'buchungen', id), { veranstaltung: v.id, festArt: $(`#zuoRows [data-za="${CSS.escape(id)}"]`).value, geaendertAm: serverTimestamp(), geaendertVon: S.uid });
+      }
+      logTo(batch, 'festkassa', `${v.name}: ${ids.length} Bankbuchung(en) zugeordnet`);
+      await batch.commit();
+      toast(`${ids.length} Bankbuchung(en) zugeordnet.`);
+    },
+    onOpen: () => { draw(false); $('#zuoAlle').addEventListener('change', e => draw(e.target.checked)); },
   });
 }
 
@@ -1137,6 +1238,7 @@ function postenDialog(v, p) {
     </div>
     <label>Text<input id="pText" value="${esc(p.text || '')}" maxlength="300" placeholder="${art === 'ausgabe' ? 'z. B. Eis, Musikkapelle, Kleinmaterial' : art === 'ablieferung' ? 'z. B. Einzahlung Raika, übergeben an Kassier' : ''}" ${ro}></label>
     ${bereichListe(v)}
+    ${art === 'wechselgeld' || art === 'ablieferung' ? '<p class="muted small">Läuft das Geld über die Feuerwehr- oder Mannschaftskassa, nicht hier eintragen, sondern die Bankbuchung zuordnen (🏦) – sonst steht es doppelt im Festkassabuch.</p>' : ''}
     ${p.erfasstVon ? `<p class="muted small">Erfasst von ${esc(userName(p.erfasstVon))}</p>` : ''}`, {
     cancel: edit ? 'Abbrechen' : 'Schließen',
     extra: edit && !neu ? [{
@@ -1477,12 +1579,12 @@ function druckAbschluss() {
 
 function druckVeranstaltung(v) {
   const a = abrechnungVon(v);
-  const buch = festkassaBuch(S.posten[v.id] || []);
+  const buch = a.buch;
   const zaehl = buch.filter(p => p.stueckelung);
   printOut(`<h1>Festkassabuch – ${esc(v.name)}</h1>
     <p class="meta">${deDate(v.von)}${v.bis && v.bis !== v.von ? ' – ' + deDate(v.bis) : ''}${v.ort ? ' · ' + esc(v.ort) : ''}${v.verantwortlich ? ' · Verantwortlich: ' + esc(v.verantwortlich) : ''}</p>
     <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead><tbody>
-      ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${esc(p.bereich || '')}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
+      ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${p.bank ? 'Bank ' + esc(kontoById(p.buchung.konto)?.name || '') : esc(p.bereich || '')}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
         <td class="r">${p.wirkung > 0 ? fmt(p.wirkung) : ''}</td><td class="r">${p.wirkung < 0 ? fmt(-p.wirkung) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
       <tr class="sum"><td colspan="8">Kassabestand</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table></section>
     <section><h2>Abrechnung</h2><table><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
