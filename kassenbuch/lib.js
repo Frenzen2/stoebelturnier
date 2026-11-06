@@ -656,11 +656,29 @@ export function festArtVorschlag(b, mitName = false) {
 }
 
 /** Sucht eine Veranstaltung, deren Name (ein markantes Wort, ohne Jahreszahl) im Bank-Text vorkommt. */
+/** Suchbegriffe einer Veranstaltung: markante Wörter des Namens plus die eigenen „weiteren Suchbegriffe“. */
+export function festBegriffe(v) {
+  const wies = s => s.replace(/wiesenfest/g, 'wiesnfest');
+  const ausName = wies(norm(v.name)).split(/[\s\-–/]+/)
+    .filter(w => w.length >= 5 && !/^\d+$/.test(w) && !['feuerwehr', 'freiwillige'].includes(w));
+  // weitere Suchbegriffe: mit Komma, Strichpunkt oder | getrennt; auch mehrere Wörter („Wechselgeld Fest“) erlaubt
+  const eigene = String(v.suchbegriffe || '').split(/[,;|\n]+/).map(x => wies(norm(x))).filter(x => x.length >= 3);
+  return [...new Set([...ausName, ...eigene])];
+}
+
+/**
+ * Sucht die Veranstaltung, deren Name oder Suchbegriff im Bank-Text vorkommt.
+ * Passen mehrere, gewinnt der längste (genaueste) Begriff; bei Gleichstand wird nichts zugeordnet.
+ */
 export function veranstaltungImText(text, veranstaltungen) {
   const t = norm(text).replace(/wiesenfest/g, 'wiesnfest');
-  const treffer = (veranstaltungen || []).filter(v => norm(v.name).replace(/wiesenfest/g, 'wiesnfest').split(/[\s\-–/]+/)
-    .some(w => w.length >= 5 && !/^\d+$/.test(w) && !['feuerwehr', 'freiwillige'].includes(w) && t.includes(w)));
-  return treffer.length === 1 ? treffer[0] : null;
+  const enthaelt = b => (b.length >= 5 ? t.includes(b) : new RegExp(`(^|[^a-z0-9])${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(t));
+  const treffer = (veranstaltungen || [])
+    .map(v => ({ v, len: Math.max(0, ...festBegriffe(v).filter(enthaelt).map(b => b.length)) }))
+    .filter(x => x.len > 0)
+    .sort((a, b) => b.len - a.len);
+  if (!treffer.length || (treffer[1] && treffer[1].len === treffer[0].len)) return null;
+  return treffer[0].v;
 }
 
 /** Bankteile einer Veranstaltung, die Geld zwischen Bank und Festkassa sind, als Zeilen fürs Festkassabuch. */

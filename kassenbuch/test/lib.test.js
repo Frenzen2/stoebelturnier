@@ -388,3 +388,23 @@ test('Abgleich Festkassabuch ↔ Bank', async () => {
   assert.equal(ab.zeilen.length, 8);
   assert.deepEqual(ab.offen.map(b => b.id), ['x']);
 });
+
+test('Veranstaltung über weitere Suchbegriffe erkennen', async () => {
+  const { festBegriffe } = await import('../lib.js');
+  const ver = [
+    { id: 'w', name: 'Wiesnfest 2025', suchbegriffe: 'Wiesn, Oktoberfest; Frühschoppen' },
+    { id: 's', name: 'Sonnwendfeuer 2025', suchbegriffe: 'Sonnwend | Johannisfeuer' },
+    { id: 'b', name: 'Feuerwehrball 2025', suchbegriffe: 'Ball' },
+  ];
+  assert.deepEqual(festBegriffe(ver[0]), ['wiesnfest', 'wiesn', 'oktoberfest', 'fruhschoppen']);
+  assert.equal(veranstaltungImText('Zahlungsreferenz: Wechselgeld Frühschoppen', ver).id, 'w');
+  assert.equal(veranstaltungImText('Erlös Oktoberfest', ver).id, 'w');
+  assert.equal(veranstaltungImText('Wechselgeld Sonnwend', ver).id, 's');
+  assert.equal(veranstaltungImText('Einzahlung Ball', ver).id, 'b');
+  assert.equal(veranstaltungImText('Ballonfahrt', ver), null);              // kurze Begriffe nur als ganzes Wort
+  assert.equal(veranstaltungImText('Feuerwehrball Kassa', ver).id, 'b');   // Wort aus dem Namen
+  // Wiesn (5) und Sonnwendfeuer (13): der genauere, längere Begriff gewinnt
+  assert.equal(veranstaltungImText('Wiesn und Sonnwendfeuer', ver).id, 's');
+  // Gleichstand → keine Zuordnung
+  assert.equal(veranstaltungImText('Wiesn Ballx', [{ id: 'a', name: 'Fest A', suchbegriffe: 'wiesn' }, { id: 'c', name: 'Fest C', suchbegriffe: 'wiesn' }]), null);
+});

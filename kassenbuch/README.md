@@ -165,10 +165,16 @@ abweichendem Betrag. Angezeigt werden Abweichungen (mit „Bankbetrag übernehme
 Treffer nur über den Betrag (Name prüfen) und Bankbuchungen, die das Fest nennen, aber im Festkassabuch fehlen
 (mit „+ als Position“).
 
+**Feste unterscheiden:** Jedes Fest ist eine eigene Veranstaltung (je Jahr eine neue, z. B. „Wiesnfest 2026“).
+Erkannt wird ein Fest in Bank-Texten an den markanten Wörtern seines Namens (ab 5 Buchstaben, ohne Jahreszahl) und an den
+**weiteren Suchbegriffen** in der Veranstaltung (mit Komma getrennt, z. B. „Wiesn, Oktoberfest, Frühschoppen“; kurze Begriffe
+nur als ganzes Wort). Passen mehrere Feste, gewinnt der längere, genauere Begriff; bei Gleichstand wird nichts automatisch
+zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres gefunden werden.
+
 **Bankbuchungen dem Festkassabuch zuordnen** – in beiden Konten:
 
 - Beim Import geschieht das automatisch für Wechselgeld, Erlös und Einzahlungen, wenn der **Name der Veranstaltung**
-  im Bank-Text steht (z. B. „Wechselgeld für Wiesnfest“, „Erlös Sonnwendfeuer“, „Zahlungsreferenz: Wiesnfest“).
+  oder einer ihrer **weiteren Suchbegriffe** im Bank-Text steht (z. B. „Wechselgeld für Wiesnfest“, „Erlös Sonnwendfeuer“, „Zahlungsreferenz: Wiesnfest“).
 - Alles andere (z. B. „Wechselgeld retour“) im Festkassabuch über **🏦 Bankbuchung zuordnen**: Die App schlägt Buchungen
   beider Konten rund um das Fest vor, die wahrscheinlichsten sind schon angehakt.
 - Oder beim Kontieren einer Buchung im Feld **„Festkassabuch der Veranstaltung“**.

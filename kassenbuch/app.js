@@ -1055,6 +1055,9 @@ function veranstaltungDialog(v) {
       <label>Abrechnung über Konto<select id="vKonto">${kontoOptions(v.konto)}</select></label>
     </div>
     <label>Verantwortlich / Festkassier<input id="vVerantw" value="${esc(v.verantwortlich || '')}" maxlength="80"></label>
+    <label>Weitere Suchbegriffe für Bankbuchungen<input id="vSuch" value="${esc(v.suchbegriffe || '')}" maxlength="300" placeholder="z. B. Wiesn, Oktoberfest, Frühschoppen"></label>
+    <p class="muted small" style="margin:4px 0 0">Mit Komma trennen. Steht einer dieser Begriffe (oder ein Wort aus dem Namen) im Bank-Text, wird die Buchung diesem Fest
+      zugeordnet bzw. vorgeschlagen. Kurze Begriffe (3–4 Buchstaben) zählen nur als ganzes Wort.<span id="vSuchTest"></span></p>
     <label>Notiz<textarea id="vNotiz" rows="2" maxlength="1000">${esc(v.notiz || '')}</textarea></label>`, {
     extra: !neu && isAdmin() ? [{
       label: 'Löschen', cls: 'danger', onClick: async () => {
@@ -1065,11 +1068,25 @@ function veranstaltungDialog(v) {
         S.festSel = null; render(true);
       },
     }] : [],
+    onOpen: () => {
+      // Vorschau: welche Bankbuchungen des Jahres würden mit Name + Suchbegriffen gefunden?
+      const test = () => {
+        const probe = { ...v, id: v.id || '__neu', name: $('#vName').value, suchbegriffe: $('#vSuch').value };
+        const andere = S.veranstaltungen.filter(x => x.id !== v.id);
+        const treffer = S.buchungen.filter(b => veranstaltungImText(b.text, [probe, ...andere])?.id === probe.id);
+        $('#vSuchTest').innerHTML = probe.name.trim() || probe.suchbegriffe.trim()
+          ? ` <b>Findet ${treffer.length} Bankbuchung(en) im Jahr ${S.jahr}</b>${treffer.length ? ': ' + treffer.slice(0, 4).map(b => `${deDate(b.datum)} ${fmt(b.betrag)} ${esc(splitBankText(b.text).zweck.slice(0, 30))}`).join(' · ') + (treffer.length > 4 ? ' …' : '') : ''}.`
+          : '';
+      };
+      ['#vName', '#vSuch'].forEach(x => $(x).addEventListener('input', test));
+      test();
+    },
     onOk: async () => {
       const von = $('#vVon').value;
       const data = {
         name: $('#vName').value.trim(), von, bis: $('#vBis').value || von, ort: $('#vOrt').value.trim(),
         konto: $('#vKonto').value, verantwortlich: $('#vVerantw').value.trim(), notiz: $('#vNotiz').value.trim(),
+        suchbegriffe: $('#vSuch').value.trim(),
         status: v.status || 'offen', jahr: von ? Number(von.slice(0, 4)) : S.jahr,
       };
       if (!data.name) { toast('Bitte einen Namen eingeben.', true); return false; }

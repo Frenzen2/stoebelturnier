@@ -105,6 +105,7 @@ service cloud.firestore {
       allow read: if isMember();
       allow create, update: if isKassier()
         && v().name is string && v().name.size() > 0 && v().name.size() <= 80
+        && optText(v(), 'suchbegriffe', 300)
         && v().jahr is int
         && v().status in ['offen', 'abgeschlossen']
         && !locked(v().jahr)
