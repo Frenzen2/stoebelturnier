@@ -1011,10 +1011,17 @@ export function sponsorZahlungen(eintraege, buchungen, buchungenVergeben = new S
       .sort((a, c) => aehnlich(e.name, c.text) - aehnlich(e.name, a.text))[0];
     if (b) nimm(e, b, true, 'Betrag und Name'); else rest2.push(e);
   }
+  const rest3 = [];
   for (const e of rest2) {
     const kand = frei.filter(x => !benutzt.has(x.id) && x.betrag === e.betrag
       && /transparent|sponsor|werb|banner/.test(norm(x.text)));
-    if (kand.length === 1) nimm(e, kand[0], false, 'nur Betrag');
+    if (kand.length === 1) nimm(e, kand[0], false, 'nur Betrag'); else rest3.push(e);
+  }
+  // 4. gleicher Name (Auftraggeber), aber anderer Betrag → Vorschlag; beim Bestätigen gilt der Betrag laut Bank
+  for (const e of rest3) {
+    const b = frei.filter(x => !benutzt.has(x.id) && aehnlich(e.name, splitBankText(x.text).partner) > 0)
+      .sort((a, c) => aehnlich(e.name, splitBankText(c.text).partner) - aehnlich(e.name, splitBankText(a.text).partner))[0];
+    if (b) nimm(e, b, false, 'Name passt, anderer Betrag');
   }
   return out;
 }
@@ -1028,6 +1035,75 @@ export function sponsorKandidaten(buchungen, buchungenVergeben = new Set(), v = 
       const { partner, zweck } = splitBankText(b.text);
       return { buchung: b, name: (partner || zweck || b.text).replace(/\s+(IBAN|BIC)\b.*$/i, '').slice(0, 120), betrag: b.betrag };
     });
+}
+
+// ── Sponsorenliste aus CSV/Excel ─────────────────────────────────────────────
+//
+// Mit Kopfzeile (Name/Firma, Betrag, Zahlweg, Zusatz/Ansprechpartner, Straße, PLZ, Ort bzw. PLZ Ort, E-Mail,
+// Leistung, Status) oder ohne – dann wird erkannt: Textspalte = Name, Zahlenspalte = Betrag,
+// Spalte mit „Überweisung“/„bar …“ = Zahlweg (so wie die bisherige Liste „Tabelle2“).
+
+const SP_KOPF = [
+  ['name', /^(name|firma|sponsor|unternehmen|bezeichnung|werbepartner)/],
+  ['betrag', /^(betrag|summe|preis|euro|eur|€)/],
+  ['zahlweg', /^(zahlweg|zahlung|zahlart|bezahlung|bezahlt per)/],
+  ['zusatz', /^(zusatz|ansprech|z\.? ?h|kontakt|zu handen)/],
+  ['strasse', /^(strasse|str\.?|adresse|anschrift)$/],
+  ['plzOrt', /^(plz ?\/? ?ort|plz und ort)$/],
+  ['plz', /^plz$/],
+  ['ort', /^(ort|wohnort|gemeinde)$/],
+  ['email', /^(e-?mail|mail)/],
+  ['leistung', /^(leistung|art|werbung|beschreibung)$/],
+  ['status', /^(status|bezahlt)$/],
+];
+
+export function sponsorTabelle(table) {
+  const rows = table.filter(r => r.some(c => String(c ?? '').trim() !== ''));
+  if (!rows.length) return { zeilen: [], kopf: false };
+  // ein Festkassabuch (Spalten Einnahmen UND Ausgaben) ist keine Sponsorenliste
+  if (rows.slice(0, 5).some(r => { const n = r.map(c => norm(c)); return n.some(c => c.startsWith('einnahme')) && n.some(c => c.startsWith('ausgabe')); })) {
+    return { zeilen: [], kopf: false };
+  }
+  let hi = -1, map = {};
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const m = {};
+    rows[i].forEach((c, j) => { const n = norm(c); const k = SP_KOPF.find(([, re]) => re.test(n)); if (k && !(k[0] in m)) m[k[0]] = j; });
+    if ('name' in m && Object.keys(m).length >= 2) { hi = i; map = m; break; }
+  }
+  const daten = rows.slice(hi + 1);
+  if (hi < 0) {
+    // ohne Kopfzeile: Spalten am Inhalt erkennen
+    const breite = Math.max(...daten.map(r => r.length));
+    const anteil = (j, f) => { const v = daten.map(r => r[j]).filter(x => String(x ?? '').trim() !== ''); return v.length ? v.filter(f).length / v.length : 0; };
+    for (let j = 0; j < breite; j++) {
+      const zahl = anteil(j, x => typeof x === 'number' || parseAmount(x) !== null);
+      const zw = anteil(j, x => !!zahlwegAus(x));
+      if (zw > 0.6 && !('zahlweg' in map)) map.zahlweg = j;
+      else if (zahl > 0.6 && !('betrag' in map)) map.betrag = j;
+      else if (zahl < 0.3 && zw < 0.3 && !('name' in map)) map.name = j;
+    }
+  }
+  const get = (r, k) => (k in map ? r[map[k]] : '');
+  const txt = (r, k) => String(get(r, k) ?? '').trim();
+  const zeilen = [];
+  for (const r of daten) {
+    const name = txt(r, 'name');
+    if (!name || /^(summe|gesamt|total|original)\b/i.test(norm(name))) continue;
+    const roh = get(r, 'betrag');
+    const betrag = roh === '' || roh == null ? null : (typeof roh === 'number' ? Math.round(roh * 100) : parseAmount(roh));
+    const zwRoh = zahlwegAus(get(r, 'zahlweg'));
+    if (betrag === null && !zwRoh && hi < 0) continue;            // ohne Kopfzeile: Zeile ohne Betrag/Zahlweg ist keine Sponsorzeile
+    const st = norm(get(r, 'status'));
+    zeilen.push({
+      name: name.slice(0, 120), betrag: Math.abs(betrag || 0),
+      zahlweg: zwRoh === 'bar' ? 'bar' : 'ueberweisung',
+      zusatz: txt(r, 'zusatz'), strasse: txt(r, 'strasse'),
+      plzOrt: txt(r, 'plzOrt') || [txt(r, 'plz'), txt(r, 'ort')].filter(Boolean).join(' '),
+      email: txt(r, 'email'), leistung: txt(r, 'leistung'),
+      bezahlt: /^(bezahlt|ja|x|erledigt|ok)/.test(st),
+    });
+  }
+  return { zeilen, kopf: hi >= 0 };
 }
 
 /** Platzhalter {name}, {fest}, {betrag} … in Vorlagen ersetzen */
