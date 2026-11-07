@@ -19,7 +19,7 @@ import {
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel, bankAbgleich,
-  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle,
+  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -2038,13 +2038,12 @@ function sponsorKarte(v) {
   const summe = f => liste.filter(f).reduce((a, e) => a + (e.betrag || 0), 0);
   const belegt = belegteZahlungen(v);
   const zahlungen = sponsorZahlungen(liste, S.buchungen, belegt);
-  const kand = sponsorKandidaten(S.buchungen, belegt, v)
-    .filter(k => veranstaltungImText(k.buchung.text, [v]) || Math.abs((new Date(k.buchung.datum) - new Date(v.von || k.buchung.datum)) / 864e5) <= 90);
+  const kand = offeneEingaenge(v);
   const transparentPosten = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
   return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">${esc(v.name)} <span class="muted" style="font-weight:400">${festDatum(v)}</span></h2>
       ${edit ? `<button class="btn primary" id="spNeu">+ Sponsor</button>` : ''}
       ${kassier && zahlungen.length ? `<button class="btn" id="spZahl">⇄ ${zahlungen.length} Zahlung(en) zuordnen</button>` : ''}
-      ${kassier && kand.length ? `<button class="btn" id="spKand" title="Zahlungseingänge mit Transparent/Sponsoring im Text, die noch keinem Sponsor gehören">⬇ ${kand.length} aus Überweisungen</button>` : ''}
+      ${kassier && kand.length ? `<button class="btn" id="spKand" title="Zahlungseingänge, die noch keinem Sponsor gehören: bestehendem Sponsor zuordnen oder neu anlegen">🔗 ${kand.length} weitere Überweisungen</button>` : ''}
       ${edit ? `<button class="btn" id="spImport">⬆ CSV/Excel importieren</button><button class="btn" id="spVorjahr">⧉ Aus anderem Fest übernehmen</button>` : ''}
       ${liste.length ? `<button class="btn" id="spCsv">⬇ CSV</button>` : ''}
       ${liste.length && kassier ? `<button class="btn" id="spRe">🖨 Rechnungen</button>` : ''}${liste.length ? `<button class="btn" id="spDank">🖨 Dankesschreiben</button>` : ''}
@@ -2193,33 +2192,78 @@ function zahlungenDialog(v) {
   });
 }
 
+/** Zahlungseingänge ohne Sponsor (Transparent/Sponsoring/Werbung im Text oder Name eines offenen Sponsors), um das Fest */
+function offeneEingaenge(v) {
+  const belegt = belegteZahlungen(v);
+  const offen = (S.sponsoring[v.id] || []).filter(e => e.status !== 'bezahlt');
+  const nahe = b => veranstaltungImText(b.text, [v]) || Math.abs((new Date(b.datum) - new Date(v.von || b.datum)) / 864e5) <= 90;
+  const kand = sponsorKandidaten(S.buchungen, belegt, v).filter(k => nahe(k.buchung));
+  const ids = new Set(kand.map(k => k.buchung.id));
+  // auch Eingänge ohne Stichwort, deren Auftraggeber wie ein offener Sponsor heißt
+  for (const b of S.buchungen) {
+    if (b.betrag <= 0 || ids.has(b.id) || belegt.has(b.id) || b.splits?.length || (b.veranstaltung && b.festArt !== 'bank') || !nahe(b)) continue;
+    const partner = splitBankText(b.text).partner;
+    if (partner && offen.some(e => aehnlich(e.name, partner) > 0)) {
+      kand.push({ buchung: b, name: partner.slice(0, 120), betrag: b.betrag });
+      ids.add(b.id);
+    }
+  }
+  return kand.sort((a, b) => a.buchung.datum.localeCompare(b.buchung.datum));
+}
+
 function kandidatenDialog(v) {
-  const kand = sponsorKandidaten(S.buchungen, belegteZahlungen(v), v)
-    .filter(k => veranstaltungImText(k.buchung.text, [v]) || Math.abs((new Date(k.buchung.datum) - new Date(v.von || k.buchung.datum)) / 864e5) <= 90);
+  const kand = offeneEingaenge(v);
+  const offen = (S.sponsoring[v.id] || []).filter(e => e.status !== 'bezahlt').sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const vor = ueberweisungVorschlaege(kand, offen);
   const andere = S.veranstaltungen.filter(x => x.id !== v.id);
-  modal('Sponsoren aus Überweisungen anlegen', `
-    <p class="muted small">Zahlungseingänge mit „Transparent“, „Sponsoring“ oder „Werbung“ im Text (bis 90 Tage um das Fest), die noch keinem Sponsor gehören.
-      Angehakt sind die, die kein anderes Fest nennen. Sie werden als bezahlt angelegt.</p>
-    <div class="tablewrap"><table class="t"><thead><tr><th></th><th>Name</th><th class="r">Betrag</th><th>Bankbuchung</th></tr></thead><tbody>
-    ${kand.map((k, i) => `<tr><td><input type="checkbox" data-ki="${i}" ${veranstaltungImText(k.buchung.text, andere) ? '' : 'checked'}></td>
-      <td><input data-kn="${i}" value="${esc(k.name)}" maxlength="120" style="width:100%"></td><td class="r">${fmt(k.betrag)}</td>
-      <td class="small">${deDate(k.buchung.datum)} · ${esc(kontoById(k.buchung.konto)?.name || '')} · ${esc(splitBankText(k.buchung.text).zweck.slice(0, 50))}</td></tr>`).join('')}</tbody></table></div>`, {
-    wide: true, ok: 'Anlegen',
+  const optionen = (k, i) => {
+    const gleich = offen.filter(e => e.betrag === k.betrag);
+    const rest = offen.filter(e => e.betrag !== k.betrag);
+    const opt = e => `<option value="${esc(e.id)}" ${vor[i].aktion === e.id ? 'selected' : ''}>→ ${esc(e.name)} (${e.betrag ? fmt(e.betrag) : 'ohne Betrag'})</option>`;
+    return `<option value="skip" ${vor[i].aktion === 'skip' ? 'selected' : ''}>— nicht zuordnen —</option>
+      <option value="neu" ${vor[i].aktion === 'neu' && !veranstaltungImText(k.buchung.text, andere) ? 'selected' : ''}>+ als neuen Sponsor anlegen</option>
+      ${gleich.length ? `<optgroup label="Offene Sponsoren mit gleichem Betrag">${gleich.map(opt).join('')}</optgroup>` : ''}
+      ${rest.length ? `<optgroup label="Weitere offene Sponsoren">${rest.map(opt).join('')}</optgroup>` : ''}`;
+  };
+  modal('Weitere Überweisungen zuordnen', `
+    <p class="muted small">Zahlungseingänge beider Konten rund um das Fest, die noch keinem Sponsor gehören. Je Zeile wählen:
+      einem <b>bestehenden offenen Sponsor</b> zuordnen (der Betrag laut Bank wird übernommen), <b>neu anlegen</b> oder nicht zuordnen.
+      Vorausgewählt ist ein bestehender Sponsor nur, wenn der Name passt; „neu anlegen“ nur, wenn kein offener Sponsor in Frage kommt.</p>
+    ${kand.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Zahlungseingang</th><th class="r">Betrag</th><th>Zuordnung</th></tr></thead><tbody>
+    ${kand.map((k, i) => `<tr><td class="small">${deDate(k.buchung.datum)} · ${esc(kontoById(k.buchung.konto)?.name || '')}<br>${bankText(k.buchung.text)}</td>
+      <td class="r">${fmt(k.betrag)}</td>
+      <td><select data-ka="${i}" style="width:100%">${optionen(k, i)}</select>
+        <input data-kn="${i}" value="${esc(k.name)}" maxlength="120" placeholder="Name des neuen Sponsors" style="width:100%;margin-top:4px">
+        <div class="small muted">${esc(vor[i].grund)}</div></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Keine offenen Zahlungseingänge.</p>'}`, {
+    wide: true, ok: 'Übernehmen',
+    onOpen: () => {
+      const sicht = () => $$('#dlg [data-ka]').forEach(s => { $(`#dlg [data-kn="${s.dataset.ka}"]`).classList.toggle('hidden', s.value !== 'neu'); });
+      $$('#dlg [data-ka]').forEach(s => s.addEventListener('change', sicht));
+      sicht();
+    },
     onOk: async () => {
-      const sel = $$('#dlg [data-ki]:checked').map(c => +c.dataset.ki);
-      if (!sel.length) return;
+      const wahl = $$('#dlg [data-ka]').map(s => ({ k: kand[+s.dataset.ka], i: +s.dataset.ka, a: s.value })).filter(x => x.a !== 'skip');
+      if (!wahl.length) return;
+      const doppelt = wahl.filter(x => x.a !== 'neu').map(x => x.a).filter((id, j, arr) => arr.indexOf(id) !== j);
+      if (doppelt.length) { toast(`„${offen.find(e => e.id === doppelt[0])?.name}“ ist mehreren Zahlungen zugeordnet – bitte korrigieren.`, true); return false; }
       const batch = writeBatch(db);
-      for (const i of sel) {
-        const k = kand[i];
-        batch.set(doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')), {
-          name: $(`#dlg [data-kn="${i}"]`).value.trim() || k.name, zusatz: '', strasse: '', plzOrt: '', email: '',
-          leistung: `Transparentwerbung ${v.name}`, betrag: k.betrag, zahlweg: 'ueberweisung', status: 'bezahlt',
-          bezahltAm: k.buchung.datum, buchungId: k.buchung.id, rechnungsNr: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
-        });
+      let neu = 0, zu = 0;
+      for (const { k, i, a } of wahl) {
+        if (a === 'neu') {
+          neu++;
+          batch.set(doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')), {
+            name: $(`#dlg [data-kn="${i}"]`).value.trim() || k.name, zusatz: '', strasse: '', plzOrt: '', email: '',
+            leistung: `Transparentwerbung ${v.name}`, betrag: k.betrag, zahlweg: 'ueberweisung', status: 'bezahlt',
+            bezahltAm: k.buchung.datum, buchungId: k.buchung.id, rechnungsNr: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+          });
+        } else {
+          zu++;
+          batch.update(spRef(v, a), { status: 'bezahlt', bezahltAm: k.buchung.datum, buchungId: k.buchung.id, betrag: k.betrag });
+        }
       }
-      logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Sponsoren aus Überweisungen angelegt`);
+      logTo(batch, 'sponsoring', `${v.name}: ${zu} Überweisungen bestehenden Sponsoren zugeordnet, ${neu} neue Sponsoren angelegt`);
       await batch.commit();
-      toast(`${sel.length} Sponsoren angelegt.`);
+      toast(`${zu} zugeordnet, ${neu} neu angelegt.`);
     },
   });
 }
