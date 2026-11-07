@@ -1191,7 +1191,7 @@ function veranstaltungDialog(v) {
     </div>
     <div class="row">
       <label>Ort<input id="vOrt" value="${esc(v.ort || '')}" maxlength="80"></label>
-      <label>Abrechnung über Konto<select id="vKonto">${kontoOptions(v.konto)}</select></label>
+
     </div>
     <label>Verantwortlich / Festkassier<input id="vVerantw" value="${esc(v.verantwortlich || '')}" maxlength="80"></label>
     <label>Weitere Suchbegriffe für Bankbuchungen<input id="vSuch" value="${esc(v.suchbegriffe || '')}" maxlength="300" placeholder="z. B. Wiesn, Oktoberfest, Frühschoppen"></label>
@@ -1224,7 +1224,7 @@ function veranstaltungDialog(v) {
       const von = $('#vVon').value;
       const data = {
         name: $('#vName').value.trim(), von, bis: $('#vBis').value || von, ort: $('#vOrt').value.trim(),
-        konto: $('#vKonto').value, verantwortlich: $('#vVerantw').value.trim(), notiz: $('#vNotiz').value.trim(),
+        verantwortlich: $('#vVerantw').value.trim(), notiz: $('#vNotiz').value.trim(),
         suchbegriffe: $('#vSuch').value.trim(),
         status: v.status || 'offen', jahr: von ? Number(von.slice(0, 4)) : S.jahr,
       };
@@ -1292,7 +1292,7 @@ function viewVeranstaltung(v) {
         <td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td>
         <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragVz < 0 ? 'minus' : 'plus'} ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? '+' : '−'}${fmt(Math.abs(p.betragVz))}</span></td></tr>`).join('')
         || `<tr><td colspan="11" class="muted">Noch keine Einträge. Üblicher Ablauf: Wechselgeld von der Bank abheben (Bankbuchung zuordnen) → nach dem Fest je Stand einen <b>Kassasturz</b> machen → <b>Barausgaben</b> mit Beleg erfassen → Geld auf die Bank einzahlen (Bankbuchung zuordnen).</td></tr>`}</tbody></table></div>
-      <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen (Feuerwehr- oder Mannschaftskassa): eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung. Sie müssen nicht noch einmal eingetragen werden.
+      <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen der <b>Feuerwehr- und der Mannschaftskassa</b>: eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung; Rechnungen und Eingänge des Festes über die Bank stehen als Ausgabe/Einnahme (Bestand unverändert). Sie müssen nicht noch einmal eingetragen werden.
         Positionen mit Zahlweg <b>Überweisung</b> (grau) ändern den Kassabestand nicht. Ergebnis „–“ = zählt nicht zum Ergebnis des Festes.</p>
     </div>
 

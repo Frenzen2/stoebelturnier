@@ -618,7 +618,8 @@ export const ZAHLWEGE = { bar: 'Bar aus der Festkassa', ueberweisung: 'Überweis
 export function postenInfo(p) {
   const fluss = p.art === 'einnahme' || p.art === 'ausgabe';
   const zahlweg = p.bank ? 'bank' : fluss ? (p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar') : 'bar';
-  return { fluss, zahlweg, ergebnis: fluss && p.ergebnis !== false, kassa: !(fluss && zahlweg === 'ueberweisung') };
+  // Kassabestand ändern nur Bargeld-Positionen sowie Wechselgeld/Ablieferung (auch von der Bank)
+  return { fluss, zahlweg, ergebnis: fluss && p.ergebnis !== false, kassa: !(fluss && zahlweg !== 'bar') };
 }
 
 export const STUECKELUNG = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
@@ -681,15 +682,22 @@ export function veranstaltungImText(text, veranstaltungen) {
   return treffer[0].v;
 }
 
-/** Bankteile einer Veranstaltung, die Geld zwischen Bank und Festkassa sind, als Zeilen fürs Festkassabuch. */
+/**
+ * Zugeordnete Bankbuchungen beider Konten als Zeilen fürs Festkassabuch:
+ *  'kassa' → Wechselgeld (Abhebung) bzw. Ablieferung (Einzahlung) – ändert den Kassabestand
+ *  'bank'  → Einnahme/Ausgabe des Festes über die Bank – zählt zum Ergebnis, Kassabestand bleibt
+ */
 export function bankPosten(bankTeile) {
-  return bankTeile.filter(t => t.festArt === 'kassa').map(t => ({
+  return bankTeile.map(t => ({
     id: 'bank_' + (t.buchung?.id || ''),
-    art: t.betrag < 0 ? 'wechselgeld' : 'ablieferung',
+    art: t.festArt === 'kassa' ? (t.betrag < 0 ? 'wechselgeld' : 'ablieferung') : (t.betrag < 0 ? 'ausgabe' : 'einnahme'),
     betrag: Math.abs(t.betrag),
     datum: t.buchung?.datum || '',
     zeit: '',
-    text: (splitBankText(t.buchung?.text).zweck || t.buchung?.text || '').slice(0, 120),
+    text: (t.festArt === 'kassa'
+      ? splitBankText(t.buchung?.text).zweck
+      : [splitBankText(t.buchung?.text).partner, splitBankText(t.buchung?.text).zweck].filter(Boolean).join(' – ')
+    ) .slice(0, 120) || (t.buchung?.text || '').slice(0, 120),
     bereich: '',
     bank: true,
     buchung: t.buchung,
@@ -729,7 +737,7 @@ export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   const pick = (art, f) => sum(mit.filter(x => x.p.art === art && f(x.i)), x => abs(x.p));
   const bereiche = new Map();
   for (const { p, i } of mit) {
-    if (!i.ergebnis) continue;
+    if (!i.ergebnis || p.bank) continue;
     const key = p.bereich || (p.art === 'einnahme' ? 'Einnahmen allgemein' : 'Ausgaben allgemein');
     if (!bereiche.has(key)) bereiche.set(key, { bereich: key, einnahmen: 0, ausgaben: 0 });
     bereiche.get(key)[p.art === 'einnahme' ? 'einnahmen' : 'ausgaben'] += abs(p);
