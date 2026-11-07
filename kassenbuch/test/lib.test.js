@@ -480,3 +480,19 @@ test('Sponsorenliste aus CSV/Excel', async () => {
   // Festkassabuch-Blatt wird nicht als Sponsorenliste gelesen
   assert.equal(sponsorTabelle([['Datum', 'Text', 'Einnahmen', 'Ausgaben'], ['', 'Musik', '', 450]]).zeilen.length, 0);
 });
+
+test('Weitere Überweisungen: bestehendem Sponsor zuordnen statt doppelt anlegen', async () => {
+  const { ueberweisungVorschlaege } = await import('../lib.js');
+  const K = (id, betrag, text) => ({ buchung: { id, betrag, text }, name: text, betrag });
+  const kand = [
+    K('k1', 30000, 'Auftraggeber: Andreas und Martina Gaborek Zahlungsreferenz: Transparentwerbung'),   // Name passt, Betrag anders
+    K('k2', 5000, 'Auftraggeber: Firma Unbekannt Zahlungsreferenz: Transparentwerbung'),               // nur Betrag passt
+    K('k3', 7700, 'Auftraggeber: Ganz Neu GmbH Zahlungsreferenz: Sponsoring'),                         // nichts passt
+    K('k4', 5000, 'Auftraggeber: Bäckerei Korn Zahlungsreferenz: Werbung'),                            // Name + Betrag
+  ];
+  const offen = [{ id: 'g', name: 'Fliesen Gaborek', betrag: 10000 }, { id: 'b', name: 'Bäckerei Korn', betrag: 5000 }, { id: 'x', name: 'Elektro Muster', betrag: 5000 }];
+  const v = ueberweisungVorschlaege(kand, offen);
+  assert.deepEqual(v.map(x => x.aktion), ['g', 'skip', 'neu', 'b']);
+  assert.match(v[0].grund, /Name passt, Betrag abweichend/);
+  assert.deepEqual(v[1].gleicherBetrag, ['x']);
+});

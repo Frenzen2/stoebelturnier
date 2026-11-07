@@ -119,8 +119,10 @@ Je Fest gibt es:
 - **🖨 Dankesschreiben** mit dem ersten Foto des Transparents.
 - **⇄ Zahlungen zuordnen**: Zahlungseingänge beider Konten werden über die **Rechnungsnummer** im Text oder über
   **Betrag und Namen** erkannt; der Sponsor wird „bezahlt“ und mit der Bankbuchung verknüpft.
-- **⬇ Aus Überweisungen**: Eingänge mit „Transparent“, „Sponsoring“ oder „Werbung“, die noch keinem Sponsor gehören,
-  als neue (bezahlte) Sponsoren anlegen – Zahlungen, die schon einer Position entsprechen, werden nicht vorgeschlagen.
+- **🔗 Weitere Überweisungen**: Eingänge rund um das Fest, die noch keinem Sponsor gehören (Stichwort „Transparent“,
+  „Sponsoring“, „Werbung“ oder Auftraggeber wie ein offener Sponsor). Je Zahlung wählen: **bestehendem offenen Sponsor
+  zuordnen** (Bank-Betrag wird übernommen), **neu anlegen** oder nicht zuordnen. Vorausgewählt wird ein bestehender
+  Sponsor nur bei passendem Namen, „neu“ nur, wenn kein offener Sponsor in Frage kommt – so entstehen keine Doppelten.
 - **Bezahlte Sponsoren stehen automatisch im Festkassabuch** (Bereich „Transparente“, bar oder Überweisung) und zählen
   zum Ergebnis; offene Rechnungen nicht – sie erscheinen als Hinweis im Jahresabschluss.
 - Aus dem bisherigen Excel übernommene Transparent-Positionen lassen sich mit **In Sponsoren umwandeln** übernehmen

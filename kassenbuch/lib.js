@@ -1106,6 +1106,33 @@ export function sponsorTabelle(table) {
   return { zeilen, kopf: hi >= 0 };
 }
 
+/**
+ * Vorschlag je Zahlungseingang ohne Sponsor: einem bestehenden offenen Sponsor zuordnen, neu anlegen oder offen lassen.
+ *  - Name passt (beste Übereinstimmung, jeder Sponsor nur einmal) → bestehender Sponsor (auch bei anderem Betrag)
+ *  - nur der Betrag passt zu offenen Sponsoren → nicht zuordnen, Auswahl durch die Kassierin/den Kassier
+ *  - kein offener Sponsor kommt in Frage → neu anlegen
+ */
+export function ueberweisungVorschlaege(kandidaten, offeneSponsoren) {
+  const paare = [];
+  kandidaten.forEach((k, i) => offeneSponsoren.forEach(e => {
+    const n = aehnlich(e.name, k.buchung.text);
+    if (n > 0) paare.push({ i, e, n, gleich: e.betrag === k.betrag });
+  }));
+  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich));
+  const wahl = new Map(), vergeben = new Set();
+  for (const p of paare) {
+    if (wahl.has(p.i) || vergeben.has(p.e.id)) continue;
+    wahl.set(p.i, { aktion: p.e.id, grund: p.gleich ? 'Name und Betrag passen' : `Name passt, Betrag ${p.e.betrag ? 'abweichend' : 'fehlt'} – Bank-Betrag wird übernommen` });
+    vergeben.add(p.e.id);
+  }
+  return kandidaten.map((k, i) => {
+    if (wahl.has(i)) return { ...k, ...wahl.get(i) };
+    const gleich = offeneSponsoren.filter(e => !vergeben.has(e.id) && e.betrag === k.betrag);
+    if (gleich.length) return { ...k, aktion: 'skip', grund: `${gleich.length} offene(r) Sponsor(en) mit gleichem Betrag – bitte auswählen`, gleicherBetrag: gleich.map(e => e.id) };
+    return { ...k, aktion: 'neu', grund: 'kein passender offener Sponsor' };
+  });
+}
+
 /** Platzhalter {name}, {fest}, {betrag} … in Vorlagen ersetzen */
 export function fuelleVorlage(text, werte) {
   return String(text || '').replace(/\{(\w+)\}/g, (m, k) => (k in werte ? String(werte[k]) : m));
