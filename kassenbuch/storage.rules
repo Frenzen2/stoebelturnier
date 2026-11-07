@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// Sicherheitsregeln für die Belege (Firebase Storage).
+// In der Firebase-Konsole unter Storage → Regeln einfügen und „Veröffentlichen“.
+// Die Regeln lesen Rolle und Jahressperre aus Firestore – beim ersten Veröffentlichen fragt die Konsole,
+// ob Storage auf Firestore zugreifen darf: bestätigen.
+//
+//  - Lesen: alle mit aktivem Profil (auch Kassaprüfer)
+//  - Belege zu Bankbuchungen: Admin und Kassier
+//  - Belege zu Festkassa-Posten: Admin, Kassier und Festkassa
+//  - Nur PDF und Bilder, höchstens 15 MB; in abgeschlossenen Jahren weder hochladen noch löschen
+service firebase.storage {
+  match /b/{bucket}/o {
+    function userDoc() { return /databases/(default)/documents/users/$(request.auth.uid); }
+    function member() {
+      return request.auth != null && firestore.exists(userDoc()) && firestore.get(userDoc()).data.active == true;
+    }
+    function rolle(rollen) { return member() && firestore.get(userDoc()).data.role in rollen; }
+    function jahrDoc(jahr) { return /databases/(default)/documents/jahre/$(jahr); }
+    function offen(jahr) {
+      return !(firestore.exists(jahrDoc(jahr)) && firestore.get(jahrDoc(jahr)).data.get('gesperrt', false) == true);
+    }
+    function okDatei() {
+      return request.resource.size < 15 * 1024 * 1024
+        && (request.resource.contentType == 'application/pdf' || request.resource.contentType.matches('image/.*'));
+    }
+
+    match /belege/{jahr}/buchung/{buchung}/{datei} {
+      allow read: if member();
+      allow create: if rolle(['admin', 'kassier']) && offen(jahr) && okDatei();
+      allow delete: if rolle(['admin', 'kassier']) && offen(jahr);
+    }
+    match /belege/{jahr}/posten/{veranstaltung}/{posten}/{datei} {
+      allow read: if member();
+      allow create: if rolle(['admin', 'kassier', 'fest']) && offen(jahr) && okDatei();
+      allow delete: if rolle(['admin', 'kassier', 'fest']) && offen(jahr);
+    }
+  }
+}

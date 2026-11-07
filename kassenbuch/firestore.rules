@@ -1,0 +1,163 @@
+rules_version = '2';
+
+// Sicherheitsregeln für das Kassenbuch der FF Pichl.
+// In der Firebase-Konsole unter Firestore Database → Regeln einfügen und „Veröffentlichen“.
+//
+// Rollen (Feld role in /users/{uid}):
+//   admin   – alles, inkl. Benutzer, Konten, Kategorien; kann abgeschlossene Jahre wieder öffnen
+//   kassier – Bank-Import, Buchungen kontieren, Veranstaltungen und Festkassa, Jahr abschließen
+//   fest    – nur Festkassa-Posten bei offenen Veranstaltungen eintragen (z. B. Festkassier)
+//   pruefer – Kassaprüfer: darf alles lesen, aber nichts ändern
+//
+// Grundprinzip wie beim Schichtplan: Ohne AKTIVES Profil in /users/{uid} sieht man nichts.
+// Abgeschlossene Jahre (/jahre/{jahr}.gesperrt == true) können nicht mehr verändert werden.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function profile() { return get(userPath(request.auth.uid)).data; }
+    function isMember() {
+      return signedIn() && exists(userPath(request.auth.uid)) && profile().active == true;
+    }
+    function role() { return profile().role; }
+    function isAdmin() { return isMember() && role() == 'admin'; }
+    function isKassier() { return isMember() && role() in ['admin', 'kassier']; }
+    function isFest() { return isMember() && role() in ['admin', 'kassier', 'fest']; }
+
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function shortText(v, max) { return v is string && v.size() <= max; }
+    function optText(d, f, max) { return !(f in d) || shortText(d[f], max); }
+
+    function jahrPath(j) { return /databases/$(database)/documents/jahre/$(string(j)); }
+    function locked(j) { return exists(jahrPath(j)) && get(jahrPath(j)).data.get('gesperrt', false) == true; }
+
+    // ── Benutzer ──────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isMember() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if isAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.role in ['admin', 'kassier', 'fest', 'pruefer']
+        && request.resource.data.active is bool
+        // Admins können sich nicht selbst aussperren
+        && (uid != request.auth.uid
+            || (request.resource.data.role == 'admin' && request.resource.data.active == true));
+      allow delete: if isAdmin() && uid != request.auth.uid;
+    }
+
+    // ── Stammdaten ────────────────────────────────────────────────────────
+    // config/kategorien (Kontenplan), config/regeln (automatische Kontierung)
+    match /config/{docId} {
+      allow read: if isMember();
+      allow write: if isAdmin() || (docId == 'regeln' && isKassier());
+    }
+
+    match /konten/{id} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60;
+    }
+
+    // ── Jahre: Anfangsbestände, Bank-Endsalden, Abschluss ─────────────────
+    match /jahre/{jahr} {
+      allow read: if isMember();
+      allow write: if jahr.matches('^[0-9]{4}$') && (
+        isAdmin()
+        // Kassier darf nur bearbeiten, solange das Jahr offen ist (und es dabei abschließen)
+        || (isKassier() && (resource == null || resource.data.get('gesperrt', false) == false))
+      );
+    }
+
+    // ── Bankbuchungen ─────────────────────────────────────────────────────
+    match /buchungen/{id} {
+      function b() { return request.resource.data; }
+      function validBuchung() {
+        return b().konto is string && b().konto.size() > 0 && b().konto.size() <= 40
+          && exists(/databases/$(database)/documents/konten/$(b().konto))
+          && isDate(b().datum)
+          && b().jahr is int
+          && b().datum.matches('^' + string(b().jahr) + '-.*')
+          && b().betrag is int
+          && shortText(b().text, 500)
+          && optText(b(), 'kategorie', 40)
+          && optText(b(), 'veranstaltung', 40)
+          && (!('festArt' in b()) || b().festArt in ['', 'kassa', 'bank'])
+          && optText(b(), 'notiz', 1000)
+          && optText(b(), 'beleg', 40)
+          && (!('splits' in b()) || (b().splits is list && b().splits.size() <= 20))
+          && (!('belege' in b()) || (b().belege is list && b().belege.size() <= 30));
+      }
+      allow read: if isMember();
+      allow create: if isKassier() && validBuchung() && !locked(b().jahr);
+      allow update: if isKassier() && validBuchung() && !locked(b().jahr) && !locked(resource.data.jahr)
+        // Bankdaten importierter Buchungen bleiben unverändert (nur kontieren erlaubt)
+        && (resource.data.get('quelle', '') != 'import'
+            || !b().diff(resource.data).affectedKeys().hasAny(['konto', 'datum', 'betrag', 'text', 'jahr', 'quelle']));
+      allow delete: if isKassier() && !locked(resource.data.jahr);
+    }
+
+    // ── Veranstaltungen und Festkassa ─────────────────────────────────────
+    match /veranstaltungen/{vid} {
+      function v() { return request.resource.data; }
+      allow read: if isMember();
+      allow create, update: if isKassier()
+        && v().name is string && v().name.size() > 0 && v().name.size() <= 80
+        && optText(v(), 'suchbegriffe', 300)
+        && v().jahr is int
+        && v().status in ['offen', 'abgeschlossen']
+        && !locked(v().jahr)
+        && (resource == null || !locked(resource.data.jahr));
+      allow delete: if isAdmin() && !locked(resource.data.jahr);
+
+      // Sponsoren / Transparente: Kassier jederzeit (Zahlungen kommen oft nach dem Fest), Festkassa nur bei offenem Fest
+      match /sponsoring/{sid} {
+        function ev() { return get(/databases/$(database)/documents/veranstaltungen/$(vid)).data; }
+        function sp() { return request.resource.data; }
+        allow read: if isMember();
+        allow create, update: if (isKassier() || (isFest() && ev().status == 'offen')) && !locked(ev().jahr)
+          && sp().name is string && sp().name.size() > 0 && sp().name.size() <= 120
+          && sp().betrag is int && sp().betrag >= 0
+          && sp().zahlweg in ['ueberweisung', 'bar']
+          && sp().status in ['offen', 'bezahlt']
+          && (!('belege' in sp()) || (sp().belege is list && sp().belege.size() <= 30));
+        allow delete: if isKassier() && !locked(ev().jahr);
+      }
+
+      match /posten/{pid} {
+        function evt() { return get(/databases/$(database)/documents/veranstaltungen/$(vid)).data; }
+        function p() { return request.resource.data; }
+        function eventOpen() { return evt().status == 'offen' && !locked(evt().jahr); }
+        allow read: if isMember();
+        allow create, update: if isFest() && eventOpen()
+          && p().art in ['wechselgeld', 'einnahme', 'ausgabe', 'ablieferung']
+          && p().betrag is int && p().betrag >= 0
+          && isDate(p().datum)
+          && optText(p(), 'text', 300)
+          && optText(p(), 'bereich', 60)
+          && optText(p(), 'beleg', 40)
+          && optText(p(), 'zeit', 5)
+          && optText(p(), 'quelle', 20)
+          && (!('stueckelung' in p()) || p().stueckelung is map)
+          && (!('zahlweg' in p()) || p().zahlweg in ['bar', 'ueberweisung'])
+          && (!('belege' in p()) || (p().belege is list && p().belege.size() <= 30))
+          && (!('ergebnis' in p()) || p().ergebnis is bool);
+        allow delete: if isFest() && eventOpen();
+      }
+    }
+
+    // ── Änderungsprotokoll (nur anhängen, nie ändern oder löschen) ────────
+    match /log/{id} {
+      allow read: if isMember() && role() in ['admin', 'kassier', 'pruefer'];
+      allow create: if isMember()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.wann == request.time
+        && shortText(request.resource.data.aktion, 60)
+        && shortText(request.resource.data.text, 2000);
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Kassenbuch FF Pichl</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#b91c1c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kassenbuch">
+<style>
+:root {
+  --bg: #f4f5f7; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6ea;
+  --accent: #b91c1c; --accent-soft: #fdecec; --danger: #dc2626; --ok: #15803d; --plus: #15803d; --minus: #b91c1c;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+button, input, select, textarea { font: inherit; }
+.hidden { display: none !important; }
+
+.center { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login-card { background: var(--card); padding: 28px; border-radius: 14px; width: 100%; max-width: 380px; box-shadow: 0 6px 30px rgba(0,0,0,.08); }
+.login-card h1 { margin: 0 0 4px; font-size: 1.4rem; }
+.login-card .logo { width: 56px; height: 56px; display: block; margin-bottom: 10px; }
+
+header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
+.brand { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.brand img { width: 26px; height: 26px; }
+.spacer { flex: 1; }
+nav { display: flex; gap: 4px; padding: 0 12px; max-width: 1400px; margin: 0 auto; overflow-x: auto; }
+nav button { background: none; border: 0; padding: 10px 12px; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
+nav button.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: .72rem; text-align: center; margin-left: 4px; }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.card h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.card h3 { margin: 16px 0 8px; font-size: 1rem; }
+.muted { color: var(--muted); font-size: .88rem; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.row > label { flex: 1 1 160px; }
+label { display: block; font-size: .85rem; color: var(--muted); }
+label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 3px; }
+label.check { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: .9rem; }
+label.check > input { display: inline-block; width: auto; margin: 0; flex: none; }
+input, select, textarea { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); min-width: 0; }
+input.num { text-align: right; font-variant-numeric: tabular-nums; }
+.btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; white-space: nowrap; color: var(--text); }
+.btn:hover { background: #f7f8fa; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #991b1b; }
+.btn.danger { color: var(--danger); }
+.btn.small { padding: 4px 9px; font-size: .85rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+.error { color: var(--danger); font-size: .88rem; min-height: 1.2em; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.toolbar > label { flex: 0 1 180px; }
+.toolbar > label.grow { flex: 1 1 220px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; }
+.stat { background: var(--card); border-radius: var(--radius); padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.stat .lbl { color: var(--muted); font-size: .85rem; }
+.stat .val { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .sub { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+.stat.click { cursor: pointer; }
+.stat.click:hover { box-shadow: 0 0 0 2px var(--accent-soft), 0 1px 3px rgba(0,0,0,.05); }
+
+.tablewrap { overflow-x: auto; }
+table.t { width: 100%; border-collapse: collapse; font-size: .9rem; }
+table.t th, table.t td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t th { color: var(--muted); font-weight: 500; font-size: .8rem; white-space: nowrap; }
+table.t td.r, table.t th.r { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.t tr.click { cursor: pointer; }
+table.t tr.click:hover td { background: #fafafa; }
+table.t tr.sel td { background: var(--accent-soft); }
+table.t tfoot td, table.t tr.sum td { font-weight: 700; border-top: 2px solid var(--text); }
+table.t tr.sub td { font-weight: 600; background: #fafbfc; }
+table.t td.text { max-width: 520px; }
+.plus { color: var(--plus); }
+.minus { color: var(--minus); }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .78rem; background: #eef0f3; white-space: nowrap; }
+.chip.warn { background: #fef3c7; color: #92400e; }
+.chip.ok { background: #dcfce7; color: #166534; }
+.chip.lock { background: #e0e7ff; color: #3730a3; }
+.chip.split { background: #f3e8ff; color: #6b21a8; }
+.warnbox { background: #fef3c7; color: #92400e; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: .9rem; }
+.okbox { background: #dcfce7; color: #166534; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: .9rem; }
+.infobox { background: #eff6ff; color: #1e3a8a; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: .9rem; }
+.small { font-size: .82rem; }
+.nowrap { white-space: nowrap; }
+
+dialog { max-height: 92vh; overflow: auto; overflow-x: hidden; border: 0; border-radius: 14px; padding: 0; width: min(620px, calc(100vw - 24px)); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog.wide { width: min(900px, calc(100vw - 24px)); }
+dialog::backdrop { background: rgba(15, 23, 42, .45); }
+.dlg { padding: 20px; }
+.dlg h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.dlg .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.dlg .actions .left { margin-right: auto; }
+.dlg label { margin-top: 8px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: .9rem; background: #fafbfc; padding: 10px 12px; border-radius: 8px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; word-break: break-word; }
+.splitrow { display: grid; grid-template-columns: 1fr 1fr 110px 32px; gap: 6px; margin-top: 6px; align-items: center; }
+@media (max-width: 560px) { .splitrow { grid-template-columns: 1fr 1fr; } }
+.stueck { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; }
+.stueck label { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 6px; margin: 0; color: var(--text); }
+.stueck input { text-align: right; }
+
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 18px; border-radius: 10px; z-index: 100; font-size: .9rem; max-width: calc(100vw - 32px); }
+#toast.err { background: var(--danger); }
+
+/* Filter einklappbar (am Handy standardmäßig zu) */
+details.filter > summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; list-style: none; }
+details.filter > summary::-webkit-details-marker { display: none; }
+details.filter > summary::before { content: "▸ "; }
+details.filter[open] > summary::before { content: "▾ "; }
+.brand-kurz, .nur-klein { display: none; }
+
+/* ── Handy ── */
+@media (max-width: 700px) {
+  body { font-size: 15px; }
+  main { padding: 10px; }
+  .card { padding: 12px; }
+  .bar { gap: 6px; padding: 8px 10px; flex-wrap: nowrap; }
+  .brand-lang, .nur-gross, #whoami { display: none; }
+  .brand-kurz, .nur-klein { display: inline; }
+  #yearSel { padding: 6px 8px; }
+  nav { padding: 0 4px; }
+  nav button { padding: 8px 9px; font-size: .92rem; }
+  .toolbar { gap: 6px; }
+  .toolbar > label { flex: 1 1 140px; }
+  .toolbar > h2 { flex: 1 1 100% !important; }
+  .toolbar .btn { padding: 7px 10px; font-size: .9rem; }
+  .stat .val { font-size: 1.3rem; }
+  dialog { width: calc(100vw - 16px); max-height: 94vh; }
+  .dlg { padding: 14px; }
+
+  /* Tabellen als Karten: jede Zeile ein Block, Spalten über Klassen angeordnet */
+  table.karten thead { display: none; }
+  table.karten, table.karten tbody { display: block; }
+  table.karten tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); align-items: start; }
+  table.karten td { border: 0; padding: 0; max-width: none; }
+  table.karten td.k-weg { display: none; }
+  table.karten td.k-a, table.karten td.k-b, table.karten td.k-c { grid-row: 1; }
+  table.karten td.k-a { grid-column: 1; }
+  table.karten td.k-b { grid-column: 2; font-weight: 600; }
+  table.karten td.k-c { grid-column: 3; text-align: right; font-weight: 700; }
+  table.karten td.k-voll { grid-column: 1 / -1; }
+  table.karten td.k-zeile { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: .82rem; color: var(--muted); }
+  table.karten td.k-zeile:empty { display: none; }
+  table.karten tr.sel { background: var(--accent-soft); }
+  table.karten td.k-b { white-space: normal; }
+  table.karten td.k-c { white-space: nowrap; }
+  table.t.karten tr.click:hover td, table.t.karten tr.sel td { background: none; }
+}
+
+.belege { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.beleg { display: flex; align-items: center; gap: 8px; margin-top: 4px; word-break: break-all; }
+.beleg a { color: var(--accent); text-decoration: none; flex: 1 1 auto; min-width: 0; }
+.beleg span, .beleg .btn { flex: none; white-space: nowrap; }
+.row > label.btn.upl, label.btn.upl { display: inline-block; flex: 0 0 auto; margin: 0; color: var(--text); font-size: .85rem; }
+
+#print { display: none; }
+@media print {
+  body { background: #fff; font-size: 11pt; }
+  #app, #login, #noAccess, #setup, #toast, dialog { display: none !important; }
+  #print { display: block; }
+  #print h1 { font-size: 16pt; margin: 0 0 4pt; }
+  #print h2 { font-size: 13pt; margin: 14pt 0 6pt; }
+  #print table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  #print th, #print td { border-bottom: .5pt solid #999; padding: 3pt 4pt; text-align: left; vertical-align: top; }
+  #print td.r, #print th.r { text-align: right; white-space: nowrap; }
+  #print tr.sum td { font-weight: 700; border-top: 1pt solid #000; }
+  #print tr.sub td { font-weight: 600; }
+  #print .sig { display: flex; gap: 24pt; margin-top: 40pt; }
+  #print .sig div { flex: 1; border-top: .5pt solid #000; padding-top: 3pt; font-size: 9pt; text-align: center; }
+  #print .meta { color: #444; font-size: 9pt; }
+  #print section { break-inside: avoid; }
+  #print .seite { break-after: page; break-inside: auto; font-size: 11pt; line-height: 1.45; }
+  #print .seite:last-child { break-after: auto; }
+  #print .seite h1 { font-size: 15pt; margin: 18pt 0 10pt; }
+  #print .kopf { display: flex; gap: 12pt; align-items: center; border-bottom: 1pt solid #b91c1c; padding-bottom: 6pt; margin-bottom: 26pt; }
+  #print .kopf img { width: 42pt; height: 42pt; }
+  #print .empf { margin: 0 0 22pt; min-height: 60pt; }
+  #print .rechts { text-align: right; }
+  #print .foto { display: block; max-width: 100%; max-height: 9cm; margin: 14pt auto; border-radius: 4pt; }
+  @page { margin: 18mm 18mm 16mm; }
+}
+</style>
+</head>
+<body>
+
+<section id="setup" class="center hidden">
+  <div class="login-card">
+    <h1>Einrichtung fehlt</h1>
+    <p class="muted">In <code>firebase-config.js</code> sind noch keine Firebase-Werte eingetragen.
+      Die Anleitung steht in der <code>README.md</code> (Abschnitt „Einrichtung“).</p>
+  </div>
+</section>
+
+<section id="login" class="center hidden">
+  <form class="login-card" id="loginForm">
+    <img class="logo" src="icon.svg" alt="">
+    <h1>Kassenbuch FF Pichl</h1>
+    <p class="muted" style="margin:0 0 18px">Bitte mit deinem persönlichen Zugang anmelden.</p>
+    <label>E-Mail<input type="email" id="loginEmail" autocomplete="username" required></label>
+    <label style="margin-top:10px">Passwort<input type="password" id="loginPw" autocomplete="current-password" required></label>
+    <p class="error" id="loginErr"></p>
+    <button class="btn primary" style="width:100%" type="submit">Anmelden</button>
+    <p style="text-align:center;margin:14px 0 0"><a href="#" id="forgotLink" class="muted">Passwort vergessen / erstmalig setzen</a></p>
+  </form>
+</section>
+
+<section id="noAccess" class="center hidden">
+  <div class="login-card">
+    <h1 id="noAccessTitle">Kein Zugriff</h1>
+    <p class="muted" id="noAccessMsg"></p>
+    <p class="muted small">Deine Benutzer-ID (für die Einrichtung):<br><code id="noAccessUid" style="user-select:all"></code></p>
+    <button class="btn" id="noAccessLogout" style="width:100%">Abmelden</button>
+  </div>
+</section>
+
+<div id="app" class="hidden">
+  <header>
+    <div class="bar">
+      <div class="brand"><img src="icon.svg" alt=""><span class="brand-lang">Kassenbuch FF Pichl</span><span class="brand-kurz">Kassenbuch</span></div>
+      <label style="margin:0">
+        <select id="yearSel" aria-label="Jahr"></select>
+      </label>
+      <span id="lockChip"></span>
+      <span class="spacer"></span>
+      <span class="muted" id="whoami"></span>
+      <button class="btn small" id="pwBtn" title="Passwort ändern">🔑</button>
+      <button class="btn small" id="logoutBtn" title="Abmelden"><span class="nur-gross">Abmelden</span><span class="nur-klein">⏻</span></button>
+    </div>
+    <nav id="tabs">
+      <button data-tab="uebersicht">Übersicht</button>
+      <button data-tab="buchungen">Buchungen<span id="badgeUnk"></span></button>
+      <button data-tab="import" class="kassier-only">Raika-Import</button>
+      <button data-tab="festkassa">Festkassa</button>
+      <button data-tab="abschluss">Jahresabschluss</button>
+      <button data-tab="verwaltung" class="kassier-only">Verwaltung</button>
+      <button data-tab="protokoll" class="log-only">Protokoll</button>
+    </nav>
+  </header>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlgBody"></div></dialog>
+<div id="toast" class="hidden"></div>
+<div id="print"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+<script type="module" src="app.js?v=2026-11-07"></script>
+</body>
+</html>
