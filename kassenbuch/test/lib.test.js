@@ -436,6 +436,9 @@ test('Sponsoring: Festkassabuch, Zahlungen zuordnen, Vorlagen', async () => {
   assert.deepEqual(z.map(m => [m.eintrag.id, m.buchung.id, m.sicher, m.grund]), [
     ['a', 'x1', true, 'Rechnungsnummer'], ['b', 'x2', true, 'Betrag und Name'], ['c', 'x3', false, 'nur Betrag'],
   ]);
+  // gleicher Name, anderer Betrag → nur Vorschlag
+  const z2 = sponsorZahlungen([E('g', 'Fliesen Gaborek', 10000)], [B('y', 30000, 'Auftraggeber: Andreas und Martina Gaborek Zahlungsreferenz: Transparentwerbung')]);
+  assert.deepEqual(z2.map(m => [m.buchung.id, m.sicher, m.grund]), [['y', false, 'Name passt, anderer Betrag']]);
   const vergeben = new Set(z.map(m => m.buchung.id));
   assert.deepEqual(sponsorKandidaten(buchungen, vergeben).map(k => [k.buchung.id, k.name]), [['x4', 'Neu GmbH']]);
   // nur bezahlte erscheinen im Festkassabuch
@@ -454,4 +457,26 @@ test('Sponsoring: Festkassabuch, Zahlungen zuordnen, Vorlagen', async () => {
     [['Muster Bau GmbH', 'x1', true], ['Tischlerei Holz', 'x2', true], ['Autohaus Blitz', 'x3', true]]);
   assert.equal(fuelleVorlage('Danke {name} für {betrag} beim {fest} {x}', { name: 'A', betrag: '50,00 €', fest: 'Wiesnfest' }), 'Danke A für 50,00 € beim Wiesnfest {x}');
   assert.equal(rechnungsNummer(2026, 7), '2026-007');
+});
+
+test('Sponsorenliste aus CSV/Excel', async () => {
+  const { sponsorTabelle } = await import('../lib.js');
+  // ohne Kopfzeile, wie die bisherige Liste „Tabelle2“
+  const ohne = [['original'], ['Muster Bau GmbH', 150, '', 'Überweisung'], ['Bäckerei Korn', 50, '', 'bar in Geldtasche'],
+    ['Gratis GmbH', 0, '', 'Überweisung'], ['Summe', 200, '', '']];
+  const a = sponsorTabelle(ohne);
+  assert.equal(a.kopf, false);
+  assert.deepEqual(a.zeilen.map(z => [z.name, z.betrag, z.zahlweg]), [['Muster Bau GmbH', 15000, 'ueberweisung'], ['Bäckerei Korn', 5000, 'bar'], ['Gratis GmbH', 0, 'ueberweisung']]);
+  // mit Kopfzeile (CSV-Text), PLZ und Ort getrennt, Status
+  const mit = parseCsv('Firma;Ansprechpartner;Straße;PLZ;Ort;E-Mail;Betrag;Zahlweg;Status\r\n'
+    + 'Muster Bau GmbH;Frau Muster;Hauptstraße 5;4849;Puchkirchen;office@muster.at;150,00;Überweisung;\r\n'
+    + 'Bäckerei Korn;;;;;;50;bar;bezahlt\r\n');
+  const b = sponsorTabelle(mit);
+  assert.equal(b.kopf, true);
+  assert.deepEqual(b.zeilen[0], { name: 'Muster Bau GmbH', betrag: 15000, zahlweg: 'ueberweisung', zusatz: 'Frau Muster', strasse: 'Hauptstraße 5',
+    plzOrt: '4849 Puchkirchen', email: 'office@muster.at', leistung: '', bezahlt: false });
+  assert.equal(b.zeilen[1].zahlweg, 'bar');
+  assert.equal(b.zeilen[1].bezahlt, true);
+  // Festkassabuch-Blatt wird nicht als Sponsorenliste gelesen
+  assert.equal(sponsorTabelle([['Datum', 'Text', 'Einnahmen', 'Ausgaben'], ['', 'Musik', '', 450]]).zeilen.length, 0);
 });

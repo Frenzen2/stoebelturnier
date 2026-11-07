@@ -19,7 +19,7 @@ import {
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel, bankAbgleich,
-  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer,
+  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle,
   veranstaltungsAbrechnung, toCsv,
 } from './lib.js';
 
@@ -354,7 +354,7 @@ function draw(user) {
   const selStart = inView && typeof active.selectionStart === 'number' ? active.selectionStart : null;
   const allowed = { import: canBook(), verwaltung: canBook(), protokoll: canLog() };
   if (allowed[S.tab] === false) S.tab = 'uebersicht';
-  const views = { uebersicht: viewUebersicht, buchungen: viewBuchungen, import: viewImport, festkassa: viewFestkassa, abschluss: viewAbschluss, verwaltung: viewVerwaltung, protokoll: viewProtokoll };
+  const views = { uebersicht: viewUebersicht, buchungen: viewBuchungen, import: viewImport, festkassa: viewFestkassa, sponsoren: viewSponsoren, abschluss: viewAbschluss, verwaltung: viewVerwaltung, protokoll: viewProtokoll };
   (views[S.tab] || viewUebersicht)();
   if (key) {
     const el = $('#view').querySelector(key);
@@ -1296,7 +1296,7 @@ function viewVeranstaltung(v) {
         Positionen mit Zahlweg <b>Überweisung</b> (grau) ändern den Kassabestand nicht. Ergebnis „–“ = zählt nicht zum Ergebnis des Festes.</p>
     </div>
 
-    ${sponsorKarte(v)}
+    ${sponsorKurz(v)}
 
     <div class="card"><h2>Abrechnung nach Bereichen</h2>
       <div class="tablewrap"><table class="t"><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
@@ -1324,7 +1324,7 @@ function viewVeranstaltung(v) {
   $('#bankZuordnen')?.addEventListener('click', () => bankZuordnenDialog(v));
   $('#fkExcel')?.addEventListener('click', () => festkassaExcelDialog(v));
   bindAbgleich(v);
-  bindSponsoren(v);
+  $('#zuSponsoren')?.addEventListener('click', () => { S.spFest = v.id; goTab('sponsoren'); });
   $('#barumsatz')?.addEventListener('click', async () => {
     if (!await confirmDlg('Barumsatz errechnen', `Es wurde kein (vollständiger) Kassasturz erfasst. Aus Ablieferungen, Barausgaben, Wechselgeld und sonstigen
       Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme (bar, zählt fürs Ergebnis) eingetragen – danach ist der Kassabestand 0.`, 'Eintragen')) return;
@@ -1911,6 +1911,126 @@ function sponsorZuBuchung(bid) {
 const festDatum = v => `${deDate(v.von)}${v.bis && v.bis !== v.von ? '–' + deDate(v.bis) : ''}`;
 const spRef = (v, id) => doc(db, 'veranstaltungen', v.id, 'sponsoring', id);
 
+function sponsorKurz(v) {
+  const l = S.sponsoring[v.id] || [];
+  const sum = f => l.filter(f).reduce((a, e) => a + (e.betrag || 0), 0);
+  return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Sponsoren / Transparente</h2><button class="btn" id="zuSponsoren">🤝 Sponsoren verwalten →</button></div>
+    <p class="muted small" style="margin:0">${l.length ? `${l.length} Sponsoren · bezahlt ${eur(sum(e => e.status === 'bezahlt'))} (stehen im Festkassabuch)${sum(e => e.status !== 'bezahlt') ? ` · <b class="minus">offen ${eur(sum(e => e.status !== 'bezahlt'))}</b>` : ''}`
+      : 'Noch keine Sponsoren – im Reiter „Sponsoren“ erfassen oder aus CSV/Excel importieren.'}</p></div>`;
+}
+
+function viewSponsoren() {
+  const feste = S.veranstaltungen;
+  if (!feste.length) {
+    $('#view').innerHTML = `<div class="card"><h2>Sponsoren ${S.jahr}</h2><p class="muted">Sponsoren gehören zu einem Fest. Bitte zuerst unter „Festkassa“ eine Veranstaltung für ${S.jahr} anlegen.</p>
+      ${canBook() && !locked() ? '<button class="btn primary" id="spZuFest">Zur Festkassa</button>' : ''}</div>`;
+    $('#spZuFest')?.addEventListener('click', () => goTab('festkassa'));
+    return;
+  }
+  if (!feste.some(v => v.id === S.spFest)) {
+    // Standard: das letzte Fest mit Sponsoren, sonst das letzte Fest
+    S.spFest = ([...feste].reverse().find(v => (S.sponsoring[v.id] || []).length) || feste.at(-1)).id;
+  }
+  const v = verById(S.spFest);
+  const sum = (l, f) => l.filter(f).reduce((a, e) => a + (e.betrag || 0), 0);
+  $('#view').innerHTML = `<div class="card"><h2>Sponsoren ${S.jahr}</h2>
+      <div class="tablewrap"><table class="t karten"><thead><tr><th>Fest</th><th class="r">Sponsoren</th><th class="r">gesamt</th><th class="r">bezahlt</th><th class="r">offen</th></tr></thead><tbody>
+      ${feste.map(f => { const l = S.sponsoring[f.id] || []; return `<tr class="click ${f.id === v.id ? 'sel' : ''}" data-spfest="${esc(f.id)}">
+        <td class="k-b">${esc(f.name)} <span class="muted small">${festDatum(f)}</span></td><td class="r k-zeile">${l.length} Sponsoren</td>
+        <td class="r k-c">${fmt(sum(l, () => true))}</td><td class="r k-zeile">bezahlt ${fmt(sum(l, e => e.status === 'bezahlt'))}</td>
+        <td class="r k-zeile ${sum(l, e => e.status !== 'bezahlt') ? 'minus' : ''}">offen ${fmt(sum(l, e => e.status !== 'bezahlt'))}</td></tr>`; }).join('')}
+      </tbody></table></div></div>
+    ${sponsorKarte(v)}`;
+  $$('#view [data-spfest]').forEach(tr => tr.addEventListener('click', () => { S.spFest = tr.dataset.spfest; render(true); }));
+  bindSponsoren(v);
+}
+
+function sponsorCsv(v) {
+  const rows = [['Name', 'Zusatz', 'Straße', 'PLZ Ort', 'E-Mail', 'Leistung', 'Betrag', 'Zahlweg', 'Status', 'bezahlt am', 'Rechnung']];
+  for (const e of S.sponsoring[v.id] || []) rows.push([e.name, e.zusatz || '', e.strasse || '', e.plzOrt || '', e.email || '', e.leistung || '', fmt(e.betrag),
+    e.zahlweg === 'bar' ? 'bar' : 'Überweisung', e.status, deDate(e.bezahltAm), e.rechnungsNr || '']);
+  download(`Sponsoren_${v.name.replace(/[^\wäöüÄÖÜß-]+/g, '_')}.csv`, toCsv(rows));
+}
+
+function sponsorImportDialog(v) {
+  let X = null;
+  const vorhanden = new Map((S.sponsoring[v.id] || []).map(e => [norm(e.name), e]));
+  const zeichne = () => {
+    if (!X?.res) { $('#siPrev').innerHTML = X ? '<div class="warnbox">In diesem Blatt wurden keine Sponsoren erkannt (Spalten Name und Betrag).</div>' : ''; return; }
+    const z = X.res.zeilen;
+    const neu = z.filter(r => !vorhanden.has(norm(r.name)));
+    $('#siPrev').innerHTML = `<p>${X.res.kopf ? 'Kopfzeile erkannt.' : 'Ohne Kopfzeile gelesen (Name, Betrag, Zahlweg).'} <b>${z.length}</b> Zeilen ·
+        <b>${neu.length}</b> neu · ${z.length - neu.length} schon vorhanden · Summe ${eur(z.reduce((a, r) => a + r.betrag, 0))} · ${z.filter(r => r.zahlweg === 'bar').length} bar</p>
+      <div class="tablewrap" style="max-height:320px;overflow:auto"><table class="t"><thead><tr><th>Name</th><th>Anschrift</th><th class="r">Betrag</th><th>Zahlweg</th><th></th></tr></thead><tbody>
+      ${z.map(r => `<tr class="${vorhanden.has(norm(r.name)) ? 'muted' : ''}"><td>${esc(r.name)}${r.zusatz ? `<div class="small muted">${esc(r.zusatz)}</div>` : ''}</td>
+        <td class="small">${esc([r.strasse, r.plzOrt, r.email].filter(Boolean).join(', '))}</td><td class="r">${fmt(r.betrag)}</td>
+        <td class="small">${r.zahlweg === 'bar' ? 'bar' : 'Überweisung'}${r.bezahlt ? ' · bezahlt' : ''}</td>
+        <td class="small">${vorhanden.has(norm(r.name)) ? 'schon vorhanden' : r.betrag ? '' : '⚠ Betrag 0'}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+  const lesen = () => { X.res = sponsorTabelle(X.tables[$('#siSheet').value] || []); if (!X.res.zeilen.length) X.res = null; zeichne(); };
+  modal(`Sponsoren für „${v.name}“ importieren`, `
+    <p class="muted small">CSV oder Excel mit einer Zeile pro Sponsor. Spalten mit Überschrift (Name/Firma, Betrag, Zahlweg, Ansprechpartner, Straße, PLZ, Ort,
+      E-Mail, Leistung, Status) werden erkannt, ebenso eine Liste ohne Überschrift mit Name, Betrag und Zahlweg („Überweisung“ / „bar …“).
+      Nach dem Import werden <b>Überweisungen automatisch zugeordnet</b> (Rechnungsnummer bzw. Betrag + Name); unsichere Treffer stehen danach unter „⇄ Zahlungen zuordnen“.</p>
+    <div class="row"><label>Datei<input type="file" id="siFile" accept=".csv,.txt,.xlsx,.xls,.ods"></label><label>Blatt<select id="siSheet"></select></label>
+      <button type="button" class="btn small" id="siVorlage" style="flex:0 0 auto">⬇ Vorlage</button></div>
+    <label class="check" style="margin-top:8px"><input type="checkbox" id="siBar" checked> Barzahler als bezahlt übernehmen (Geld kam beim Fest in die Festkassa)</label>
+    <div id="siPrev" style="margin-top:10px"></div>`, {
+    wide: true, ok: 'Importieren',
+    onOpen: () => {
+      $('#siVorlage').addEventListener('click', () => download('Sponsoren_Vorlage.csv', toCsv([
+        ['Name', 'Ansprechpartner', 'Straße', 'PLZ', 'Ort', 'E-Mail', 'Betrag', 'Zahlweg'],
+        ['Muster Bau GmbH', 'Frau Muster', 'Hauptstraße 5', '4849', 'Puchkirchen', 'office@muster.at', '100,00', 'Überweisung'],
+        ['Bäckerei Beispiel', '', '', '', '', '', '50,00', 'bar']])));
+      $('#siFile').addEventListener('change', async e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        try {
+          let tables;
+          if (/\.(csv|txt)$/i.test(f.name)) tables = { [f.name]: parseCsv(decodeText(await f.arrayBuffer())) };
+          else {
+            if (!window.XLSX) { toast('Excel-Bibliothek nicht geladen – bitte Seite neu laden.', true); return; }
+            const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array' });
+            tables = Object.fromEntries(wb.SheetNames.map(n => [n, window.XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })]));
+          }
+          const namen = Object.keys(tables);
+          // Blatt vorschlagen: Name nach Sponsor/Transparent, sonst eines mit Kopfzeile, sonst das erste mit Sponsoren
+          const passend = namen.find(n => /sponsor|transparent|werbung/i.test(n) && sponsorTabelle(tables[n]).zeilen.length)
+            || namen.find(n => sponsorTabelle(tables[n]).kopf) || namen.find(n => sponsorTabelle(tables[n]).zeilen.length) || namen[0];
+          X = { tables, datei: f.name };
+          $('#siSheet').innerHTML = namen.map(n => `<option ${n === passend ? 'selected' : ''}>${esc(n)}</option>`).join('');
+          lesen();
+        } catch (err) { fail(err); }
+      });
+      $('#siSheet').addEventListener('change', lesen);
+    },
+    onOk: async () => {
+      const neu = (X?.res?.zeilen || []).filter(r => !vorhanden.has(norm(r.name)));
+      if (!neu.length) { toast('Keine neuen Sponsoren zum Importieren.', true); return false; }
+      const barBezahlt = $('#siBar').checked;
+      const eintraege = neu.map(r => ({
+        id: doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')).id,
+        name: r.name, zusatz: r.zusatz, strasse: r.strasse, plzOrt: r.plzOrt, email: r.email,
+        leistung: r.leistung || `Transparentwerbung ${v.name}`, betrag: r.betrag, zahlweg: r.zahlweg,
+        status: r.bezahlt || (r.zahlweg === 'bar' && barBezahlt) ? 'bezahlt' : 'offen',
+        bezahltAm: r.bezahlt || (r.zahlweg === 'bar' && barBezahlt) ? (v.bis || v.von || today()) : '',
+        buchungId: '', rechnungsNr: '',
+      }));
+      // gleich die Überweisungen zuordnen (nur sichere Treffer)
+      const treffer = sponsorZahlungen(eintraege, S.buchungen, belegteZahlungen(v)).filter(m => m.sicher);
+      for (const m of treffer) Object.assign(m.eintrag, { status: 'bezahlt', bezahltAm: m.buchung.datum, buchungId: m.buchung.id });
+      for (let i = 0; i < eintraege.length; i += 200) {
+        const batch = writeBatch(db);
+        for (const { id, ...e } of eintraege.slice(i, i + 200)) batch.set(spRef(v, id), { ...e, erfasstAm: serverTimestamp(), erfasstVon: S.uid });
+        if (i === 0) logTo(batch, 'sponsoring', `${v.name}: ${eintraege.length} Sponsoren aus ${X.datei} importiert, ${treffer.length} Zahlungen zugeordnet`);
+        await batch.commit();
+      }
+      const offen = eintraege.filter(e => e.status !== 'bezahlt').length;
+      toast(`${eintraege.length} Sponsoren importiert · ${treffer.length} Überweisungen zugeordnet${offen ? ` · ${offen} noch offen` : ''}.`);
+    },
+  });
+}
+
 function sponsorKarte(v) {
   const liste = S.sponsoring[v.id] || [];
   const kassier = canBook() && !locked();
@@ -1921,11 +2041,12 @@ function sponsorKarte(v) {
   const kand = sponsorKandidaten(S.buchungen, belegt, v)
     .filter(k => veranstaltungImText(k.buchung.text, [v]) || Math.abs((new Date(k.buchung.datum) - new Date(v.von || k.buchung.datum)) / 864e5) <= 90);
   const transparentPosten = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
-  return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">Sponsoren / Transparente</h2>
+  return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">${esc(v.name)} <span class="muted" style="font-weight:400">${festDatum(v)}</span></h2>
       ${edit ? `<button class="btn primary" id="spNeu">+ Sponsor</button>` : ''}
       ${kassier && zahlungen.length ? `<button class="btn" id="spZahl">⇄ ${zahlungen.length} Zahlung(en) zuordnen</button>` : ''}
       ${kassier && kand.length ? `<button class="btn" id="spKand" title="Zahlungseingänge mit Transparent/Sponsoring im Text, die noch keinem Sponsor gehören">⬇ ${kand.length} aus Überweisungen</button>` : ''}
-      ${edit ? `<button class="btn" id="spVorjahr">⧉ Aus anderem Fest übernehmen</button>` : ''}
+      ${edit ? `<button class="btn" id="spImport">⬆ CSV/Excel importieren</button><button class="btn" id="spVorjahr">⧉ Aus anderem Fest übernehmen</button>` : ''}
+      ${liste.length ? `<button class="btn" id="spCsv">⬇ CSV</button>` : ''}
       ${liste.length && kassier ? `<button class="btn" id="spRe">🖨 Rechnungen</button>` : ''}${liste.length ? `<button class="btn" id="spDank">🖨 Dankesschreiben</button>` : ''}
     </div>
     <p class="muted small">${liste.length} Sponsoren · gesamt ${eur(summe(() => true))} · bezahlt ${eur(summe(e => e.status === 'bezahlt'))}${summe(e => e.status !== 'bezahlt') ? ` · <b class="minus">offen ${eur(summe(e => e.status !== 'bezahlt'))}</b>` : ''}.
@@ -1947,6 +2068,8 @@ function bindSponsoren(v) {
   $('#spZahl')?.addEventListener('click', () => zahlungenDialog(v));
   $('#spKand')?.addEventListener('click', () => kandidatenDialog(v));
   $('#spVorjahr')?.addEventListener('click', () => vorjahrDialog(v));
+  $('#spImport')?.addEventListener('click', () => sponsorImportDialog(v));
+  $('#spCsv')?.addEventListener('click', () => sponsorCsv(v));
   $('#spRe')?.addEventListener('click', () => auswahlDruck(v, 'rechnung'));
   $('#spDank')?.addEventListener('click', () => auswahlDruck(v, 'dank'));
   $('#spAusPosten')?.addEventListener('click', async () => {
@@ -2050,17 +2173,19 @@ function sponsorDialog(v, e) {
 function zahlungenDialog(v) {
   const z = sponsorZahlungen(S.sponsoring[v.id] || [], S.buchungen, belegteZahlungen(v));
   modal('Zahlungen den Sponsoren zuordnen', `
-    <p class="muted small">Gefundene Zahlungseingänge (Feuerwehr- und Mannschaftskassa). Sichere Treffer sind angehakt; bei „nur Betrag“ bitte den Namen prüfen.</p>
+    <p class="muted small">Gefundene Zahlungseingänge (Feuerwehr- und Mannschaftskassa). Sichere Treffer sind angehakt. Bei „nur Betrag“ bitte den Namen prüfen,
+      bei „Name passt, anderer Betrag“ den Betrag – beim Zuordnen wird der Betrag laut Bank übernommen.</p>
     <div class="tablewrap"><table class="t"><thead><tr><th></th><th>Sponsor</th><th class="r">Betrag</th><th>Bankbuchung</th><th>erkannt über</th></tr></thead><tbody>
     ${z.map((m, i) => `<tr><td><input type="checkbox" data-zi="${i}" ${m.sicher ? 'checked' : ''}></td><td>${esc(m.eintrag.name)}<div class="muted small">${esc(m.eintrag.rechnungsNr || '')}</div></td>
-      <td class="r">${fmt(m.eintrag.betrag)}</td><td class="small">${deDate(m.buchung.datum)} ${fmt(m.buchung.betrag)} · ${bankText(m.buchung.text)}</td>
+      <td class="r">${fmt(m.eintrag.betrag)}${m.buchung.betrag !== m.eintrag.betrag ? `<div class="small minus">Bank: ${fmt(m.buchung.betrag)}</div>` : ''}</td><td class="small">${deDate(m.buchung.datum)} ${fmt(m.buchung.betrag)} · ${bankText(m.buchung.text)}</td>
       <td class="small">${m.sicher ? '✓ ' : '≈ '}${esc(m.grund)}</td></tr>`).join('')}</tbody></table></div>`, {
     wide: true, ok: 'Zuordnen',
     onOk: async () => {
       const sel = $$('#dlg [data-zi]:checked').map(c => z[+c.dataset.zi]);
       if (!sel.length) return;
       const batch = writeBatch(db);
-      sel.forEach(m => batch.update(spRef(v, m.eintrag.id), { status: 'bezahlt', bezahltAm: m.buchung.datum, buchungId: m.buchung.id }));
+      // bei abweichendem Betrag gilt, was tatsächlich überwiesen wurde
+      sel.forEach(m => batch.update(spRef(v, m.eintrag.id), { status: 'bezahlt', bezahltAm: m.buchung.datum, buchungId: m.buchung.id, betrag: m.buchung.betrag }));
       logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Zahlung(en) zugeordnet`);
       await batch.commit();
       toast(`${sel.length} Sponsor(en) als bezahlt markiert.`);

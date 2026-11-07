@@ -99,7 +99,17 @@ Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, 
 
 ## Sponsoren und Transparente
 
-Im Festkassabuch jedes Festes gibt es den Bereich **Sponsoren / Transparente**:
+Sponsoren haben einen **eigenen Reiter „Sponsoren“**: oben alle Feste des Jahres mit Anzahl, Summe, bezahlt und offen,
+darunter die Verwaltung für das gewählte Fest. Im Festkassabuch steht nur eine Zusammenfassung mit Link.
+
+**⬆ CSV/Excel importieren**: eine Zeile pro Sponsor. Erkannt werden Spalten mit Überschrift (Name/Firma, Betrag, Zahlweg,
+Ansprechpartner, Straße, PLZ, Ort, E-Mail, Leistung, Status) oder eine Liste ohne Überschrift mit Name, Betrag und Zahlweg
+(„Überweisung“ / „bar …“) wie die bisherige „Tabelle2“. Eine Vorlage gibt es im Import-Dialog. Schon vorhandene Namen werden
+übersprungen. **Gleich nach dem Import werden die Überweisungen zugeordnet** (Rechnungsnummer bzw. Betrag + Name), Barzahler
+gelten als bezahlt; unsichere Treffer – nur der Betrag passt, oder der Name passt bei anderem Betrag – stehen danach unter
+„⇄ Zahlungen zuordnen“ zum Prüfen (beim Bestätigen gilt der Betrag laut Bank). **⬇ CSV** exportiert die Liste, z. B. fürs nächste Jahr.
+
+Je Fest gibt es:
 
 - **+ Sponsor**: Name, Anschrift, Leistung, Betrag, Zahlweg (*Überweisung* mit Rechnung oder *bar* in die Festkassa),
   Fotos vom Transparent. Bekannte Sponsoren werden beim Tippen vorgeschlagen, die Anschrift wird übernommen.
