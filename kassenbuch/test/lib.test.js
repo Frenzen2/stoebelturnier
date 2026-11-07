@@ -182,8 +182,13 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   assert.equal(r.einnahmen, 820000 + 478050 + 50000);
   assert.equal(r.ausgaben, 30000 + 421000);
   assert.equal(r.ergebnis, 1348050 - 451000);
-  assert.equal(r.buch.length, 5);
-  const bankZeile = r.buch.find(p => p.bank);
+  assert.equal(r.buch.length, 7);   // 4 eigene Posten + Ablieferung + 2 Bankzeilen (Rechnung, Einnahme)
+  const bankAusgabe = r.buch.find(p => p.bank && p.art === 'ausgabe');
+  assert.equal(bankAusgabe.betragVz, -421000);
+  assert.equal(bankAusgabe.wirkung, 0);          // ändert den Kassabestand nicht
+  assert.equal(bankAusgabe.ergebnis, true);
+  assert.equal(r.bereiche.length, 3);           // Bankzeilen nicht doppelt in den Bereichen
+  const bankZeile = r.buch.find(p => p.bank && p.text === 'Erlös Zeltfest');
   assert.equal(bankZeile.art, 'ablieferung');
   assert.equal(bankZeile.text, 'Erlös Zeltfest');
   assert.equal(bankZeile.bestand, 70000);
