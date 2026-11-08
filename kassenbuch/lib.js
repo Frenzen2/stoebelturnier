@@ -728,7 +728,10 @@ export function festkassaBuch(posten) {
     const betrag = vz * Math.abs(p.betrag || 0);       // Eingang (+) / Ausgang (−)
     const wirkung = info.kassa ? betrag : 0;            // Änderung des Kassabestands
     bestand += wirkung;
-    return { ...p, ...info, lfd: i + 1, betragVz: betrag, wirkung, bestand };
+    // Vorzeichen wie im Excel (Sicht des Ergebnisses): Wechselgeld abheben = Ausgabe, Bankeinzahlung = Einnahme.
+    // betragVz bleibt die Sicht der Geldtasche (Wechselgeld kommt hinein, Einzahlung geht hinaus).
+    const betragErg = (p.art === 'wechselgeld' || p.art === 'ablieferung') ? -betrag : betrag;
+    return { ...p, ...info, lfd: i + 1, betragVz: betrag, betragErg, wirkung, bestand };
   });
 }
 

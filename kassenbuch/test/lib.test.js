@@ -195,6 +195,9 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   assert.equal(bankZeile.art, 'ablieferung');
   assert.equal(bankZeile.text, 'Erlös Zeltfest');
   assert.equal(bankZeile.bestand, 70000);
+  assert.equal(bankZeile.betragErg, 1248050);   // Bankeinzahlung: wie im Excel als Einnahme
+  assert.equal(bankZeile.betragVz, -1248050);   // … aus Sicht der Geldtasche ein Ausgang
+  assert.equal(r.buch.find(p => p.art === 'wechselgeld').betragErg, -50000);   // Wechselgeld: Ausgabe
   // Abhebung (negativ) wird Wechselgeld in die Festkassa
   assert.equal(bankPosten([{ festArt: 'kassa', betrag: -50000, buchung: { id: 'x', datum: '2026-06-11', text: 'Wechselgeld' } }])[0].art, 'wechselgeld');
   assert.deepEqual(r.buch.map(p => p.artName).sort(), ['Bank', 'Bank', 'bar aus Geldtasche', 'bar in Geldtasche', 'bar in Geldtasche', 'Überweisung', 'Überweisung']);
