@@ -18,10 +18,10 @@ import {
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, STUECKELUNG, stueckelungSumme, festkassaBuch,
-  FEST_ARTEN, festArtVorschlag, veranstaltungImText, ZAHLWEGE, festkassaExcel, bankAbgleich,
+  FEST_ARTEN, festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js';
+} from './lib.js?v=2026-11-08';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -865,8 +865,8 @@ function buchungDialog(b) {
     $('#bFestHint').innerHTML = !v ? 'Wechselgeld-Abhebungen, Einzahlungen von Festerlösen oder Rechnungen eines Festes hier einer Veranstaltung zuordnen.'
       : art === 'kassa'
         ? (betrag < 0 ? '➜ Erscheint im Festkassabuch als <b>Wechselgeld / Vorschuss</b> (Eingang in die Festkassa).' : '➜ Erscheint im Festkassabuch als <b>Ablieferung an die Bank</b> (Ausgang aus der Festkassa).')
-          + ' Zählt nicht zum Ergebnis des Festes.'
-        : `➜ Zählt als <b>${betrag < 0 ? 'Ausgabe' : 'Einnahme'} der Veranstaltung über die Bank</b>; der Kassabestand bleibt unverändert.`;
+          + ` Art „Bank“ – zählt zum Ergebnis (${betrag < 0 ? '−' : '+'}).`
+        : `➜ Zählt als <b>${betrag < 0 ? 'Ausgabe' : 'Einnahme'} per Überweisung</b> zum Ergebnis; der Kassabestand bleibt unverändert.`;
   };
   $('#bVer').addEventListener('change', () => {
     const ver = verById($('#bVer').value);
@@ -1272,38 +1272,42 @@ function viewVeranstaltung(v) {
         <button class="btn" id="verCsv">⬇ CSV</button>
       </div>
       <div class="grid">
-        <div class="stat"><div class="lbl">Ergebnis (Gewinn/Verlust)</div><div class="val">${money(a.ergebnis)} €</div><div class="sub">Einnahmen ${fmt(a.einnahmen)} − Ausgaben ${fmt(a.ausgaben)}</div></div>
-        <div class="stat"><div class="lbl">Kassabestand Festkassa</div><div class="val ${a.bestand < 0 ? 'minus' : ''}">${eur(a.bestand)}</div><div class="sub">${a.bestand < 0 ? '⚠ negativ – es wurde mehr ausgegeben/abgeliefert als eingenommen. Fehlt der Barumsatz (Kassasturz)?' : a.bestand ? 'muss noch abgeliefert werden' : 'alles abgeliefert ✓'}</div>
+        <div class="stat"><div class="lbl">Ergebnis (Gewinn/Verlust)</div><div class="val">${money(a.ergebnis)} €</div><div class="sub">Bank + Überweisung: Einnahmen ${fmt(a.einnahmen)} − Ausgaben ${fmt(a.ausgaben)}</div></div>
+        <div class="stat"><div class="lbl">Kassabestand Festkassa</div><div class="val ${a.bestand < 0 ? 'minus' : ''}">${eur(a.bestand)}</div><div class="sub">${a.bestand < 0 ? '⚠ negativ – es wurde mehr ausgegeben/abgeliefert als eingenommen. Fehlt der Barumsatz (Kassasturz)?' : a.bestand ? 'muss noch auf die Bank – zählt erst mit der Einzahlung zum Ergebnis' : 'alles abgeliefert ✓'}</div>
           ${a.bestand < 0 && edit ? `<button class="btn small" id="barumsatz" style="margin-top:6px" title="Ohne Kassasturz: Barumsatz = Ablieferung + Barausgaben − Wechselgeld − sonstige Bareinnahmen">🧮 Barumsatz errechnen (${fmt(-a.bestand)})</button>` : ''}</div>
-        <div class="stat"><div class="lbl">Bar: Einnahmen / Ausgaben</div><div class="val" style="font-size:1.2rem">${fmt(a.barEinnahmen)} / ${fmt(a.barAusgaben)}</div><div class="sub">Wechselgeld ${fmt(a.wechselgeld)} · abgeliefert ${fmt(a.ablieferung)}</div></div>
-        <div class="stat"><div class="lbl">Überweisung / Bank: Einnahmen / Ausgaben</div><div class="val" style="font-size:1.2rem">${fmt(a.ueberwEinnahmen + a.bankEinnahmen)} / ${fmt(a.ueberwAusgaben + a.bankAusgaben)}</div>
-          <div class="sub">Positionen mit Überweisung und zugeordnete Bankbuchungen${a.neutralEin || a.neutralAus ? ` · nicht im Ergebnis: +${fmt(a.neutralEin)} / −${fmt(a.neutralAus)}` : ''}</div></div>
+        <div class="stat"><div class="lbl">Bank: Einzahlung / Wechselgeld</div><div class="val" style="font-size:1.2rem">${fmt(a.ablieferung)} / ${fmt(a.wechselgeld)}</div><div class="sub">zählt ✓</div></div>
+        <div class="stat"><div class="lbl">Überweisung: Einnahmen / Ausgaben</div><div class="val" style="font-size:1.2rem">${fmt(a.ueberwEinnahmen + a.bankEinnahmen)} / ${fmt(a.ueberwAusgaben + a.bankAusgaben)}</div>
+          <div class="sub">zählt ✓${a.neutralEin || a.neutralAus ? ` · zählt nicht: +${fmt(a.neutralEin)} / −${fmt(a.neutralAus)}` : ''}</div></div>
+        <div class="stat"><div class="lbl">bar in / aus Geldtasche</div><div class="val muted" style="font-size:1.2rem">${fmt(a.barEinnahmen)} / ${fmt(a.barAusgaben)}</div><div class="sub">zählt nicht – steckt in der Bankeinzahlung</div></div>
       </div>
       ${a.doppelt.length ? `<div class="warnbox">⚠ Möglicherweise doppelt erfasst: ${a.doppelt.map(p => `${esc(p.text || p.bereich || POSTEN_ARTEN[p.art].name)} ${fmt(p.betrag)}`).join(', ')} –
         steht als Überweisung im Festkassabuch und ist zusätzlich als Bankbuchung (🧾) zugeordnet. Eines davon entfernen.</div>` : ''}
     </div>
 
     <div class="card"><h2>Festkassabuch</h2>
-      <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Zahlweg</th><th>Ergebnis</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
+      <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
       <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td class="k-a muted small">${p.lfd}</td><td class="nowrap k-b">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}<span class="nur-klein muted small" style="font-weight:400"> · ${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</span></td>
         <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
         <td class="small k-voll">${esc(p.text || '')}${p.stueckelung ? ' <span class="chip">🧮 gezählt</span>' : ''}${(p.bank ? p.buchung?.belege : p.belege)?.length ? ` <span class="chip">📎 ${(p.bank ? p.buchung.belege : p.belege).length}</span>` : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
-        <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt fürs Ergebnis' : ' · nicht im Ergebnis'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
+        <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt' : ' · zählt nicht'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
         <td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td>
         <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragVz < 0 ? 'minus' : 'plus'} ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? '+' : '−'}${fmt(Math.abs(p.betragVz))}</span></td></tr>`).join('')
         || `<tr><td colspan="11" class="muted">Noch keine Einträge. Üblicher Ablauf: Wechselgeld von der Bank abheben (Bankbuchung zuordnen) → nach dem Fest je Stand einen <b>Kassasturz</b> machen → <b>Barausgaben</b> mit Beleg erfassen → Geld auf die Bank einzahlen (Bankbuchung zuordnen).</td></tr>`}</tbody></table></div>
-      <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen der <b>Feuerwehr- und der Mannschaftskassa</b>: eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung; Rechnungen und Eingänge des Festes über die Bank stehen als Ausgabe/Einnahme (Bestand unverändert). Sie müssen nicht noch einmal eingetragen werden.
-        Positionen mit Zahlweg <b>Überweisung</b> (grau) ändern den Kassabestand nicht. Ergebnis „–“ = zählt nicht zum Ergebnis des Festes.</p>
+      <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen der <b>Feuerwehr- und der Mannschaftskassa</b>: eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung (Art „Bank“); Rechnungen und Eingänge des Festes über die Bank stehen als Überweisung. Sie müssen nicht noch einmal eingetragen werden.
+        Wie im bisherigen Excel <b>zählen nur „Bank“ und „Überweisung“</b> zum Ergebnis. „bar in/aus Geldtasche“ ändert nur den Kassabestand – das Bargeld ist ja in der Bankeinzahlung schon enthalten.
+        Überweisungen (grau) ändern den Kassabestand nicht.</p>
     </div>
 
     ${sponsorKurz(v)}
 
     <div class="card"><h2>Abrechnung nach Bereichen</h2>
       <div class="tablewrap"><table class="t"><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
-      ${a.bereiche.map(x => `<tr><td>${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
-      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>Über die Bank (siehe unten)</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${money(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
-      <tr class="sum"><td>Gesamt</td><td class="r">${fmt(a.einnahmen)}</td><td class="r">${fmt(a.ausgaben)}</td><td class="r">${money(a.ergebnis)}</td></tr>
-      ${a.neutralEin || a.neutralAus ? `<tr><td class="muted">nicht im Ergebnis (Durchlaufposten)</td><td class="r muted">${fmt(a.neutralEin)}</td><td class="r muted">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}</tbody></table></div>
+      ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${money(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
+      ${a.bereiche.map(x => `<tr><td>Überweisung: ${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
+      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>Überweisung: Bankbuchungen (siehe unten)</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${money(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
+      <tr class="sum"><td>Ergebnis</td><td class="r">${fmt(a.einnahmen)}</td><td class="r">${fmt(a.ausgaben)}</td><td class="r">${money(a.ergebnis)}</td></tr>
+      ${a.neutralEin || a.neutralAus ? `<tr><td class="muted">Überweisung, zählt nicht (Durchlaufposten)</td><td class="r muted">${fmt(a.neutralEin)}</td><td class="r muted">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}
+      ${a.barBereiche.map(x => `<tr><td class="muted">bar: ${esc(x.bereich)} <span class="small">(zählt nicht)</span></td><td class="r muted">${fmt(x.einnahmen)}</td><td class="r muted">${fmt(x.ausgaben)}</td><td class="r muted">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}</tbody></table></div>
     </div>
 
     ${abgleichKarte(v, edit)}
@@ -1327,7 +1331,7 @@ function viewVeranstaltung(v) {
   $('#zuSponsoren')?.addEventListener('click', () => { S.spFest = v.id; goTab('sponsoren'); });
   $('#barumsatz')?.addEventListener('click', async () => {
     if (!await confirmDlg('Barumsatz errechnen', `Es wurde kein (vollständiger) Kassasturz erfasst. Aus Ablieferungen, Barausgaben, Wechselgeld und sonstigen
-      Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme (bar, zählt fürs Ergebnis) eingetragen – danach ist der Kassabestand 0.`, 'Eintragen')) return;
+      Bareinnahmen ergibt sich ein Barumsatz von <b>${eur(-a.bestand)}</b>. Er wird als Einnahme „bar in Geldtasche“ eingetragen (zählt nicht – das Ergebnis bleibt gleich) – danach ist der Kassabestand 0.`, 'Eintragen')) return;
     await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'posten')), {
       art: 'einnahme', zahlweg: 'bar', ergebnis: true, betrag: -a.bestand, datum: v.bis || v.von || today(), zeit: '',
       bereich: 'Barumsatz', text: 'Barumsatz errechnet aus Ablieferung (ohne Kassasturz)', beleg: '', errechnet: true,
@@ -1352,9 +1356,9 @@ function viewVeranstaltung(v) {
   });
   $('#verPrint').addEventListener('click', () => druckVeranstaltung(v));
   $('#verCsv').addEventListener('click', () => {
-    const rows = [['Nr', 'Datum', 'Zeit', 'Art', 'Bereich', 'Text', 'Beleg', 'Zahlweg', 'Ergebnis', 'Eingang', 'Ausgang', 'Bestand']];
+    const rows = [['Nr', 'Datum', 'Zeit', 'Art', 'Bereich', 'Text', 'Beleg', 'Art', 'Zählt', 'Eingang', 'Ausgang', 'Bestand']];
     buch.forEach(p => rows.push([p.lfd, deDate(p.datum), p.zeit || '', POSTEN_ARTEN[p.art]?.name, p.bank ? 'Bank' : p.bereich || '', p.text || '', p.beleg || '',
-      p.bank ? 'Bank ' + (kontoById(p.buchung?.konto)?.name || '') : p.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar', p.ergebnis ? 'ja' : 'nein',
+      p.artName + (p.bank ? ' ' + (kontoById(p.buchung?.konto)?.name || '') : ''), p.ergebnis ? 'ja' : 'nein',
       p.betragVz > 0 ? fmt(p.betragVz) : '', p.betragVz < 0 ? fmt(-p.betragVz) : '', fmt(p.bestand)]));
     download(`Festkassa_${v.name.replace(/[^\wäöüÄÖÜß-]+/g, '_')}.csv`, toCsv(rows));
   });
@@ -1404,9 +1408,7 @@ function bankZuordnenDialog(v) {
 }
 
 function zahlwegLabel(p) {
-  if (p.bank) return `🏦 ${esc(kontoById(p.buchung?.konto)?.name || 'Bank')}`;
-  if (!p.fluss) return 'bar';
-  return p.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar';
+  return esc(p.artName) + (p.bank ? ` <span class="muted">🏦 ${esc(kontoById(p.buchung?.konto)?.name || '')}</span>` : '');
 }
 
 // ── Abgleich Festkassabuch ↔ Bank ────────────────────────────────────────────
@@ -1466,11 +1468,11 @@ function festkassaExcelDialog(v) {
     const z = X.res.zeilen, uebern = z.filter(r => !r.skip);
     const s = (f, a) => fmt(uebern.filter(r => r.art === a && f(r)).reduce((x, r) => x + r.betrag, 0));
     $('#fxPrev').innerHTML = `<p><b>${uebern.length}</b> Positionen werden übernommen, <b>${z.length - uebern.length}</b> übersprungen.<br>
-        Überweisung: Einnahmen ${s(r => r.zahlweg === 'ueberweisung', 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'ueberweisung', 'ausgabe')}<br>
-        Bar: Einnahmen ${s(r => r.zahlweg === 'bar', 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'bar', 'ausgabe')}</p>
-      <div class="tablewrap" style="max-height:340px;overflow:auto"><table class="t"><thead><tr><th>Zeile</th><th>Text</th><th>Bereich</th><th>Art</th><th>Zahlweg</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
+        Überweisung (zählt): Einnahmen ${s(r => r.zahlweg === 'ueberweisung' && r.ergebnis, 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'ueberweisung' && r.ergebnis, 'ausgabe')}<br>
+        bar in/aus Geldtasche (zählt nicht): Einnahmen ${s(r => r.zahlweg === 'bar', 'einnahme')} · Ausgaben ${s(r => r.zahlweg === 'bar', 'ausgabe')}</p>
+      <div class="tablewrap" style="max-height:340px;overflow:auto"><table class="t"><thead><tr><th>Zeile</th><th>Text</th><th>Bereich</th><th>Art</th><th>Zählt</th><th class="r">Betrag</th><th></th></tr></thead><tbody>
       ${z.map(r => `<tr class="${r.skip ? 'muted' : ''}"><td class="small">${r.quellZeile}</td><td class="small">${esc(r.text)}</td><td class="small">${esc(r.bereich)}</td>
-        <td class="small">${r.art === 'einnahme' ? 'Einnahme' : 'Ausgabe'}</td><td class="small">${r.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar'}</td>
+        <td class="small">${zahlwegName(r.art, r.zahlweg)}</td><td class="small">${r.zahlweg === 'ueberweisung' && r.ergebnis ? 'ja' : 'nein'}</td>
         <td class="r">${fmt(r.betrag)}</td><td class="small">${r.skip ? '⏭ ' + esc(r.skip) : r.hinweis ? esc(r.hinweis) : ''}</td></tr>`).join('')}</tbody></table></div>`;
   };
   const lesen = () => {
@@ -1480,9 +1482,10 @@ function festkassaExcelDialog(v) {
   };
   modal(`Festkassabuch „${v.name}“ aus Excel übernehmen`, `
     <p class="muted small">Erwartet wird der Aufbau eures bisherigen Festkassabuchs: <b>Datum | Text | Einnahmen | Ausgaben | Zahlweg</b>
-      („Überweisung“, „bar in/aus Geldtasche“, „Bank“). Alle Positionen zählen fürs Ergebnis; bar kassierte bzw. bar bezahlte
-      Positionen ändern den Kassabestand. Zeilen mit Zahlweg „Bank“ und die Bareinzahlung werden übersprungen – die kommen über die
-      zugeordneten Bankbuchungen. Fehlt danach der Barumsatz, rechnet ihn „🧮 Barumsatz errechnen“ aus.</p>
+      („Überweisung“, „bar in/aus Geldtasche“, „Bank“) | Zählt. Wie im Excel zählt nur „Überweisung“ (außer Zählt = 0) – „bar in/aus
+      Geldtasche“ ändert nur den Kassabestand. Zeilen mit „Bank“ und die Bankeinzahlung werden übersprungen: die kommen über die
+      zugeordneten Bankbuchungen (🏦) und zählen dann als „Bank“. <b>Das Ergebnis stimmt also erst, wenn die Raika-Buchungen importiert
+      und dem Fest zugeordnet sind.</b></p>
     <div class="row"><label>Excel-Datei<input type="file" id="fxFile" accept=".xlsx,.xls,.ods"></label>
       <label>Blatt<select id="fxSheet"></select></label></div>
     ${vorhanden.length ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="fxErsetzen" checked> ${vorhanden.length} früher aus Excel übernommene Positionen vorher löschen</label>` : ''}
@@ -1546,8 +1549,8 @@ function postenDialog(v, p) {
     <label>Text<input id="pText" value="${esc(p.text || '')}" maxlength="300" placeholder="${art === 'ausgabe' ? 'z. B. Eis, Musikkapelle, Kleinmaterial' : art === 'ablieferung' ? 'z. B. Einzahlung Raika, übergeben an Kassier' : ''}" ${ro}></label>
     <div id="pFluss" class="infobox" style="margin-top:10px">
       <div class="row">
-        <label>Zahlweg<select id="pZahlweg" ${ro}>${Object.entries(ZAHLWEGE).map(([k, n]) => `<option value="${k}" ${(p.zahlweg || 'bar') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <label class="check" style="flex:1 1 200px;margin-bottom:8px"><input type="checkbox" id="pErgebnis" ${p.ergebnis === false ? '' : 'checked'} ${ro}> zählt fürs Ergebnis des Festes</label>
+        <label>Art<select id="pZahlweg" ${ro}>${['bar', 'ueberweisung'].map(k => `<option value="${k}" ${(p.zahlweg || 'bar') === k ? 'selected' : ''}>${zahlwegName(art === 'ausgabe' ? 'ausgabe' : 'einnahme', k)}</option>`).join('')}</select></label>
+        <label class="check" id="pErgLbl" style="flex:1 1 200px;margin-bottom:8px"><input type="checkbox" id="pErgebnis" ${p.ergebnis === false ? '' : 'checked'} ${ro}> zählt (JA)</label>
       </div>
       <div class="small" id="pHint" style="margin-top:4px"></div>
     </div>
@@ -1582,19 +1585,22 @@ function postenDialog(v, p) {
         await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { ...data, geaendertVon: S.uid });
       }
       postenBelege.gespeichert();
-      logTo(null, 'festkassa', `${v.name}: ${POSTEN_ARTEN[data.art].name} ${fmt(betrag)} ${data.bereich} (${data.zahlweg === 'ueberweisung' ? 'Überweisung' : 'bar'}${fluss && !data.ergebnis ? ', nicht im Ergebnis' : ''})`);
+      logTo(null, 'festkassa', `${v.name}: ${POSTEN_ARTEN[data.art].name} ${fmt(betrag)} ${data.bereich} (${zahlwegName(data.art, data.zahlweg)}${fluss && data.zahlweg === 'ueberweisung' && !data.ergebnis ? ', zählt nicht' : ''})`);
     } : null,
     onOpen: () => {
       const upd = () => {
         const art = $('#pArt').value, fluss = art === 'einnahme' || art === 'ausgabe';
-        $('#pFluss').classList.toggle('hidden', !fluss);
+        $('#pFluss').querySelector('.row').classList.toggle('hidden', !fluss);
+        // Bezeichnung „bar in“ bzw. „bar aus Geldtasche“ je nach Einnahme/Ausgabe
+        const bo = $('#pZahlweg').querySelector('option[value="bar"]');
+        if (bo && fluss) bo.textContent = zahlwegName(art, 'bar');
         const ue = $('#pZahlweg').value === 'ueberweisung', erg = $('#pErgebnis').checked;
-        $('#pHint').innerHTML = !fluss ? '' : [
-          ue ? '➜ Läuft über ein Bankkonto: steht im Festkassabuch, <b>ändert den Kassabestand nicht</b>. Die zugehörige Bankbuchung dann nicht zusätzlich als Einnahme/Ausgabe (🧾) zuordnen.'
-            : `➜ ${art === 'einnahme' ? 'Geld kommt in' : 'Geld geht aus'} der Festkassa: <b>ändert den Kassabestand</b>.`,
-          erg ? `Zählt als ${art === 'einnahme' ? 'Einnahme' : 'Ausgabe'} zum Ergebnis.`
-            : 'Zählt <b>nicht</b> zum Ergebnis (Durchlaufposten, z. B. Pfand, Kaution, weitergeleitetes Geld).',
-        ].join(' ');
+        $('#pErgLbl').classList.toggle('hidden', !ue);
+        $('#pHint').innerHTML = !fluss ? '➜ Art „Bank“: ändert den Kassabestand und zählt zum Ergebnis.' : ue
+          ? '➜ Läuft über ein Bankkonto: <b>ändert den Kassabestand nicht</b>. '
+            + (erg ? `Zählt als ${art === 'einnahme' ? 'Einnahme' : 'Ausgabe'} zum Ergebnis. Die zugehörige Bankbuchung dann nicht zusätzlich als Einnahme/Ausgabe (🧾) zuordnen.`
+              : 'Zählt <b>nicht</b> (Durchlaufposten, z. B. Pfand, Kaution, weitergeleitetes Geld).')
+          : `➜ ${art === 'einnahme' ? 'Geld kommt in' : 'Geld geht aus'} die Geldtasche: <b>ändert den Kassabestand</b>, zählt aber <b>nicht</b> zum Ergebnis – das Bargeld kommt mit der Bankeinzahlung ins Ergebnis.`;
       };
       ['#pArt', '#pZahlweg', '#pErgebnis'].forEach(x => $(x).addEventListener('change', upd));
       upd();
@@ -2111,7 +2117,7 @@ function sponsorDialog(v, e) {
     <label>Leistung<input id="sLeist" value="${esc(e.leistung || '')}" maxlength="200" ${ro}></label>
     <div class="row">
       <label>Betrag €<input id="sBetrag" class="num" inputmode="decimal" value="${e.betrag ? fmt(e.betrag) : ''}" ${ro}></label>
-      <label>Zahlweg<select id="sZw" ${ro}><option value="ueberweisung" ${e.zahlweg !== 'bar' ? 'selected' : ''}>Überweisung (Rechnung)</option><option value="bar" ${e.zahlweg === 'bar' ? 'selected' : ''}>bar in die Festkassa</option></select></label>
+      <label>Zahlweg<select id="sZw" ${ro}><option value="ueberweisung" ${e.zahlweg !== 'bar' ? 'selected' : ''}>Überweisung (Rechnung)</option><option value="bar" ${e.zahlweg === 'bar' ? 'selected' : ''}>bar in Geldtasche</option></select></label>
       <label>Status<select id="sStatus" ${ro}><option value="offen" ${e.status !== 'bezahlt' ? 'selected' : ''}>offen</option><option value="bezahlt" ${e.status === 'bezahlt' ? 'selected' : ''}>bezahlt</option></select></label>
       <label style="flex:0 1 150px">bezahlt am<input id="sBez" type="date" value="${esc(e.bezahltAm || '')}" ${ro}></label>
     </div>
@@ -2491,17 +2497,19 @@ function druckVeranstaltung(v) {
   const zaehl = buch.filter(p => p.stueckelung);
   printOut(`<h1>Festkassabuch – ${esc(v.name)}</h1>
     <p class="meta">${deDate(v.von)}${v.bis && v.bis !== v.von ? ' – ' + deDate(v.bis) : ''}${v.ort ? ' · ' + esc(v.ort) : ''}${v.verantwortlich ? ' · Verantwortlich: ' + esc(v.verantwortlich) : ''}</p>
-    <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Zahlweg</th><th>Erg.</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead><tbody>
+    <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead><tbody>
       ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${p.bank ? 'Bank ' + esc(kontoById(p.buchung.konto)?.name || '') : esc(p.bereich || '')}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
-        <td>${p.bank ? 'Bank' : p.fluss && p.zahlweg === 'ueberweisung' ? 'Überw.' : 'bar'}</td><td>${p.ergebnis ? '✓' : '–'}</td>
+        <td>${esc(p.artName)}</td><td>${p.ergebnis ? 'ja' : 'nein'}</td>
         <td class="r">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
       <tr class="sum"><td colspan="10">Kassabestand</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table></section>
     <section><h2>Abrechnung</h2><table><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
-      ${a.bereiche.map(x => `<tr><td>${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
-      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>über die Bank</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${fmt(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
+      ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${fmt(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
+      ${a.bereiche.map(x => `<tr><td>Überweisung: ${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
+      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>Überweisung: Bankbuchungen</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${fmt(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
       <tr class="sum"><td>Ergebnis</td><td class="r">${fmt(a.einnahmen)}</td><td class="r">${fmt(a.ausgaben)}</td><td class="r">${fmt(a.ergebnis)}</td></tr>
-      ${a.neutralEin || a.neutralAus ? `<tr><td>nicht im Ergebnis (Durchlaufposten)</td><td class="r">${fmt(a.neutralEin)}</td><td class="r">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}</tbody></table>
-      <p class="meta">Überweisungen (Überw.) stehen im Festkassabuch, ändern den Kassabestand aber nicht. Erg. „–“ = zählt nicht zum Ergebnis.</p></section>
+      ${a.neutralEin || a.neutralAus ? `<tr><td>Überweisung, zählt nicht (Durchlaufposten)</td><td class="r">${fmt(a.neutralEin)}</td><td class="r">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}
+      ${a.barBereiche.map(x => `<tr><td>bar: ${esc(x.bereich)} (zählt nicht)</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}</tbody></table>
+      <p class="meta">Wie im bisherigen Excel zählen nur „Bank“ (Einzahlung − Wechselgeld) und „Überweisung“. „bar in/aus Geldtasche“ ändert nur den Kassabestand – das Bargeld ist in der Bankeinzahlung enthalten.</p></section>
     ${zaehl.length ? `<section><h2>Zählprotokolle</h2><table><thead><tr><th>Bereich</th>${STUECKELUNG.map(c => `<th class="r">${c >= 100 ? c / 100 + '€' : c + 'ct'}</th>`).join('')}<th class="r">gezählt</th><th class="r">− WG</th><th class="r">Einnahme</th></tr></thead><tbody>
       ${zaehl.map(p => `<tr><td>${esc(p.bereich)}<br><small>${esc(p.text || '')}</small></td>${STUECKELUNG.map(c => `<td class="r">${p.stueckelung[c] || ''}</td>`).join('')}<td class="r">${fmt(p.gezaehlt)}</td><td class="r">${fmt(p.wechselgeldAbzug || 0)}</td><td class="r">${fmt(p.betrag)}</td></tr>`).join('')}
       </tbody></table></section>` : ''}

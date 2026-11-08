@@ -179,22 +179,25 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   const r = veranstaltungsAbrechnung(ohneAbl, bank);
   assert.equal(r.bestand, 70000);
   assert.equal(r.ablieferung, 1248050);
-  assert.equal(r.einnahmen, 820000 + 478050 + 50000);
-  assert.equal(r.ausgaben, 30000 + 421000);
-  assert.equal(r.ergebnis, 1348050 - 451000);
+  // wie im Excel: zählt nur Bank (Einzahlung − Wechselgeld) und Überweisung, bar in/aus Geldtasche nicht
+  assert.equal(r.einnahmen, 1248050 + 50000);
+  assert.equal(r.ausgaben, 50000 + 421000);
+  assert.equal(r.ergebnis, 827050);
+  assert.equal(r.barEinnahmen, 820000 + 478050);
   assert.equal(r.buch.length, 7);   // 4 eigene Posten + Ablieferung + 2 Bankzeilen (Rechnung, Einnahme)
   const bankAusgabe = r.buch.find(p => p.bank && p.art === 'ausgabe');
   assert.equal(bankAusgabe.betragVz, -421000);
   assert.equal(bankAusgabe.wirkung, 0);          // ändert den Kassabestand nicht
   assert.equal(bankAusgabe.ergebnis, true);
-  assert.equal(r.bereiche.length, 3);           // Bankzeilen nicht doppelt in den Bereichen
+  assert.equal(r.bereiche.length, 0);           // keine zählenden Überweisungs-Positionen
+  assert.equal(r.barBereiche.length, 3);        // Bar-Umsatz je Bereich nur zur Information
   const bankZeile = r.buch.find(p => p.bank && p.text === 'Erlös Zeltfest');
   assert.equal(bankZeile.art, 'ablieferung');
   assert.equal(bankZeile.text, 'Erlös Zeltfest');
   assert.equal(bankZeile.bestand, 70000);
   // Abhebung (negativ) wird Wechselgeld in die Festkassa
   assert.equal(bankPosten([{ festArt: 'kassa', betrag: -50000, buchung: { id: 'x', datum: '2026-06-11', text: 'Wechselgeld' } }])[0].art, 'wechselgeld');
-  assert.equal(r.bereiche.length, 3);
+  assert.deepEqual(r.buch.map(p => p.artName).sort(), ['Bank', 'Bank', 'bar aus Geldtasche', 'bar in Geldtasche', 'bar in Geldtasche', 'Überweisung', 'Überweisung']);
 });
 
 test('CSV-Export', () => {
@@ -287,19 +290,22 @@ test('Festkassa: eigene Positionen bar/Überweisung, mit und ohne Ergebnis', () 
   ];
   const r = veranstaltungsAbrechnung(posten, []);
   assert.equal(r.bestand, 50000 + 300000 - 20000 + 10000 - 10000);          // Überweisungen ändern den Bestand nicht
-  assert.equal(r.barEinnahmen, 300000);
-  assert.equal(r.barAusgaben, 20000);
+  assert.equal(r.barEinnahmen, 310000);        // bar in Geldtasche: nur Information
+  assert.equal(r.barAusgaben, 30000);
   assert.equal(r.ueberwAusgaben, 421000);
-  assert.equal(r.neutralEin, 15000);
-  assert.equal(r.neutralAus, 10000);
-  assert.equal(r.einnahmen, 300000);
-  assert.equal(r.ausgaben, 20000 + 421000);
-  assert.equal(r.ergebnis, 300000 - 441000);
-  assert.deepEqual(r.bereiche.map(b => b.bereich), ['Getränke', 'Musik', 'Schank']);   // Pfand nicht im Ergebnis
+  assert.equal(r.neutralEin, 5000);             // Überweisung mit „zählt: nein“
+  assert.equal(r.neutralAus, 0);
+  assert.equal(r.einnahmen, 0);
+  assert.equal(r.ausgaben, 50000 + 421000);     // Wechselgeld (Bank) + Überweisung
+  assert.equal(r.ergebnis, -471000);
+  assert.deepEqual(r.bereiche.map(b => b.bereich), ['Getränke']);
+  assert.deepEqual(r.barBereiche.map(b => b.bereich), ['Musik', 'Pfand', 'Schank']);
   const ue = r.buch.find(p => p.bereich === 'Getränke');
   assert.equal(ue.betragVz, -421000);
   assert.equal(ue.wirkung, 0);
-  assert.deepEqual(postenInfo({ art: 'wechselgeld' }), { fluss: false, zahlweg: 'bar', ergebnis: false, kassa: true });
+  assert.deepEqual(postenInfo({ art: 'wechselgeld' }), { fluss: false, zahlweg: 'bank', ergebnis: true, kassa: true, artName: 'Bank' });
+  assert.equal(postenInfo({ art: 'einnahme', ergebnis: true }).ergebnis, false);   // bar zählt nie, auch alte Daten
+  assert.equal(postenInfo({ art: 'ausgabe', zahlweg: 'ueberweisung' }).artName, 'Überweisung');
   // Überweisung im Festkassabuch UND gleiche Bankbuchung als Ausgabe zugeordnet → Hinweis auf Doppelerfassung
   const d = veranstaltungsAbrechnung(posten, [{ festArt: 'bank', betrag: -421000 }]);
   assert.equal(d.doppelt.length, 1);
@@ -449,7 +455,7 @@ test('Sponsoring: Festkassabuch, Zahlungen zuordnen, Vorlagen', async () => {
     ['Autohaus Blitz', 'ueberweisung', 5000, 'Transparente'], ['Bäckerei Korn', 'bar', 3000, 'Transparente'],
   ]);
   const a = veranstaltungsAbrechnung(sp, []);
-  assert.equal(a.einnahmen, 23000);
+  assert.equal(a.einnahmen, 20000);   // bar bezahlter Sponsor zählt erst mit der Bankeinzahlung
   assert.equal(a.bestand, 3000);   // nur die Barzahlung ändert den Kassabestand
   // Bankabgleich nutzt die feste Verknüpfung
   const ab = bankAbgleich(sp, buchungen, { id: 'v', name: 'Fest 2026', von: '2026-09-19', bis: '2026-09-20' });
