@@ -21,7 +21,7 @@ import {
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-08';
+} from './lib.js?v=2026-11-08c';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1284,17 +1284,18 @@ function viewVeranstaltung(v) {
     </div>
 
     <div class="card"><h2>Festkassabuch</h2>
-      <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead>
+      <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Position</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Kassa&shy;bestand</th></tr></thead>
       <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td class="k-a muted small">${p.lfd}</td><td class="nowrap k-b">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}<span class="nur-klein muted small" style="font-weight:400"> · ${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</span></td>
         <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
         <td class="small k-voll">${esc(p.text || '')}${(p.bank ? p.buchung?.belege : p.belege)?.length ? ` <span class="chip">📎 ${(p.bank ? p.buchung.belege : p.belege).length}</span>` : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
         <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt' : ' · zählt nicht'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
-        <td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r k-weg ${p.kassa ? '' : 'muted'}">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td>
-        <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragVz < 0 ? 'minus' : 'plus'} ${p.kassa ? '' : 'muted'}">${p.betragVz > 0 ? '+' : '−'}${fmt(Math.abs(p.betragVz))}</span></td></tr>`).join('')
+        <td class="r k-weg ${p.ergebnis ? '' : 'muted'}">${p.betragErg > 0 ? fmt(p.betragErg) : ''}</td><td class="r k-weg ${p.ergebnis ? '' : 'muted'}">${p.betragErg < 0 ? fmt(-p.betragErg) : ''}</td>
+        <td class="r k-c"><b class="nur-gross">${fmt(p.bestand)}</b><span class="nur-klein ${p.betragErg < 0 ? 'minus' : 'plus'} ${p.ergebnis ? '' : 'muted'}">${p.betragErg > 0 ? '+' : '−'}${fmt(Math.abs(p.betragErg))}</span></td></tr>`).join('')
         || `<tr><td colspan="11" class="muted">Noch keine Einträge. Üblicher Ablauf: Wechselgeld von der Bank abheben (Bankbuchung zuordnen) → <b>Einnahmen</b> und <b>Ausgaben</b> mit Beleg erfassen → Geld auf die Bank einzahlen (Bankbuchung zuordnen).</td></tr>`}</tbody></table></div>
       <p class="muted small">Zeilen mit 🏦 kommen aus zugeordneten Bankbuchungen der <b>Feuerwehr- und der Mannschaftskassa</b>: eine Abhebung ist Wechselgeld in die Festkassa, eine Einzahlung eine Ablieferung (Art „Bank“); Rechnungen und Eingänge des Festes über die Bank stehen als Überweisung. Sie müssen nicht noch einmal eingetragen werden.
         Wie im bisherigen Excel <b>zählen nur „Bank“ und „Überweisung“</b> zum Ergebnis. „bar in/aus Geldtasche“ ändert nur den Kassabestand – das Bargeld ist ja in der Bankeinzahlung schon enthalten.
-        Überweisungen (grau) ändern den Kassabestand nicht.</p>
+        Einnahmen/Ausgaben mit Vorzeichen wie im Excel (Wechselgeld abheben = Ausgabe, Bankeinzahlung = Einnahme); grau = zählt nicht.
+        Die Spalte <b>Kassabestand</b> zeigt das Bargeld in der Geldtasche – Überweisungen ändern ihn nicht.</p>
     </div>
 
     ${sponsorKurz(v)}
@@ -1354,10 +1355,10 @@ function viewVeranstaltung(v) {
   });
   $('#verPrint').addEventListener('click', () => druckVeranstaltung(v));
   $('#verCsv').addEventListener('click', () => {
-    const rows = [['Nr', 'Datum', 'Zeit', 'Art', 'Bereich', 'Text', 'Beleg', 'Art', 'Zählt', 'Eingang', 'Ausgang', 'Bestand']];
+    const rows = [['Nr', 'Datum', 'Zeit', 'Art', 'Bereich', 'Text', 'Beleg', 'Art', 'Zählt', 'Einnahmen', 'Ausgaben', 'Kassabestand']];
     buch.forEach(p => rows.push([p.lfd, deDate(p.datum), p.zeit || '', POSTEN_ARTEN[p.art]?.name, p.bank ? 'Bank' : p.bereich || '', p.text || '', p.beleg || '',
       p.artName + (p.bank ? ' ' + (kontoById(p.buchung?.konto)?.name || '') : ''), p.ergebnis ? 'ja' : 'nein',
-      p.betragVz > 0 ? fmt(p.betragVz) : '', p.betragVz < 0 ? fmt(-p.betragVz) : '', fmt(p.bestand)]));
+      p.betragErg > 0 ? fmt(p.betragErg) : '', p.betragErg < 0 ? fmt(-p.betragErg) : '', fmt(p.bestand)]));
     download(`Festkassa_${v.name.replace(/[^\wäöüÄÖÜß-]+/g, '_')}.csv`, toCsv(rows));
   });
 }
@@ -2432,10 +2433,10 @@ function druckVeranstaltung(v) {
   const buch = a.buch;
   printOut(`<h1>Festkassabuch – ${esc(v.name)}</h1>
     <p class="meta">${deDate(v.von)}${v.bis && v.bis !== v.von ? ' – ' + deDate(v.bis) : ''}${v.ort ? ' · ' + esc(v.ort) : ''}${v.verantwortlich ? ' · Verantwortlich: ' + esc(v.verantwortlich) : ''}</p>
-    <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Art</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Eingang</th><th class="r">Ausgang</th><th class="r">Bestand</th></tr></thead><tbody>
+    <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Position</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Kassa&shy;bestand</th></tr></thead><tbody>
       ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${p.bank ? 'Bank ' + esc(kontoById(p.buchung.konto)?.name || '') : esc(p.bereich || '')}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
         <td>${esc(p.artName)}</td><td>${p.ergebnis ? 'ja' : 'nein'}</td>
-        <td class="r">${p.betragVz > 0 ? fmt(p.betragVz) : ''}</td><td class="r">${p.betragVz < 0 ? fmt(-p.betragVz) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
+        <td class="r">${p.betragErg > 0 ? fmt(p.betragErg) : ''}</td><td class="r">${p.betragErg < 0 ? fmt(-p.betragErg) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
       <tr class="sum"><td colspan="10">Kassabestand</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table></section>
     <section><h2>Abrechnung</h2><table><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
       ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${fmt(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
