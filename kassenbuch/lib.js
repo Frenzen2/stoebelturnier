@@ -741,7 +741,11 @@ export function festkassaBuch(posten) {
  * Bankteile 'kassa' sind Wechselgeld (−) bzw. Bankeinzahlung (+), Bankteile 'bank' Einnahmen/Ausgaben per Überweisung.
  * Bar-Positionen (in/aus Geldtasche) stehen nur zur Information drin – sie sind in der Bankeinzahlung enthalten.
  */
-export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
+export function veranstaltungsAbrechnung(eigenePosten, alleBankTeile) {
+  // Eine Bankbuchung, die schon mit einer Position verknüpft ist (z. B. Zahlung eines Sponsors), zählt nur einmal –
+  // über die Position. Ist sie zusätzlich dem Fest zugeordnet, wird sie hier weggelassen.
+  const verknuepftIds = new Set(eigenePosten.map(p => p.buchungId).filter(Boolean));
+  const bankTeile = alleBankTeile.filter(t => !verknuepftIds.has(t.buchung?.id));
   const posten = [...eigenePosten, ...bankPosten(bankTeile)];
   const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
   const abs = p => Math.abs(p.betrag || 0);
@@ -779,9 +783,41 @@ export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   r.buch = festkassaBuch(posten);
   r.bestand = r.buch.length ? r.buch.at(-1).bestand : 0;
   // Mögliche Doppelerfassung: Überweisung im Festkassabuch UND gleiche Bankbuchung als Einnahme/Ausgabe zugeordnet
-  r.doppelt = mit.filter(({ p, i }) => i.ergebnis && i.zahlweg === 'ueberweisung'
+  r.doppelt = mit.filter(({ p, i }) => !p.buchungId && i.ergebnis && i.zahlweg === 'ueberweisung'
     && bankRelevant.some(t => Math.abs(t.betrag) === abs(p) && (t.betrag > 0) === (p.art === 'einnahme'))).map(x => x.p);
+  // Bankbuchungen, die nur über den Sponsor zählen (zusätzlich dem Fest zugeordnet)
+  r.verknuepft = alleBankTeile.filter(t => verknuepftIds.has(t.buchung?.id));
+  // Eingetragene Transparent-Positionen, die es auch als Sponsor gibt
+  r.doppeltSponsor = transparentAbgleich(eigenePosten.filter(p => !p.sponsor), eigenePosten.filter(p => p.sponsor))
+    .filter(x => x.sponsor).map(x => ({ ...x.posten, sponsorName: x.sponsor.text }));
   return r;
+}
+
+/** Transparent-/Sponsor-Positionen des Festkassabuchs (Einnahme, Bereich „Transparente“ o. ä.) */
+export const istTransparentPosten = p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || '');
+
+/**
+ * Ordnet eingetragene Transparent-Positionen bestehenden Sponsoren zu (ähnlicher Name, jeder Sponsor nur einmal;
+ * bei gleich gutem Namen gewinnt der gleiche Betrag). sponsoren: Einträge mit name oder text.
+ * Ergebnis: [{ posten, sponsor | null }]
+ */
+export function transparentAbgleich(posten, sponsoren) {
+  const tp = posten.filter(istTransparentPosten);
+  const name = e => e.name ?? e.text ?? '';
+  const paare = [];
+  tp.forEach((p, i) => sponsoren.forEach(e => {
+    const n = aehnlich(name(e), p.text || ''), gleich = e.betrag === p.betrag;
+    // nur ein gemeinsames Wort (z. B. „Christian“ ↔ „Christopher“) reicht nur bei gleichem Betrag
+    if (n >= 2 || (n === 1 && gleich)) paare.push({ i, e, n, gleich });
+  }));
+  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich));
+  const wahl = new Map(), vergeben = new Set();
+  for (const x of paare) {
+    const key = x.e.id ?? x.e.sponsorId;
+    if (wahl.has(x.i) || vergeben.has(key)) continue;
+    wahl.set(x.i, x.e); vergeben.add(key);
+  }
+  return tp.map((p, i) => ({ posten: p, sponsor: wahl.get(i) || null }));
 }
 
 // ── Bisheriges Festkassabuch (Excel) übernehmen ─────────────────────────────
