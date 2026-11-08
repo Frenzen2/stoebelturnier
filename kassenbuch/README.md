@@ -26,7 +26,7 @@ eigenen Server, nur statische Dateien.
   Mehrere Buchungen auf einmal kontieren, eine Buchung auf mehrere Kategorien aufteilen,
   **Kontierungsregeln** (z. B. „Kontoführung“ → Bankspesen) wirken schon beim Import.
 - **Festkassabuch je Veranstaltung** (Zeltfest, Ball, Florianifeier …): Wechselgeld, Einnahmen je Stand,
-  **Kassasturz mit Zählprotokoll** (Scheine und Münzen), Barausgaben mit Beleg-Nr., Ablieferung an die Bank,
+  Einnahmen und Ausgaben mit Beleg-Nr., Ablieferung an die Bank,
   laufender Kassabestand und Abrechnung nach Bereichen. Druckbar mit Unterschriftszeilen.
 - **Feuerwehr-Rechnungsabschluss für die Gemeinde**: alle V-P mit Summen, Summe der Einnahmen und Ausgaben,
   Kassastand 01.01. und 01.01. des Folgejahres, Unterschriften (Rechnungsprüfer, Kassier, Feuerwehrkommandant). Wie das Blatt „Abschluß Gde“.
@@ -45,7 +45,7 @@ Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, 
 - **Computer**: am bequemsten für Import, Kontieren, Jahresabschluss und Ausdrucke (PDF).
 - **Handy**: Listen werden als Karten angezeigt (Datum, Betrag, Text, Kategorie), die Filter bei den Buchungen sind
   eingeklappt. Gut geeignet zum Nachschauen, Kontieren einzelner Buchungen und für die **Festkassa direkt beim Fest**
-  (Einnahmen/Ausgaben erfassen, Kassasturz mit Zählprotokoll).
+  (Einnahmen/Ausgaben erfassen).
 - **Als App auf den Startbildschirm**: iPhone/iPad in Safari *Teilen → Zum Home-Bildschirm*, Android in Chrome
   *⋮ → Zum Startbildschirm hinzufügen*. Dann startet das Kassenbuch wie eine App mit eigenem Symbol.
 - Es ist eine Internetverbindung nötig; kurze Funklöcher überbrückt die App, Änderungen werden nachgeschickt.
@@ -217,17 +217,15 @@ Typischer Ablauf, z. B. beim Wiesnfest:
 1. **Festkassa → + Veranstaltung** anlegen (Name, Datum, Verantwortlicher) – am besten **vor** dem Raika-Import.
 2. **Wechselgeld** wird von der Feuerwehr- oder Mannschaftskassa abgehoben. Diese Bankbuchung wird dem Festkassabuch
    zugeordnet und erscheint dort automatisch als *Wechselgeld / Vorschuss* (🏦). Nichts doppelt eintragen.
-3. Nach dem Fest je Stand einen **🧮 Kassasturz** machen: Anzahl der Scheine und Münzen eingeben,
-   das enthaltene Wechselgeld abziehen. Daraus wird die Einnahme. Alternativ Einnahmen mit **+ Einnahme** eintragen.
-4. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
+3. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
    - **Art**: *bar in/aus Geldtasche* (ändert den Kassabestand, zählt nicht) oder *Überweisung* (steht im Festkassabuch,
      ändert den Kassabestand nicht und zählt – z. B. die Getränkerechnung, die der Kassier überweist);
    - **zählt (JA)** bei Überweisungen: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
-5. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
+4. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
    zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
-6. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
+5. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Unterschriften.
 
-**Ohne Kassasturz – Barumsatz errechnen:** Wird nicht je Stand gezählt, sondern nur der Erlös eingezahlt, fehlt der Barumsatz
+**Barumsatz errechnen:** Werden die Bareinnahmen nicht einzeln eingetragen, sondern nur der Erlös eingezahlt, fehlt der Barumsatz
 und der Kassabestand wird negativ. **🧮 Barumsatz errechnen** trägt ihn als *bar in Geldtasche* ein:
 Barumsatz = Ablieferungen + Barausgaben − Wechselgeld − sonstige Bareinnahmen. Das Ergebnis ändert sich dadurch nicht,
 nur der Kassabestand geht auf 0.
@@ -308,7 +306,7 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 | `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
 | `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), festArt (kassa/bank), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
 | `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
-| `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false), stueckelung |
+| `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false) |
 | `veranstaltungen/{id}/sponsoring/{id}` | name, zusatz, strasse, plzOrt, email, leistung, betrag (Cent), zahlweg, status (offen/bezahlt), bezahltAm, buchungId, rechnungsNr, rechnungsDatum, belege (Fotos), dankGedruckt |
 | `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden, rechnungNr (Zähler für Rechnungsnummern) |
 | Storage `belege/{jahr}/buchung/{id}/…`, `belege/{jahr}/posten/{fest}/{id}/…` | Belege; am Dokument steht `belege: [{id, name, pfad, typ, groesse, am, von}]` |
