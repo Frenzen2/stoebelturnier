@@ -19,9 +19,9 @@ import {
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, festkassaBuch,
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
-  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich,
+  sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-08c';
+} from './lib.js?v=2026-11-08d';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -862,6 +862,8 @@ function buchungDialog(b) {
     const betrag = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
     const v = $('#bVer').value, art = $('#bFestArt').value;
     $('#bFestArt').closest('label').classList.toggle('hidden', !v);
+    const spz = imported && sponsorZuBuchung(b.id);
+    if (v && spz) { $('#bFestHint').innerHTML = `⚠ Diese Zahlung gehört schon zum Sponsor <b>${esc(spz.e.name)}</b> und steht damit im Festkassabuch – sie zählt nicht noch einmal. Am besten „—“ (keine Veranstaltung) wählen.`; return; }
     $('#bFestHint').innerHTML = !v ? 'Wechselgeld-Abhebungen, Einzahlungen von Festerlösen oder Rechnungen eines Festes hier einer Veranstaltung zuordnen.'
       : art === 'kassa'
         ? (betrag < 0 ? '➜ Erscheint im Festkassabuch als <b>Wechselgeld / Vorschuss</b> (Eingang in die Festkassa).' : '➜ Erscheint im Festkassabuch als <b>Ablieferung an die Bank</b> (Ausgang aus der Festkassa).')
@@ -1281,6 +1283,10 @@ function viewVeranstaltung(v) {
       </div>
       ${a.doppelt.length ? `<div class="warnbox">⚠ Möglicherweise doppelt erfasst: ${a.doppelt.map(p => `${esc(p.text || p.bereich || POSTEN_ARTEN[p.art].name)} ${fmt(p.betrag)}`).join(', ')} –
         steht als Überweisung im Festkassabuch und ist zusätzlich als Bankbuchung (🧾) zugeordnet. Eines davon entfernen.</div>` : ''}
+      ${a.doppeltSponsor.length ? `<div class="warnbox">⚠ Doppelt: ${a.doppeltSponsor.length} eingetragene Transparent-Positionen gibt es auch als Sponsor
+        (${a.doppeltSponsor.slice(0, 5).map(p => esc(p.text)).join(', ')}${a.doppeltSponsor.length > 5 ? ' …' : ''}) – im Reiter <b>Sponsoren</b> mit „Abgleichen“ zusammenführen.</div>` : ''}
+      ${a.verknuepft.length ? `<p class="muted small">ℹ ${a.verknuepft.length} Bankbuchung(en) sind dem Fest zugeordnet, gehören aber schon zu einem Sponsor
+        (${a.verknuepft.slice(0, 4).map(t => esc(splitBankText(t.buchung.text).partner || t.buchung.text).slice(0, 40)).join(', ')}) – sie zählen nur einmal, über den Sponsor.</p>` : ''}
     </div>
 
     <div class="card"><h2>Festkassabuch</h2>
@@ -1366,7 +1372,9 @@ function viewVeranstaltung(v) {
 /** Bankbuchungen (beider Konten) dem Festkassabuch dieser Veranstaltung zuordnen */
 function bankZuordnenDialog(v) {
   const tage = d => Math.abs((new Date(d) - new Date(v.von || d)) / 864e5);
-  const offen = S.buchungen.filter(b => !b.veranstaltung && !b.splits?.length);
+  const sponsorZahlungIds = vergebeneZahlungen();
+  // Zahlungen, die schon einem Sponsor gehören, stehen bereits im Festkassabuch – nicht noch einmal anbieten
+  const offen = S.buchungen.filter(b => !b.veranstaltung && !b.splits?.length && !sponsorZahlungIds.has(b.id));
   const info = b => {
     const name = !!veranstaltungImText(b.text, [v]);
     const art = festArtVorschlag(b, name);
@@ -1387,7 +1395,8 @@ function bankZuordnenDialog(v) {
   modal(`Bankbuchungen „${v.name}“ zuordnen`, `
     <p class="muted small">Vorausgewählt sind Festkassa-Bewegungen beider Konten rund um das Fest (Wechselgeld, Erlös, Einzahlung).
       Darunter weitere Buchungen, die das Fest erwähnen oder zeitlich nah sind – z. B. Rechnungen, die man als „Ausgabe über Bank“ zuordnen kann.
-      Die Kontierung (V-P) der Feuerwehrkassa bleibt unverändert.</p>
+      Die Kontierung (V-P) der Feuerwehrkassa bleibt unverändert. Zahlungen von Sponsoren fehlen hier absichtlich –
+      sie stehen schon über den Reiter Sponsoren im Festkassabuch.</p>
     <label class="check"><input type="checkbox" id="zuoAlle"> alle offenen Bankbuchungen ${S.jahr} anzeigen</label>
     <div class="tablewrap" style="margin-top:8px"><table class="t"><thead><tr><th></th><th>Datum</th><th>Konto</th><th>Text</th><th>Art</th><th class="r">Betrag</th></tr></thead><tbody id="zuoRows"></tbody></table></div>`, {
     wide: true, ok: 'Zuordnen',
@@ -1982,7 +1991,9 @@ function sponsorKarte(v) {
   const belegt = belegteZahlungen(v);
   const zahlungen = sponsorZahlungen(liste, S.buchungen, belegt);
   const kand = offeneEingaenge(v);
-  const transparentPosten = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
+  const transparentPosten = (S.posten[v.id] || []).filter(istTransparentPosten);
+  const tpAbgleich = transparentAbgleich(transparentPosten, S.sponsoring[v.id] || []);
+  const tpDoppelt = tpAbgleich.filter(x => x.sponsor).length;
   return `<div class="card"><div class="toolbar"><h2 style="margin:0;flex:1">${esc(v.name)} <span class="muted" style="font-weight:400">${festDatum(v)}</span></h2>
       ${edit ? `<button class="btn primary" id="spNeu">+ Sponsor</button>` : ''}
       ${kassier && zahlungen.length ? `<button class="btn" id="spZahl">⇄ ${zahlungen.length} Zahlung(en) zuordnen</button>` : ''}
@@ -1993,8 +2004,10 @@ function sponsorKarte(v) {
     </div>
     <p class="muted small">${liste.length} Sponsoren · gesamt ${eur(summe(() => true))} · bezahlt ${eur(summe(e => e.status === 'bezahlt'))}${summe(e => e.status !== 'bezahlt') ? ` · <b class="minus">offen ${eur(summe(e => e.status !== 'bezahlt'))}</b>` : ''}.
       Bezahlte Sponsoren stehen automatisch im Festkassabuch (Bereich „Transparente“). Zahlungen werden über die Rechnungsnummer oder Betrag und Namen erkannt.</p>
-    ${transparentPosten.length && edit ? `<div class="warnbox">Im Festkassabuch stehen ${transparentPosten.length} eingetragene Transparent-/Sponsor-Positionen (${eur(transparentPosten.reduce((a, p) => a + p.betrag, 0))}).
-      <button class="btn small" id="spAusPosten">In Sponsoren umwandeln</button> – sonst zählen sie doppelt, sobald Sponsoren erfasst sind.</div>` : ''}
+    ${transparentPosten.length && edit ? `<div class="warnbox">Im Festkassabuch stehen zusätzlich ${transparentPosten.length} eingetragene Transparent-/Sponsor-Positionen
+      (${eur(transparentPosten.reduce((a, p) => a + p.betrag, 0))})${tpDoppelt ? `, davon <b>${tpDoppelt} doppelt</b> – die gibt es auch als Sponsor` : ''}.
+      <button class="btn small" id="spAusPosten">${liste.length ? 'Abgleichen' : 'In Sponsoren umwandeln'}</button>
+      ${liste.length ? '– doppelte Positionen werden entfernt, die übrigen als Sponsoren angelegt.' : '– sonst zählen sie doppelt, sobald Sponsoren erfasst sind.'}</div>` : ''}
     ${liste.length ? `<div class="tablewrap"><table class="t karten"><thead><tr><th>Rechnung</th><th>Sponsor</th><th>Zahlweg</th><th>Status</th><th class="r">Betrag</th></tr></thead><tbody>
       ${liste.map(e => `<tr class="click" data-sp="${esc(e.id)}"><td class="small k-a muted">${esc(e.rechnungsNr || '–')}</td>
         <td class="k-b">${esc(e.name)}${e.belege?.length ? ` <span class="chip">📷 ${e.belege.length}</span>` : ''}${e.dankGedruckt ? ' <span class="chip">✉ Dank</span>' : ''}</td>
@@ -2015,9 +2028,16 @@ function bindSponsoren(v) {
   $('#spRe')?.addEventListener('click', () => auswahlDruck(v, 'rechnung'));
   $('#spDank')?.addEventListener('click', () => auswahlDruck(v, 'dank'));
   $('#spAusPosten')?.addEventListener('click', async () => {
-    const tp = (S.posten[v.id] || []).filter(p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || ''));
-    if (!confirm(`${tp.length} Positionen als Sponsoren übernehmen? Sie werden als bezahlt angelegt und aus dem Festkassabuch-Eintrag entfernt (das Ergebnis bleibt gleich). Überweisungen werden – wo möglich – gleich der Bankbuchung zugeordnet.`)) return;
-    const neu = tp.map(p => ({ p, id: doc(collection(db, 'x')).id, e: { name: p.text || 'Sponsor', betrag: p.betrag, zahlweg: p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', status: 'offen', rechnungsNr: '' } }));
+    const abg = transparentAbgleich((S.posten[v.id] || []).filter(istTransparentPosten), S.sponsoring[v.id] || []);
+    const doppelt = abg.filter(x => x.sponsor), rest = abg.filter(x => !x.sponsor);
+    if (!await confirmDlg('Transparent-Positionen abgleichen', `
+      ${doppelt.length ? `<p><b>${doppelt.length}</b> Positionen gibt es schon als Sponsor – sie werden aus dem Festkassabuch-Eintrag entfernt
+        (der Sponsor bleibt und zählt einmal). Offene Sponsoren werden dabei auf „bezahlt“ gesetzt, Zahlweg wie im Festkassabuch – Überweisungen mit der Bankbuchung verknüpft.</p>
+        <div class="tablewrap" style="max-height:220px;overflow:auto"><table class="t"><tbody>${doppelt.map(x => `<tr><td class="small">${esc(x.posten.text)}</td><td class="r small">${fmt(x.posten.betrag)}</td>
+          <td class="small">→ ${esc(x.sponsor.name)} (${fmt(x.sponsor.betrag)}, ${x.sponsor.status})</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${rest.length ? `<p><b>${rest.length}</b> Positionen werden als neue (bezahlte) Sponsoren angelegt; Überweisungen werden – wo möglich – gleich der Bankbuchung zugeordnet.</p>` : ''}
+      <p class="muted small">Das Ergebnis zählt danach jeden Sponsor genau einmal.</p>`, 'Abgleichen')) return;
+    const neu = rest.map(({ posten: p }) => ({ p, id: doc(collection(db, 'x')).id, e: { name: p.text || 'Sponsor', betrag: p.betrag, zahlweg: p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', status: 'offen', rechnungsNr: '' } }));
     const links = new Map(sponsorZahlungen(neu.map(x => ({ ...x.e, id: x.id })), S.buchungen, vergebeneZahlungen()).filter(m => m.sicher).map(m => [m.eintrag.id, m.buchung]));
     const batch = writeBatch(db);
     for (const { p, id, e } of neu) {
@@ -2026,9 +2046,31 @@ function bindSponsoren(v) {
         buchungId: b?.id || '', bereich: p.bereich || 'Transparente', erfasstAm: serverTimestamp(), erfasstVon: S.uid });
       batch.delete(doc(db, 'veranstaltungen', v.id, 'posten', p.id));
     }
-    logTo(batch, 'sponsoring', `${v.name}: ${tp.length} Festkassa-Positionen in Sponsoren umgewandelt (${links.size} Zahlungen zugeordnet)`);
+    // offene Sponsoren, die im Festkassabuch schon als eingenommen stehen: auf „bezahlt“ setzen (sonst fiele der Betrag weg),
+    // Überweisungen dabei mit der Bankbuchung verknüpfen
+    const vergeben = new Set([...vergebeneZahlungen(), ...links.values()].map(x => x.id || x));
+    // anpassen: offene Sponsoren und solche, deren Zahlweg nicht zum Festkassabuch passt (z. B. Liste „bar“, Excel „Überweisung“)
+    const anders = (p, e) => !e.buchungId && (e.zahlweg === 'bar') !== (p.zahlweg !== 'ueberweisung');
+    const offenDoppelt = doppelt.filter(x => x.sponsor.status !== 'bezahlt' || anders(x.posten, x.sponsor));
+    // Bankbuchung je Position aus dem Abgleich mit der Bank (Name und Betrag der Festkassabuch-Zeile) – nur sichere Treffer
+    const zahl = new Map();
+    const sicherZu = new Map(bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen
+      .filter(z => z.sicher && z.buchungen.length === 1).map(z => [z.posten.id, z.buchungen[0]]));
+    for (const { posten: p, sponsor: e } of offenDoppelt) {
+      const bu = p.zahlweg === 'ueberweisung' && sicherZu.get(p.id);
+      if (bu && !vergeben.has(bu.id)) { zahl.set(e.id, bu); vergeben.add(bu.id); }
+    }
+    for (const { posten: p, sponsor: e } of doppelt) {
+      if (e.status !== 'bezahlt' || anders(p, e)) {
+        const bu = zahl.get(e.id);
+        batch.update(spRef(v, e.id), { status: 'bezahlt', zahlweg: p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar',
+          bezahltAm: bu?.datum || p.datum || v.bis || v.von, betrag: p.betrag || e.betrag, buchungId: bu?.id || e.buchungId || '' });
+      }
+      batch.delete(doc(db, 'veranstaltungen', v.id, 'posten', p.id));
+    }
+    logTo(batch, 'sponsoring', `${v.name}: Transparent-Positionen abgeglichen – ${doppelt.length} doppelte entfernt, ${neu.length} als Sponsoren angelegt (${links.size} Zahlungen zugeordnet)`);
     await batch.commit().catch(fail);
-    toast(`${tp.length} Sponsoren angelegt, ${links.size} Überweisungen zugeordnet.`);
+    toast(`${doppelt.length} doppelte entfernt (${offenDoppelt.length} Sponsoren angepasst, ${zahl.size} mit Bankbuchung), ${neu.length} Sponsoren angelegt.`);
   });
 }
 

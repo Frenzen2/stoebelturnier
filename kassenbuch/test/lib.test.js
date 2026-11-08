@@ -505,3 +505,26 @@ test('Weitere Überweisungen: bestehendem Sponsor zuordnen statt doppelt anlegen
   assert.match(v[0].grund, /Name passt, Betrag abweichend/);
   assert.deepEqual(v[1].gleicherBetrag, ['x']);
 });
+
+test('Transparente: Sponsor-Zahlung zählt nur einmal', async () => {
+  const { veranstaltungsAbrechnung, sponsorPosten, transparentAbgleich } = await import('../lib.js');
+  const sp = sponsorPosten([
+    { id: 's1', name: 'Fliesen Gaborek', betrag: 30000, zahlweg: 'ueberweisung', status: 'bezahlt', buchungId: 'b1', bezahltAm: '2025-11-03' },
+    { id: 's2', name: 'Automax', betrag: 5000, zahlweg: 'bar', status: 'bezahlt', bezahltAm: '2025-09-21' },
+  ]);
+  const bu = { id: 'b1', datum: '2025-11-03', text: 'Auftraggeber: Andreas Gaborek Zahlungsreferenz: Transparent Wiesnfest' };
+  // dieselbe Bankbuchung ist zusätzlich dem Fest zugeordnet (Überweisung bzw. Festkassa)
+  for (const festArt of ['bank', 'kassa']) {
+    const r = veranstaltungsAbrechnung(sp, [{ festArt, betrag: 30000, buchung: bu }]);
+    assert.equal(r.einnahmen, 30000, festArt);
+    assert.equal(r.verknuepft.length, 1);
+    assert.equal(r.buch.filter(p => p.bank).length, 0);
+  }
+  // eingetragene Transparent-Position aus dem Excel + gleicher Sponsor → doppelt erkannt
+  const excel = [{ id: 'p1', art: 'einnahme', bereich: 'Transparente', text: 'Fliesen Gaborek', betrag: 30000, zahlweg: 'ueberweisung' },
+    { id: 'p2', art: 'einnahme', bereich: 'Transparente', text: 'Neue Firma', betrag: 5000, zahlweg: 'ueberweisung' }];
+  const r = veranstaltungsAbrechnung([...excel, ...sp], []);
+  assert.deepEqual(r.doppeltSponsor.map(p => p.id), ['p1']);
+  const abg = transparentAbgleich(excel, [{ id: 's1', name: 'Fliesen Gaborek', betrag: 30000 }]);
+  assert.deepEqual(abg.map(x => x.sponsor?.id || null), ['s1', null]);
+});

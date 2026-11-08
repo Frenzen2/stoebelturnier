@@ -125,8 +125,13 @@ Je Fest gibt es:
   Sponsor nur bei passendem Namen, „neu“ nur, wenn kein offener Sponsor in Frage kommt – so entstehen keine Doppelten.
 - **Bezahlte Sponsoren stehen automatisch im Festkassabuch** (Bereich „Transparente“, bar in Geldtasche oder Überweisung);
   Überweisungen zählen zum Ergebnis, bar bezahlte über die Bankeinzahlung; offene Rechnungen nicht – sie erscheinen als Hinweis im Jahresabschluss.
-- Aus dem bisherigen Excel übernommene Transparent-Positionen lassen sich mit **In Sponsoren umwandeln** übernehmen
-  (das Ergebnis bleibt gleich, Überweisungen werden gleich verknüpft).
+- **Jeder Sponsor zählt genau einmal.** Eine Bankbuchung, die zu einem Sponsor gehört, zählt nur über den Sponsor –
+  auch wenn sie zusätzlich dem Fest zugeordnet ist (die App weist darauf hin). Im Dialog „🏦 Bankbuchung zuordnen“ werden
+  Sponsor-Zahlungen gar nicht mehr angeboten.
+- Aus dem bisherigen Excel übernommene Transparent-Positionen: **Abgleichen** (bzw. *In Sponsoren umwandeln*, solange es
+  noch keine Sponsoren gibt). Positionen, die es schon als Sponsor gibt, werden aus dem Festkassabuch-Eintrag entfernt;
+  offene Sponsoren werden dabei bezahlt gesetzt, mit Zahlweg und Betrag wie im Festkassabuch und – wenn sicher gefunden –
+  mit der Bankbuchung verknüpft. Die übrigen werden neue Sponsoren. Das Ergebnis bleibt gleich.
 
 Briefkopf (Anschrift, E-Mail, Kommandant, Kassier), Konto für Zahlungen, Zahlungsziel, Steuerhinweis und die Texte für
 Rechnung und Dankesschreiben stellt der Admin unter **Verwaltung → Briefkopf, Rechnungen und Dankesschreiben** ein.
