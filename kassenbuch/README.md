@@ -111,7 +111,7 @@ gelten als bezahlt; unsichere Treffer – nur der Betrag passt, oder der Name pa
 
 Je Fest gibt es:
 
-- **+ Sponsor**: Name, Anschrift, Leistung, Betrag, Zahlweg (*Überweisung* mit Rechnung oder *bar* in die Festkassa),
+- **+ Sponsor**: Name, Anschrift, Leistung, Betrag, Zahlweg (*Überweisung* mit Rechnung oder *bar in Geldtasche*),
   Fotos vom Transparent. Bekannte Sponsoren werden beim Tippen vorgeschlagen, die Anschrift wird übernommen.
 - **⧉ Aus anderem Fest übernehmen**: z. B. alle Sponsoren vom Wiesnfest des Vorjahres – Status „offen“, ohne Rechnungsnummer.
 - **🖨 Rechnungen**: fortlaufende Nummer je Jahr (2026-001, 2026-002 …), Briefkopf, IBAN und Rechnungsnummer als
@@ -123,8 +123,8 @@ Je Fest gibt es:
   „Sponsoring“, „Werbung“ oder Auftraggeber wie ein offener Sponsor). Je Zahlung wählen: **bestehendem offenen Sponsor
   zuordnen** (Bank-Betrag wird übernommen), **neu anlegen** oder nicht zuordnen. Vorausgewählt wird ein bestehender
   Sponsor nur bei passendem Namen, „neu“ nur, wenn kein offener Sponsor in Frage kommt – so entstehen keine Doppelten.
-- **Bezahlte Sponsoren stehen automatisch im Festkassabuch** (Bereich „Transparente“, bar oder Überweisung) und zählen
-  zum Ergebnis; offene Rechnungen nicht – sie erscheinen als Hinweis im Jahresabschluss.
+- **Bezahlte Sponsoren stehen automatisch im Festkassabuch** (Bereich „Transparente“, bar in Geldtasche oder Überweisung);
+  Überweisungen zählen zum Ergebnis, bar bezahlte über die Bankeinzahlung; offene Rechnungen nicht – sie erscheinen als Hinweis im Jahresabschluss.
 - Aus dem bisherigen Excel übernommene Transparent-Positionen lassen sich mit **In Sponsoren umwandeln** übernehmen
   (das Ergebnis bleibt gleich, Überweisungen werden gleich verknüpft).
 
@@ -201,6 +201,17 @@ Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird übe
 
 ## Festkassa für Veranstaltungen
 
+**Was zählt zum Ergebnis?** Wie im bisherigen Excel hat jede Zeile eine **Art**:
+
+| Art | Kassabestand | zählt zum Ergebnis |
+|---|---|---|
+| *bar in Geldtasche* / *bar aus Geldtasche* | ändert sich | **nein** – das Bargeld kommt mit der Bankeinzahlung ins Ergebnis |
+| *Überweisung* (eigene Position, Sponsor, zugeordnete Bankbuchung) | bleibt | **ja** (außer „zählt“ ausgeschaltet, z. B. Pfand, Kaution) |
+| *Bank* (Wechselgeld abheben −, Bankeinzahlung/Ablieferung +) | ändert sich | **ja** |
+
+Ergebnis = Bankeinzahlungen − Wechselgeld + Überweisungs-Einnahmen − Überweisungs-Ausgaben. Bargeld, das noch in der
+Kassa liegt, zählt erst nach der Einzahlung.
+
 Typischer Ablauf, z. B. beim Wiesnfest:
 
 1. **Festkassa → + Veranstaltung** anlegen (Name, Datum, Verantwortlicher) – am besten **vor** dem Raika-Import.
@@ -209,21 +220,21 @@ Typischer Ablauf, z. B. beim Wiesnfest:
 3. Nach dem Fest je Stand einen **🧮 Kassasturz** machen: Anzahl der Scheine und Münzen eingeben,
    das enthaltene Wechselgeld abziehen. Daraus wird die Einnahme. Alternativ Einnahmen mit **+ Einnahme** eintragen.
 4. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
-   - **Zahlweg**: *Bar aus der Festkassa* (ändert den Kassabestand) oder *Überweisung* (steht im Festkassabuch,
-     ändert den Kassabestand nicht – z. B. die Getränkerechnung, die der Kassier überweist);
-   - **zählt fürs Ergebnis**: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
-     Sie ändern (bar) den Kassabestand, aber nicht das Ergebnis und stehen in der Abrechnung getrennt.
+   - **Art**: *bar in/aus Geldtasche* (ändert den Kassabestand, zählt nicht) oder *Überweisung* (steht im Festkassabuch,
+     ändert den Kassabestand nicht und zählt – z. B. die Getränkerechnung, die der Kassier überweist);
+   - **zählt (JA)** bei Überweisungen: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
 5. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
    zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
 6. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Zählprotokollen und Unterschriften.
 
 **Ohne Kassasturz – Barumsatz errechnen:** Wird nicht je Stand gezählt, sondern nur der Erlös eingezahlt, fehlt der Barumsatz
-und der Kassabestand wird negativ. **🧮 Barumsatz errechnen** trägt ihn als Einnahme ein:
-Barumsatz = Ablieferungen + Barausgaben − Wechselgeld − sonstige Bareinnahmen. Das Ergebnis ist dann dasselbe wie bei der
-bisherigen Netto-Rechnung im Excel (Einzahlung + Überweisungen − Überweisungs-Ausgaben), die Bar-Positionen stehen aber brutto drin.
+und der Kassabestand wird negativ. **🧮 Barumsatz errechnen** trägt ihn als *bar in Geldtasche* ein:
+Barumsatz = Ablieferungen + Barausgaben − Wechselgeld − sonstige Bareinnahmen. Das Ergebnis ändert sich dadurch nicht,
+nur der Kassabestand geht auf 0.
 
-**Bisheriges Festkassabuch aus Excel übernehmen** (⬆ Excel übernehmen): Aufbau *Datum | Text | Einnahmen | Ausgaben | Zahlweg*
-mit „Überweisung“, „bar in/aus Geldtasche“ oder „Bank“. Positionen ohne eigenes Datum bekommen das Datum der Veranstaltung,
+**Bisheriges Festkassabuch aus Excel übernehmen** (⬆ Excel übernehmen): Aufbau *Datum | Text | Einnahmen | Ausgaben | Art | Betrag | Zählt*
+mit „Überweisung“, „bar in/aus Geldtasche“ oder „Bank“; „Zählt“ = 0 bei einer Überweisung wird übernommen.
+Das Ergebnis stimmt erst, wenn auch die Raika-Buchungen (Wechselgeld, Bankeinzahlung) dem Fest zugeordnet sind. Positionen ohne eigenes Datum bekommen das Datum der Veranstaltung,
 Zeilen über „Summe Transparente“ den Bereich „Transparente“. Übersprungen werden die Bankbewegungen
 (Wechselgeld, „Bank“, „Bank Einzahlung“) – dafür die Bankbuchungen zuordnen – sowie Summen- und Ergebniszeilen.
 Steckt in der Zeile „Bank Einzahlung“ zusätzlich eine Überweisung (z. B. Transparente), diese als eigene Position oder
@@ -250,15 +261,15 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
   beider Konten rund um das Fest vor, die wahrscheinlichsten sind schon angehakt.
 - Oder beim Kontieren einer Buchung im Feld **„Festkassabuch der Veranstaltung“**.
 - Art der Zuordnung:
-  - 💶 **Geld zwischen Bank und Festkassa** (Wechselgeld/Ablieferung) – steht im Festkassabuch, zählt nicht zum Ergebnis;
-  - 🧾 **Einnahme/Ausgabe der Veranstaltung über die Bank** (Rechnung Getränke, SumUp …) – zählt zum Ergebnis des Festes,
+  - 💶 **Geld zwischen Bank und Festkassa** (Wechselgeld/Ablieferung) – Art „Bank“, ändert den Kassabestand und zählt zum Ergebnis;
+  - 🧾 **Einnahme/Ausgabe der Veranstaltung über die Bank** (Rechnung Getränke, SumUp …) – Art „Überweisung“, zählt zum Ergebnis,
     ändert den Kassabestand nicht. Wird nur von Hand zugeordnet.
   - Eine Rechnung entweder als Position mit Zahlweg *Überweisung* eintragen **oder** die Bankbuchung als 🧾 zuordnen –
     nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
 - In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
   Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
-  Wechselgeld/Ablieferung ändern den Kassabestand, Rechnungen und Eingänge über die Bank zählen zum Ergebnis, ohne den Bestand zu ändern.
+  Wechselgeld/Ablieferung ändern den Kassabestand, alle zählen zum Ergebnis; Rechnungen und Eingänge über die Bank ändern den Bestand nicht.
 - Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.
 
 ## Jahresabschluss

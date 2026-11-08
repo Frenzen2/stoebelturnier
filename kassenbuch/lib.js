@@ -607,19 +607,28 @@ export const POSTEN_ARTEN = {
   ablieferung: { name: 'Ablieferung an Bank', vz: -1 },
 };
 
-// Eigene Positionen (Einnahme/Ausgabe) haben zusätzlich
-//  zahlweg  'bar' (aus/in die Festkassa – ändert den Kassabestand) oder 'ueberweisung' (über ein Bankkonto –
-//           steht im Festkassabuch, ändert den Kassabestand nicht)
-//  ergebnis true = zählt zum Ergebnis des Festes; false = Durchlaufposten (Pfand, Kaution, weitergeleitetes Geld …)
-// Wechselgeld und Ablieferung sind immer Bargeld und zählen nie zum Ergebnis.
-export const ZAHLWEGE = { bar: 'Bar aus der Festkassa', ueberweisung: 'Überweisung (Bankkonto)' };
+// Art (Zahlweg) wie im bisherigen Excel-Festkassabuch:
+//  „bar in Geldtasche“ / „bar aus Geldtasche“ – Bargeld der Festkassa: ändert den Kassabestand, zählt NICHT zum
+//        Ergebnis (das Bargeld kommt erst mit der Bankeinzahlung ins Ergebnis, sonst wäre es doppelt)
+//  „Überweisung“ – über ein Bankkonto: zählt zum Ergebnis (außer „zählt“ = nein, z. B. Pfand, Kaution),
+//        ändert den Kassabestand nicht
+//  „Bank“ – Wechselgeld abheben (−) und Bankeinzahlung/Ablieferung (+): zählt zum Ergebnis, ändert den Kassabestand
+// Ergebnis = Bankeinzahlungen − Wechselgeld + Überweisungen (Einnahmen − Ausgaben)
+export const ZAHLWEGE = { bar: 'bar in/aus Geldtasche', ueberweisung: 'Überweisung' };
 
-/** Zahlungsweg, Ergebnis-Wirkung und ob die Position den Kassabestand ändert. */
+/** Bezeichnung der Art wie im Excel: „bar in Geldtasche“, „bar aus Geldtasche“, „Überweisung“, „Bank“. */
+export function zahlwegName(art, zahlweg) {
+  if (art !== 'einnahme' && art !== 'ausgabe') return 'Bank';
+  if (zahlweg === 'ueberweisung' || zahlweg === 'bank') return 'Überweisung';
+  return art === 'einnahme' ? 'bar in Geldtasche' : 'bar aus Geldtasche';
+}
+
+/** Zahlungsweg, Ergebnis-Wirkung („zählt“) und ob die Position den Kassabestand ändert. */
 export function postenInfo(p) {
   const fluss = p.art === 'einnahme' || p.art === 'ausgabe';
-  const zahlweg = p.bank ? 'bank' : fluss ? (p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar') : 'bar';
-  // Kassabestand ändern nur Bargeld-Positionen sowie Wechselgeld/Ablieferung (auch von der Bank)
-  return { fluss, zahlweg, ergebnis: fluss && p.ergebnis !== false, kassa: !(fluss && zahlweg !== 'bar') };
+  const zahlweg = p.bank && fluss ? 'bank' : fluss ? (p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar') : 'bank';
+  const ergebnis = !fluss || zahlweg === 'bank' || (zahlweg === 'ueberweisung' && p.ergebnis !== false);
+  return { fluss, zahlweg, ergebnis, kassa: !fluss || zahlweg === 'bar', artName: zahlwegName(p.art, zahlweg) };
 }
 
 export const STUECKELUNG = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
@@ -724,10 +733,10 @@ export function festkassaBuch(posten) {
 }
 
 /**
- * Abrechnung einer Veranstaltung.
+ * Abrechnung einer Veranstaltung (wie im Excel: nur „Überweisung“ und „Bank“ zählen).
  * posten: im Festkassabuch eingetragene Posten; bankTeile: der Veranstaltung zugeordnete Bankbuchungs-Teile.
- * Bankteile 'kassa' kommen als Wechselgeld/Ablieferung ins Festkassabuch (zählen nicht zum Ergebnis,
- * sonst wären die Bareinnahmen doppelt gezählt); Bankteile 'bank' sind Einnahmen/Ausgaben über die Bank.
+ * Bankteile 'kassa' sind Wechselgeld (−) bzw. Bankeinzahlung (+), Bankteile 'bank' Einnahmen/Ausgaben per Überweisung.
+ * Bar-Positionen (in/aus Geldtasche) stehen nur zur Information drin – sie sind in der Bankeinzahlung enthalten.
  */
 export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   const posten = [...eigenePosten, ...bankPosten(bankTeile)];
@@ -735,29 +744,34 @@ export function veranstaltungsAbrechnung(eigenePosten, bankTeile) {
   const abs = p => Math.abs(p.betrag || 0);
   const mit = posten.map(p => ({ p, i: postenInfo(p) }));
   const pick = (art, f) => sum(mit.filter(x => x.p.art === art && f(x.i)), x => abs(x.p));
-  const bereiche = new Map();
-  for (const { p, i } of mit) {
-    if (!i.ergebnis || p.bank) continue;
-    const key = p.bereich || (p.art === 'einnahme' ? 'Einnahmen allgemein' : 'Ausgaben allgemein');
-    if (!bereiche.has(key)) bereiche.set(key, { bereich: key, einnahmen: 0, ausgaben: 0 });
-    bereiche.get(key)[p.art === 'einnahme' ? 'einnahmen' : 'ausgaben'] += abs(p);
-  }
+  const gruppe = f => {
+    const m = new Map();
+    for (const { p, i } of mit) {
+      if (!f(p, i)) continue;
+      const key = p.bereich || (p.art === 'einnahme' ? 'Einnahmen allgemein' : 'Ausgaben allgemein');
+      if (!m.has(key)) m.set(key, { bereich: key, einnahmen: 0, ausgaben: 0 });
+      m.get(key)[p.art === 'einnahme' ? 'einnahmen' : 'ausgaben'] += abs(p);
+    }
+    return [...m.values()].sort((a, b) => a.bereich.localeCompare(b.bereich, 'de'));
+  };
   const bankRelevant = bankTeile.filter(t => t.festArt !== 'kassa');
   const r = {
     wechselgeld: pick('wechselgeld', () => true),
     ablieferung: pick('ablieferung', () => true),
-    barEinnahmen: pick('einnahme', i => i.ergebnis && i.zahlweg === 'bar'),
-    barAusgaben: pick('ausgabe', i => i.ergebnis && i.zahlweg === 'bar'),
+    barEinnahmen: pick('einnahme', i => i.zahlweg === 'bar'),
+    barAusgaben: pick('ausgabe', i => i.zahlweg === 'bar'),
     ueberwEinnahmen: pick('einnahme', i => i.ergebnis && i.zahlweg === 'ueberweisung'),
     ueberwAusgaben: pick('ausgabe', i => i.ergebnis && i.zahlweg === 'ueberweisung'),
-    neutralEin: pick('einnahme', i => !i.ergebnis),
-    neutralAus: pick('ausgabe', i => !i.ergebnis),
+    neutralEin: pick('einnahme', i => !i.ergebnis && i.zahlweg === 'ueberweisung'),
+    neutralAus: pick('ausgabe', i => !i.ergebnis && i.zahlweg === 'ueberweisung'),
     bankEinnahmen: sum(bankRelevant.filter(t => t.betrag > 0), t => t.betrag),
     bankAusgaben: -sum(bankRelevant.filter(t => t.betrag < 0), t => t.betrag),
-    bereiche: [...bereiche.values()].sort((a, b) => a.bereich.localeCompare(b.bereich, 'de')),
+    // zählende Überweisungs-Positionen nach Bereich; Bar nach Bereich nur zur Information (Umsatz je Stand)
+    bereiche: gruppe((p, i) => i.ergebnis && i.zahlweg === 'ueberweisung'),
+    barBereiche: gruppe((p, i) => i.zahlweg === 'bar'),
   };
-  r.einnahmen = r.barEinnahmen + r.ueberwEinnahmen + r.bankEinnahmen;
-  r.ausgaben = r.barAusgaben + r.ueberwAusgaben + r.bankAusgaben;
+  r.einnahmen = r.ablieferung + r.ueberwEinnahmen + r.bankEinnahmen;
+  r.ausgaben = r.wechselgeld + r.ueberwAusgaben + r.bankAusgaben;
   r.ergebnis = r.einnahmen - r.ausgaben;
   r.buch = festkassaBuch(posten);
   r.bestand = r.buch.length ? r.buch.at(-1).bestand : 0;
@@ -797,6 +811,10 @@ export function festkassaExcel(table, { datumStandard = '' } = {}) {
     datum: col(c => c === 'datum'), text: col(c => c === 'text' || c === 'bezeichnung'),
     ein: col(c => c.startsWith('einnahme')), aus: col(c => c.startsWith('ausgabe')),
   };
+  // Spalte „Zählt“ (JA/NEIN bzw. 1/0) – Überschrift in der Kopfzeile oder in der Zeile darüber
+  const ueber = (table[hi - 1] || []).map(c => norm(c));
+  const zaehltCol = [h, ueber].map(z => z.findIndex(c => c.startsWith('zahlt') || c === 'ja/nein')).find(x => x >= 0) ?? -1;
+  const zaehlt = v => { const n = norm(v); return !(n === '0' || n === 'nein' || n === 'n'); };
   // Zahlweg-Spalte: die Spalte, in der am häufigsten „Überweisung“/„bar …“/„Bank“ steht
   const width = Math.max(...table.map(r => r.length));
   let zw = -1, best = 0;
@@ -835,7 +853,8 @@ export function festkassaExcel(table, { datumStandard = '' } = {}) {
     const zahlweg = zahlwegAus(r[zw]);
     for (const [art, betrag] of [['einnahme', ein], ['ausgabe', aus]]) {
       if (!betrag) continue;
-      const z = { quellZeile: i + 1, datum, text, art, betrag: Math.abs(betrag), zahlweg: zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', ergebnis: true, bereich: '' };
+      const z = { quellZeile: i + 1, datum, text, art, betrag: Math.abs(betrag), zahlweg: zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar', bereich: '',
+        ergebnis: zahlweg === 'ueberweisung' ? (zaehltCol < 0 || r[zaehltCol] === '' || r[zaehltCol] == null || zaehlt(r[zaehltCol])) : false };
       if (zahlweg === 'bank' || (KASSA_WORT.test(norm(text)) && zahlweg !== 'bar')) {
         z.skip = 'Bankbewegung (Wechselgeld/Einzahlung) – bitte die Bankbuchung zuordnen 🏦';
       } else if (!zahlweg) {
