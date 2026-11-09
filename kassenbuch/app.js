@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09f';
+} from './lib.js?v=2026-11-09g';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1438,6 +1438,8 @@ function herkunftVon(v) {
   };
 }
 
+const istSponsorText = t => /transparent|trasparent|sponsor|werbebeitrag|werbung|banner/.test(norm(t || ''));
+
 function zahlwegLabel(p) {
   return esc(p.artName);   // Konto steht in der Spalte „Bereich“
 }
@@ -1462,7 +1464,9 @@ function abgleichKarte(v, edit) {
     ${probleme.length ? `<div class="tablewrap"><table class="t"><thead><tr><th>Status</th><th>Position</th><th class="r">Betrag</th><th>Bankbuchung</th><th></th></tr></thead><tbody>${probleme.map(zeile).join('')}</tbody></table></div>` : ''}
     ${ab.offen.length ? `<h3>Bankbuchungen zum Fest ohne Position im Festkassabuch</h3>
       <div class="tablewrap"><table class="t"><tbody>${ab.offen.map(b => `<tr><td class="small">${bu(b)}</td><td class="r">${money(b.betrag)}</td>
-        <td class="r nowrap">${edit ? `<button class="btn small" data-abg-neu="${esc(b.id)}">+ als Position (Überweisung)</button>` : ''}
+        <td class="r nowrap">${edit ? (b.betrag > 0 && istSponsorText(b.text)
+          ? `<button class="btn small" data-abg-sp="${esc(b.id)}">+ als Sponsor</button>`
+          : `<button class="btn small" data-abg-neu="${esc(b.id)}">+ als Position (Überweisung)</button>`) : ''}
           ${canBook() && !locked() ? `<button class="btn small" data-bid="${esc(b.id)}">Öffnen</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
       <p class="muted small">Gehört eine davon zu einem anderen Jahr oder Fest (z. B. „… Wiesenfest 2024“), einfach ignorieren oder beim Kontieren das richtige Fest wählen.</p>` : ''}
     ${passt.length ? `<details style="margin-top:8px"><summary class="small">Gefundene Zuordnungen anzeigen (${passt.length})</summary>
@@ -1477,6 +1481,26 @@ function bindAbgleich(v) {
     if (!confirm(`„${p.text}“ von ${fmt(p.betrag)} auf ${fmt(neu)} (Betrag laut Bank) ändern?`)) return;
     await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { betrag: neu, geaendertVon: S.uid }).catch(fail);
     logTo(null, 'festkassa', `${v.name}: ${p.text} ${fmt(p.betrag)} → ${fmt(neu)} (lt. Bank)`);
+  }));
+  // Transparent-/Sponsoring-Eingang: einem offenen Sponsor zuordnen (Name) oder neuen Sponsor anlegen – nicht als Position
+  $$('#view [data-abg-sp]').forEach(btn => btn.addEventListener('click', async () => {
+    const b = S.buchungen.find(x => x.id === btn.dataset.abgSp);
+    const name = (splitBankText(b.text).partner || splitBankText(b.text).zweck || b.text).replace(/\s+(IBAN|BIC)\b.*$/i, '').slice(0, 120);
+    const offen = (S.sponsoring[v.id] || []).filter(e => e.status !== 'bezahlt');
+    const [vor] = ueberweisungVorschlaege([{ buchung: b, name, betrag: b.betrag }], offen);
+    const e = offen.find(x => x.id === vor.aktion);
+    if (e) {
+      if (!confirm(`Zahlung ${fmt(b.betrag)} von „${name}“ dem Sponsor „${e.name}“ zuordnen?`)) return;
+      await updateDoc(spRef(v, e.id), { status: 'bezahlt', bezahltAm: b.datum, buchungId: b.id, betrag: b.betrag, zahlweg: 'ueberweisung' }).catch(fail);
+      toast(`${e.name}: bezahlt (${fmt(b.betrag)}).`);
+    } else {
+      await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'sponsoring')), {
+        name, zusatz: '', strasse: '', plzOrt: '', email: '', leistung: `Transparentwerbung ${v.name}`, betrag: b.betrag, zahlweg: 'ueberweisung',
+        status: 'bezahlt', bezahltAm: b.datum, buchungId: b.id, rechnungsNr: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
+      }).catch(fail);
+      toast(`Neuer Sponsor „${name}“ angelegt.`);
+    }
+    logTo(null, 'sponsoring', `${v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} → Sponsor ${e ? e.name : name}`);
   }));
   $$('#view [data-abg-neu]').forEach(btn => btn.addEventListener('click', async () => {
     const b = S.buchungen.find(x => x.id === btn.dataset.abgNeu);
@@ -2078,7 +2102,7 @@ function bindSponsoren(v) {
     const sicherZu = new Map(bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen
       .filter(z => z.sicher && z.buchungen.length === 1).map(z => [z.posten.id, z.buchungen[0]]));
     for (const { posten: p, sponsor: e } of offenDoppelt) {
-      const bu = p.zahlweg === 'ueberweisung' && sicherZu.get(p.id);
+      const bu = p.zahlweg === 'ueberweisung' && ((p.buchungId && S.buchungen.find(x => x.id === p.buchungId)) || sicherZu.get(p.id));
       if (bu && !vergeben.has(bu.id)) { zahl.set(e.id, bu); vergeben.add(bu.id); }
     }
     for (const { posten: p, sponsor: e } of doppelt) {
