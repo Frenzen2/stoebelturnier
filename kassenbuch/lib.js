@@ -932,6 +932,17 @@ export const aehnlich = (a, b) => {
     || (w.length >= 6 && x.length >= 6 && (w.includes(x) || x.includes(w))))) n++;
   return n;
 };
+/** Länge des längsten gemeinsamen Namensteils (zusammengeschrieben) – zum Entscheiden bei gleich guter Ähnlichkeit */
+export const gemeinsam = (a, b) => {
+  const x = kompakt(a), y = kompakt(b);
+  let best = 0;
+  for (let i = 0; i < x.length; i++) for (let j = 0; j < y.length; j++) {
+    let k = 0;
+    while (x[i + k] && x[i + k] === y[j + k]) k++;
+    if (k > best) best = k;
+  }
+  return best;
+};
 const tageZwischen = (a, b) => Math.abs((new Date(a) - new Date(b)) / 864e5);
 
 function teilsumme(kand, ziel, max = 8) {
@@ -1056,7 +1067,8 @@ export function sponsorZahlungen(eintraege, buchungen, buchungenVergeben = new S
     && (!b.veranstaltung || b.festArt === 'bank'));
   const benutzt = new Set();
   const out = [];
-  const offen = eintraege.filter(e => e.status !== 'bezahlt' && e.zahlweg !== 'bar' && e.betrag > 0);
+  // auch Sponsoren ohne Betrag (Liste nur mit Namen) – dann zählt der Name, der Betrag kommt von der Bank
+  const offen = eintraege.filter(e => e.status !== 'bezahlt' && e.zahlweg !== 'bar');
   const nimm = (e, b, sicher, grund) => { benutzt.add(b.id); out.push({ eintrag: e, buchung: b, sicher, grund }); };
   const rest = [];
   for (const e of offen) {
@@ -1066,21 +1078,35 @@ export function sponsorZahlungen(eintraege, buchungen, buchungenVergeben = new S
   }
   const rest2 = [];
   for (const e of rest) {
+    if (!e.betrag) { rest2.push(e); continue; }
     const b = frei.filter(x => !benutzt.has(x.id) && x.betrag === e.betrag && aehnlich(e.name, x.text) > 0)
       .sort((a, c) => aehnlich(e.name, c.text) - aehnlich(e.name, a.text))[0];
     if (b) nimm(e, b, true, 'Betrag und Name'); else rest2.push(e);
   }
   const rest3 = [];
   for (const e of rest2) {
+    if (!e.betrag) { rest3.push(e); continue; }
     const kand = frei.filter(x => !benutzt.has(x.id) && x.betrag === e.betrag
       && /transparent|sponsor|werb|banner/.test(norm(x.text)));
     if (kand.length === 1) nimm(e, kand[0], false, 'nur Betrag'); else rest3.push(e);
   }
-  // 4. gleicher Name (Auftraggeber), aber anderer Betrag → Vorschlag; beim Bestätigen gilt der Betrag laut Bank
-  for (const e of rest3) {
-    const b = frei.filter(x => !benutzt.has(x.id) && aehnlich(e.name, splitBankText(x.text).partner) > 0)
-      .sort((a, c) => aehnlich(e.name, splitBankText(c.text).partner) - aehnlich(e.name, splitBankText(a.text).partner))[0];
-    if (b) nimm(e, b, false, 'Name passt, anderer Betrag');
+  // 4. gleicher Name (Auftraggeber), aber anderer bzw. kein Betrag → beim Bestätigen gilt der Betrag laut Bank.
+  //    Bester Name zuerst, jede Zahlung nur einmal. Ohne Betrag sicher, wenn der Name deutlich passt und es nach
+  //    Sponsoring aussieht.
+  const partnerText = x => splitBankText(x.text).partner || x.text;
+  const paare = [];
+  for (const e of rest3) for (const x of frei) {
+    if (benutzt.has(x.id)) continue;
+    const n = aehnlich(e.name, partnerText(x));
+    if (n > 0) paare.push({ e, x, n, g: gemeinsam(e.name, partnerText(x)) });
+  }
+  paare.sort((a, c) => c.n - a.n || c.g - a.g);
+  const fertig = new Set();
+  for (const { e, x, n } of paare) {
+    if (fertig.has(e.id) || benutzt.has(x.id)) continue;
+    fertig.add(e.id);
+    if (e.betrag) nimm(e, x, false, 'Name passt, anderer Betrag');
+    else nimm(e, x, n >= 2 && /transparent|sponsor|werb|banner/.test(norm(x.text)), 'Name passt (Betrag fehlt)');
   }
   return out;
 }
@@ -1175,9 +1201,9 @@ export function ueberweisungVorschlaege(kandidaten, offeneSponsoren) {
   const paare = [];
   kandidaten.forEach((k, i) => offeneSponsoren.forEach(e => {
     const n = aehnlich(e.name, k.buchung.text);
-    if (n > 0) paare.push({ i, e, n, gleich: e.betrag === k.betrag });
+    if (n > 0) paare.push({ i, e, n, gleich: e.betrag === k.betrag, g: gemeinsam(e.name, splitBankText(k.buchung.text).partner || k.buchung.text) });
   }));
-  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich));
+  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich) || b.g - a.g);
   const wahl = new Map(), vergeben = new Set();
   for (const p of paare) {
     if (wahl.has(p.i) || vergeben.has(p.e.id)) continue;

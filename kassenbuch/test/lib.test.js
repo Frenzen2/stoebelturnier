@@ -526,3 +526,21 @@ test('Transparente: Sponsor-Zahlung zählt nur einmal', async () => {
   const abg = transparentAbgleich(excel, [{ id: 's1', name: 'Fliesen Gaborek', betrag: 30000 }]);
   assert.deepEqual(abg.map(x => x.sponsor?.id || null), ['s1', null]);
 });
+
+test('Sponsoren ohne Betrag: Zuordnung über den Namen', async () => {
+  const { sponsorZahlungen } = await import('../lib.js');
+  const B = (id, betrag, text) => ({ id, betrag, datum: '2026-09-25', text });
+  const buchungen = [
+    B('a', 5000, 'Auftraggeber: Auto Brandt e.U. Zahlungsreferenz: Transparentwerbung'),
+    B('b', 10000, 'Auftraggeber: Baldinger Haus GmbH Verwendungszweck: Werbung Wiesnfest'),
+    B('c', 5000, 'Auftraggeber: Baldinger GmbH Tischlerei Verwendungszweck: Transparent'),
+    B('d', 3000, 'Auftraggeber: Lagerhaus Zahlungsreferenz: Rechnung 4711'),
+  ];
+  const E = (id, name) => ({ id, name, betrag: 0, zahlweg: 'ueberweisung', status: 'offen' });
+  const z = sponsorZahlungen([E('1', 'Auto Brandt'), E('2', 'Baldinger Haus GmbH'), E('3', 'Baldinger Wohnen'), E('4', 'Lagerhaus Genossenschaft')], buchungen);
+  const m = Object.fromEntries(z.map(x => [x.eintrag.id, [x.buchung.id, x.sicher]]));
+  assert.deepEqual(m['1'], ['a', true]);
+  assert.deepEqual(m['2'], ['b', true]);
+  assert.equal(m['3']?.[0], 'c');           // bleibt übrig für den zweiten Baldinger
+  assert.equal(m['4']?.[1], false);         // Name passt, aber kein Sponsoring-Text → nur Vorschlag
+});

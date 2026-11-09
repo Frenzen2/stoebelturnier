@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09e';
+} from './lib.js?v=2026-11-09f';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];

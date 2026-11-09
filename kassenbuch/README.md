@@ -119,6 +119,7 @@ Je Fest gibt es:
 - **🖨 Dankesschreiben** mit dem ersten Foto des Transparents.
 - **⇄ Zahlungen zuordnen**: Zahlungseingänge beider Konten werden über die **Rechnungsnummer** im Text oder über
   **Betrag und Namen** erkannt; der Sponsor wird „bezahlt“ und mit der Bankbuchung verknüpft.
+  Sponsoren **ohne Betrag** (Liste nur mit Namen) werden über den Namen gefunden; der Betrag laut Bank wird übernommen.
 - **🔗 Weitere Überweisungen**: Eingänge rund um das Fest, die noch keinem Sponsor gehören (Stichwort „Transparent“,
   „Sponsoring“, „Werbung“ oder Auftraggeber wie ein offener Sponsor). Je Zahlung wählen: **bestehendem offenen Sponsor
   zuordnen** (Bank-Betrag wird übernommen), **neu anlegen** oder nicht zuordnen. Vorausgewählt wird ein bestehender
