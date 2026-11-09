@@ -141,7 +141,6 @@ service cloud.firestore {
           && optText(p(), 'beleg', 40)
           && optText(p(), 'zeit', 5)
           && optText(p(), 'quelle', 20)
-          && (!('stueckelung' in p()) || p().stueckelung is map)
           && (!('zahlweg' in p()) || p().zahlweg in ['bar', 'ueberweisung'])
           && (!('belege' in p()) || (p().belege is list && p().belege.size() <= 30))
           && (!('ergebnis' in p()) || p().ergebnis is bool);
