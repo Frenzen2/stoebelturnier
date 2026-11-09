@@ -45,10 +45,11 @@ test('ELBA-CSV ohne Kopfzeile wird erkannt (echtes Format)', () => {
   assert.equal(rows[1].betrag, 272723);          // positiver Betrag ohne „+“
   assert.equal(rows[3].valuta, '2026-04-01');
   assert.match(rows[0].text, /^Zahlungsempfänger: Bezirksfeuerwehrkommando/);
-  // Standard-Regeln kontieren alle Beispielzeilen außer der Einzelrechnung
+  // Standard-Regeln kontieren alle Beispielzeilen (die Rechnung Rettungszubehör über die Regel 409)
   const fw = rows.map(r => ({ ...r, konto: 'feuerwehr' }));
   const ohne = fw.filter(r => !matchRule(DEFAULT_REGELN, r));
-  assert.deepEqual(ohne.map(r => r.betrag), [-73401]);
+  assert.deepEqual(ohne.map(r => r.betrag), []);
+  assert.equal(matchRule(DEFAULT_REGELN, fw.find(r => r.betrag === -73401)).kategorie, 'vp_a409');
   assert.equal(matchRule(DEFAULT_REGELN, fw[0]).kategorie, 'vp_a728');   // Hilfssäckel
   assert.equal(matchRule(DEFAULT_REGELN, fw[1]).kategorie, 'vp_e753');   // Subvention
   assert.equal(matchRule(DEFAULT_REGELN, fw[3]).kategorie, 'vp_e823');   // Habenzinsen

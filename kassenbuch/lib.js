@@ -349,7 +349,7 @@ export const DEFAULT_KATEGORIEN = [
   { id: 'umbuchung', nr: 'U', name: 'Umbuchung zwischen eigenen Konten', art: 'U', konto: '' },
 ];
 
-// Vorgeschlagene Kontierungsregeln – nach der bisherigen Kontierung der FF Pichl (Excel 2025).
+// Vorgeschlagene Kontierungsregeln – nach der bisherigen Kontierung der FF Pichl (Excel 2023–2025).
 // Reihenfolge zählt: die erste passende Regel gewinnt.
 const FW = 'feuerwehr';
 export const DEFAULT_REGELN = [
@@ -366,6 +366,14 @@ export const DEFAULT_REGELN = [
   { muster: 'Subvention', kategorie: 'vp_e753', richtung: '+', konto: FW },
   { muster: 'Landes-Feuerwehrverband', kategorie: 'vp_e858', richtung: '+', konto: FW },
   { muster: 'Transparent|Sponsoring|Werbebeitrag|Werbebanner|Werbung|Sumup|Spende|Mitgliedsbeitrag', kategorie: 'vp_e829', richtung: '+', konto: FW },
+  // ergänzt aus den Kontierungen 2023–2025 (Blatt „FW Kassa“) – nur Muster, die immer gleich kontiert wurden
+  { muster: 'Zinsen', kategorie: 'vp_e823', richtung: '+', konto: FW },
+  { muster: 'KESt|Buchungsentg|je Mitglied', kategorie: 'vp_a728', richtung: '-', konto: FW },
+  { muster: 'Samhaber', kategorie: 'vp_a617', richtung: '-', konto: FW },
+  { muster: 'Rettungszubehör|Erste Hilfe', kategorie: 'vp_a409', richtung: '-', konto: FW },
+  { muster: 'Brau Union|CC Wedl|Biaschtln', kategorie: 'vp_a729', richtung: '-', konto: FW },
+  { muster: 'Verkehrsunfall|Aufräumarbeiten|Einsatz|Hornissen|Wespen', kategorie: 'vp_e810', richtung: '+', konto: FW },
+  { muster: 'Startgeld|Wiesnfest|Wiesenfest|Sonnwendfeuer|Druckkostenbeitrag|Schwarzmayr|RAG Austria|drive ME', kategorie: 'vp_e829', richtung: '+', konto: FW },
 ];
 
 export const DEFAULT_KONTEN = [
