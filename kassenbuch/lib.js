@@ -726,11 +726,12 @@ export function festkassaBuch(posten) {
     const vz = POSTEN_ARTEN[p.art]?.vz || 0;
     const info = postenInfo(p);
     const betrag = vz * Math.abs(p.betrag || 0);       // Eingang (+) / Ausgang (−)
-    const wirkung = info.kassa ? betrag : 0;            // Änderung des Kassabestands
-    bestand += wirkung;
     // Vorzeichen wie im Excel (Sicht des Ergebnisses): Wechselgeld abheben = Ausgabe, Bankeinzahlung = Einnahme.
     // betragVz bleibt die Sicht der Geldtasche (Wechselgeld kommt hinein, Einzahlung geht hinaus).
     const betragErg = (p.art === 'wechselgeld' || p.art === 'ablieferung') ? -betrag : betrag;
+    // Kassabestand = laufende Summe aller Zeilen, die zählen (wie die Spalte „Betrag“ im Excel) – am Ende das Ergebnis
+    const wirkung = info.ergebnis ? betragErg : 0;
+    bestand += wirkung;
     return { ...p, ...info, lfd: i + 1, betragVz: betrag, betragErg, wirkung, bestand };
   });
 }
