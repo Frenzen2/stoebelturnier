@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09g';
+} from './lib.js?v=2026-11-09h';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -757,7 +757,10 @@ function buchungDialog(b) {
     <div id="bBelege"></div>
     ${edit && imported && !ohneKont ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
       <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
-    ${sponsorZuBuchung(b.id) ? `<div class="okbox small">🤝 Zahlung von <b>${esc(sponsorZuBuchung(b.id).e.name)}</b> (Sponsoring ${esc(sponsorZuBuchung(b.id).v.name)}${sponsorZuBuchung(b.id).e.rechnungsNr ? ', Rechnung ' + esc(sponsorZuBuchung(b.id).e.rechnungsNr) : ''}) – steht schon im Festkassabuch, nicht zusätzlich zuordnen.</div>` : ''}
+    ${sponsorZuBuchung(b.id) ? `<div class="okbox small">🤝 Zahlung von <b>${esc(sponsorZuBuchung(b.id).e.name)}</b> (Sponsoring ${esc(sponsorZuBuchung(b.id).v.name)}${sponsorZuBuchung(b.id).e.rechnungsNr ? ', Rechnung ' + esc(sponsorZuBuchung(b.id).e.rechnungsNr) : ''}) – steht schon im Festkassabuch, nicht zusätzlich zuordnen.
+      ${edit ? '<button type="button" class="btn small" id="bSpLoesen" style="margin-left:6px">Zuordnung lösen</button>' : ''}</div>` : ''}
+    ${postenZuBuchung(b.id).map(({ v, p }) => `<div class="okbox small">📒 Steht im Festkassabuch <b>${esc(v.name)}</b> als Position „${esc(p.text || p.bereich || '')}“ (${fmt(p.betrag)}).
+      ${edit && v.status === 'offen' ? `<button type="button" class="btn small" data-bpos="${esc(v.id)}|${esc(p.id)}" style="margin-left:6px">Aus dem Festkassabuch entfernen</button>` : ''}</div>`).join('')}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
 
   const extra = [];
@@ -873,6 +876,24 @@ function buchungDialog(b) {
   });
   $('#bBetrag')?.addEventListener('input', festHint);
   festHint();
+  // Verknüpfungen mit dem Festkassabuch wieder lösen
+  $('#bSpLoesen')?.addEventListener('click', async () => {
+    const { v, e } = sponsorZuBuchung(b.id);
+    if (!confirm(`Zahlung vom Sponsor „${e.name}“ lösen? Der Sponsor wird wieder „offen“.`)) return;
+    await updateDoc(spRef(v, e.id), { status: 'offen', bezahltAm: '', buchungId: '' }).catch(fail);
+    logTo(null, 'sponsoring', `${v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} vom Sponsor ${e.name} gelöst`);
+    $('#bSpLoesen').closest('.okbox').remove();
+    toast('Zuordnung gelöst.');
+  });
+  $$('#dlg [data-bpos]').forEach(btn => btn.addEventListener('click', async () => {
+    const [vid, pid] = btn.dataset.bpos.split('|');
+    const v = verById(vid), p = (S.posten[vid] || []).find(x => x.id === pid);
+    if (!confirm(`Position „${p.text || ''}“ (${fmt(p.betrag)}) aus dem Festkassabuch ${v.name} entfernen? Die Bankbuchung bleibt.`)) return;
+    await deleteDoc(doc(db, 'veranstaltungen', vid, 'posten', pid)).catch(fail);
+    logTo(null, 'festkassa', `${v.name}: Position ${p.text || ''} ${fmt(p.betrag)} entfernt (Bankbuchung ${deDate(b.datum)})`);
+    btn.closest('.okbox').remove();
+    toast('Aus dem Festkassabuch entfernt.');
+  }));
   // Kategorien passend zum Konto anbieten
   $('#bKonto')?.addEventListener('change', () => {
     const cur = $('#bKat').value;
@@ -1900,6 +1921,19 @@ function belegteZahlungen(v) {
   const ids = vergebeneZahlungen();
   for (const z of bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen) for (const b of z.buchungen) ids.add(b.id);
   return ids;
+}
+/** Festkassabuch-Positionen, die fest mit dieser Bankbuchung verknüpft sind („+ als Position“) */
+function postenZuBuchung(bid) {
+  if (!bid) return [];
+  const out = [];
+  for (const v of S.veranstaltungen) {
+    const fest = (S.posten[v.id] || []).filter(p => p.buchungId === bid);
+    // ältere Positionen ohne feste Verknüpfung: über den Abgleich mit der Bank gefunden
+    const abg = fest.length ? [] : bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen
+      .filter(z => !z.posten.sponsor && !z.posten.bank && z.buchungen.some(x => x.id === bid)).map(z => z.posten);
+    for (const p of [...fest, ...abg]) out.push({ v, p });
+  }
+  return out;
 }
 function sponsorZuBuchung(bid) {
   for (const v of S.veranstaltungen) { const e = (S.sponsoring[v.id] || []).find(x => x.buchungId === bid); if (e) return { v, e }; }
