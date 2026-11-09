@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09d';
+} from './lib.js?v=2026-11-09e';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -513,8 +513,7 @@ function viewBuchungen() {
         <label class="grow">Suche<input id="fQ" value="${esc(f.q)}" placeholder="Text, Betrag, Beleg …"></label>
       </div></details>
       <div class="toolbar">
-        ${edit ? `<button class="btn" id="newBuchung">+ Buchung</button>
-          <button class="btn" id="applyRules" title="Regeln aus der Verwaltung auf alle unkontierten Buchungen anwenden">⚙ Regeln anwenden</button>` : ''}
+        ${edit ? `<button class="btn" id="applyRules" title="Regeln aus der Verwaltung auf alle unkontierten Buchungen anwenden">⚙ Regeln anwenden</button>` : ''}
         <button class="btn" id="exportBuch">⬇ CSV</button>
         <button class="btn" id="printKassabuch" title="Kassabuch des gewählten Kontos mit Belegnummern und laufendem Saldo">🖨 Kassabuch</button>
         <span class="spacer" style="flex:1"></span>
@@ -558,7 +557,6 @@ function viewBuchungen() {
     clearTimeout(viewBuchungen.t);
     viewBuchungen.t = setTimeout(() => { S.dirty = false; render(true); }, 250);
   });
-  $('#newBuchung')?.addEventListener('click', () => buchungDialog(null));
   $('#applyRules')?.addEventListener('click', regelnAnwenden);
   $('#exportBuch').addEventListener('click', () => exportBuchungen(list));
   $('#printKassabuch').addEventListener('click', () => {

@@ -202,7 +202,7 @@ Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird übe
 - **⚙ Regeln anwenden** kontiert alle noch offenen Buchungen nach den aktuellen Regeln.
 - **Umbuchungen** zwischen Feuerwehrkassa und Mannschaftskassa mit der Kategorie *Umbuchung* kontieren.
   Sie zählen weder als Einnahme noch als Ausgabe, ergeben in Summe 0, und der Abschluss warnt, wenn eine Seite fehlt.
-- **+ Buchung** legt eine manuelle Buchung an, z. B. für ein Konto ohne CSV-Export.
+- Buchungen kommen nur aus dem Raika-Import; eigene Positionen gibt es nur im Festkassabuch.
 
 ## Festkassa für Veranstaltungen
 
