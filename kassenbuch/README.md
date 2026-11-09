@@ -241,7 +241,7 @@ Das Ergebnis stimmt erst, wenn auch die Raika-Buchungen (Wechselgeld, Bankeinzah
 Zeilen über „Summe Transparente“ den Bereich „Transparente“. Übersprungen werden die Bankbewegungen
 (Wechselgeld, „Bank“, „Bank Einzahlung“) – dafür die Bankbuchungen zuordnen – sowie Summen- und Ergebniszeilen.
 Steckt in der Zeile „Bank Einzahlung“ zusätzlich eine Überweisung (z. B. Transparente), diese als eigene Position oder
-Bankbuchung (🧾) ergänzen. Erneutes Übernehmen ersetzt die zuvor übernommenen Positionen.
+Bankbuchung (🏦) ergänzen. Erneutes Übernehmen ersetzt die zuvor übernommenen Positionen.
 
 **Abgleich mit der Bank:** Unter dem Festkassabuch vergleicht die App jede Position mit Zahlweg *Überweisung* mit den
 Bankbuchungen beider Konten (60 Tage vor bis 120 Tage nach dem Fest) – gleicher Betrag, Summe mehrerer Buchungen
@@ -263,15 +263,14 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
 - Alles andere (z. B. „Wechselgeld retour“) im Festkassabuch über **🏦 Bankbuchung zuordnen**: Die App schlägt Buchungen
   beider Konten rund um das Fest vor, die wahrscheinlichsten sind schon angehakt.
 - Oder beim Kontieren einer Buchung im Feld **„Festkassabuch der Veranstaltung“**.
-- Art der Zuordnung:
-  - 💶 **Geld zwischen Bank und Festkassa** (Wechselgeld/Ablieferung) – Art „Bank“, ändert den Kassabestand und zählt zum Ergebnis;
-  - 🧾 **Einnahme/Ausgabe der Veranstaltung über die Bank** (Rechnung Getränke, SumUp …) – Art „Überweisung“, zählt zum Ergebnis,
-    ändert den Kassabestand nicht. Wird nur von Hand zugeordnet.
-  - Eine Rechnung entweder als Position mit Zahlweg *Überweisung* eintragen **oder** die Bankbuchung als 🧾 zuordnen –
+- Eine Art muss man nicht wählen – eine Bankbuchung ist immer eine Überweisung und zählt zum Ergebnis. Die App erkennt
+  selbst, ob es Wechselgeld oder eine Bankeinzahlung ist (Art „Bank“ wie im Excel, ändert den Kassabestand) oder eine
+  andere Einnahme/Ausgabe (Art „Überweisung“).
+  - Eine Rechnung entweder als Position mit Art *Überweisung* eintragen **oder** die Bankbuchung dem Fest zuordnen –
     nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
 - In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
   Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
-- In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* das Fest: 💶/🧾 direkt zugeordnet, 🤝 Zahlung eines
+- In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* das Fest: 🏦 direkt zugeordnet, 🤝 Zahlung eines
   Sponsors, 📒 per Abgleich gefundene Festkassabuch-Position (mit „?“, wenn nur der Betrag passt). Der Filter
   „Veranstaltung“ berücksichtigt alle drei.
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
