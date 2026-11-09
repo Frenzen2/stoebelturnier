@@ -273,6 +273,9 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
 - In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* das Fest: 🏦 direkt zugeordnet, 🤝 Zahlung eines
   Sponsors, 📒 per Abgleich gefundene Festkassabuch-Position (mit „?“, wenn nur der Betrag passt). Der Filter
   „Veranstaltung“ berücksichtigt alle drei.
+- Die Spalte **Bereich** im Festkassabuch zeigt, woher eine Zeile kommt: 🏦 *Feuerwehrkassa* / *Mannschaftskassa*
+  (ELBA-Import – direkt zugeordnet, Sponsor-Zahlung oder per Abgleich gefunden; „?“ = nur über den Betrag),
+  ✍ *manuell* oder 📄 *Excel*; dahinter der Bereich (z. B. Transparente).
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
   Wechselgeld/Ablieferung ändern den Kassabestand, alle zählen zum Ergebnis; Rechnungen und Eingänge über die Bank ändern den Bestand nicht.
 - Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.

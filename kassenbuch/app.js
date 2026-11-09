@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09b';
+} from './lib.js?v=2026-11-09c';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1270,6 +1270,7 @@ function viewVeranstaltung(v) {
   const edit = canFest() && offen;
   const a = abrechnungVon(v);
   const buch = a.buch;
+  const herkunft = herkunftVon(v);
   const bank = bankTeileVon(v.id);
   $('#view').innerHTML = `
     <div class="card">
@@ -1311,7 +1312,7 @@ function viewVeranstaltung(v) {
     <div class="card"><h2>Festkassabuch</h2>
       <div class="tablewrap"><table class="t karten"><thead><tr><th>Nr.</th><th>Datum</th><th>Position</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Kassa&shy;bestand</th></tr></thead>
       <tbody>${buch.map(p => `<tr class="click" ${p.bank ? `data-bid="${esc(p.buchung.id)}"` : `data-posten="${esc(p.id)}"`}><td class="k-a muted small">${p.lfd}</td><td class="nowrap k-b">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}<span class="nur-klein muted small" style="font-weight:400"> · ${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</span></td>
-        <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${p.bank ? `<span class="chip">🏦 ${esc(kontoById(p.buchung.konto)?.name || 'Bank')}</span>` : esc(p.bereich || '')}</td>
+        <td class="small k-weg">${esc(POSTEN_ARTEN[p.art]?.name || p.art)}</td><td class="small k-zeile">${herkunft(p).chip}${p.bereich ? ` <span class="muted">${esc(p.bereich)}</span>` : ''}</td>
         <td class="small k-voll">${esc(p.text || '')}${(p.bank ? p.buchung?.belege : p.belege)?.length ? ` <span class="chip">📎 ${(p.bank ? p.buchung.belege : p.belege).length}</span>` : ''}</td><td class="small k-weg">${esc(p.beleg || '')}</td>
         <td class="small k-zeile">${zahlwegLabel(p)}<span class="nur-klein">${p.ergebnis ? ' · zählt' : ' · zählt nicht'} · Bestand ${fmt(p.bestand)}</span></td><td class="small k-weg">${p.ergebnis ? '✓' : '<span class="muted">–</span>'}</td>
         <td class="r k-weg ${p.ergebnis ? '' : 'muted'}">${p.betragErg > 0 ? fmt(p.betragErg) : ''}</td><td class="r k-weg ${p.ergebnis ? '' : 'muted'}">${p.betragErg < 0 ? fmt(-p.betragErg) : ''}</td>
@@ -1435,8 +1436,26 @@ function bankZuordnenDialog(v) {
   });
 }
 
+/**
+ * Herkunft einer Festkassabuch-Zeile: Bankkonto (ELBA-Import – direkt zugeordnet, Sponsor-Zahlung oder per Abgleich
+ * gefundene Überweisung), sonst „manuell“ bzw. „Excel“.
+ */
+function herkunftVon(v) {
+  // Abgleich: nur über den Betrag gefunden (nicht sicher) → mit „?“
+  const ab = new Map(bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen.filter(z => z.buchungen.length)
+    .map(z => [z.posten.id, { b: z.buchungen[0], unsicher: z.status === 'ok' && !z.sicher }]));
+  return p => {
+    const fest = p.bank ? p.buchung : p.buchungId && S.buchungen.find(x => x.id === p.buchungId);
+    const t = fest ? { b: fest } : ab.get(p.id);
+    const k = t?.b && kontoById(t.b.konto)?.name;
+    if (k) return { text: k + (t.unsicher ? ' ?' : ''), chip: `<span class="chip" ${t.unsicher ? 'title="nur über den Betrag gefunden – im Abgleich prüfen"' : ''}>🏦 ${esc(k)}${t.unsicher ? ' ?' : ''}</span>` };
+    const q = p.quelle === 'excel' ? 'Excel' : 'manuell';
+    return { text: q, chip: `<span class="chip">${p.quelle === 'excel' ? '📄' : '✍'} ${q}</span>` };
+  };
+}
+
 function zahlwegLabel(p) {
-  return esc(p.artName) + (p.bank ? ` <span class="muted">🏦 ${esc(kontoById(p.buchung?.konto)?.name || '')}</span>` : '');
+  return esc(p.artName);   // Konto steht in der Spalte „Bereich“
 }
 
 // ── Abgleich Festkassabuch ↔ Bank ────────────────────────────────────────────
@@ -1479,7 +1498,7 @@ function bindAbgleich(v) {
     const b = S.buchungen.find(x => x.id === btn.dataset.abgNeu);
     const { partner, zweck } = splitBankText(b.text);
     await setDoc(doc(collection(db, 'veranstaltungen', v.id, 'posten')), {
-      art: b.betrag < 0 ? 'ausgabe' : 'einnahme', betrag: Math.abs(b.betrag), datum: b.datum, zeit: '', zahlweg: 'ueberweisung', ergebnis: true,
+      art: b.betrag < 0 ? 'ausgabe' : 'einnahme', betrag: Math.abs(b.betrag), datum: b.datum, zeit: '', zahlweg: 'ueberweisung', ergebnis: true, buchungId: b.id,
       text: [partner, zweck].filter(Boolean).join(' – ').slice(0, 300), bereich: '', beleg: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
     }).catch(fail);
     logTo(null, 'festkassa', `${v.name}: Position aus Bankbuchung ${deDate(b.datum)} ${fmt(b.betrag)} angelegt`);
@@ -2493,10 +2512,11 @@ function druckAbschluss() {
 function druckVeranstaltung(v) {
   const a = abrechnungVon(v);
   const buch = a.buch;
+  const herkunft = herkunftVon(v);
   printOut(`<h1>Festkassabuch – ${esc(v.name)}</h1>
     <p class="meta">${deDate(v.von)}${v.bis && v.bis !== v.von ? ' – ' + deDate(v.bis) : ''}${v.ort ? ' · ' + esc(v.ort) : ''}${v.verantwortlich ? ' · Verantwortlich: ' + esc(v.verantwortlich) : ''}</p>
     <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Position</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Kassa&shy;bestand</th></tr></thead><tbody>
-      ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${p.bank ? 'Bank ' + esc(kontoById(p.buchung.konto)?.name || '') : esc(p.bereich || '')}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
+      ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(POSTEN_ARTEN[p.art]?.name)}</td><td>${esc(herkunft(p).text)}${p.bereich ? ' · ' + esc(p.bereich) : ''}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
         <td>${esc(p.artName)}</td><td>${p.ergebnis ? 'ja' : 'nein'}</td>
         <td class="r">${p.betragErg > 0 ? fmt(p.betragErg) : ''}</td><td class="r">${p.betragErg < 0 ? fmt(-p.betragErg) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
       <tr class="sum"><td colspan="10">Kassabestand</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table></section>
