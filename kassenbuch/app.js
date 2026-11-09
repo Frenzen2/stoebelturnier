@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-10';
+} from './lib.js?v=2026-11-10b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -715,6 +715,14 @@ function buchungDialog(b) {
   const imported = b?.quelle === 'import';
   b = b || { konto: S.filter.konto || S.konten[0]?.id || '', datum: S.jahr === new Date().getFullYear() ? today() : `${S.jahr}-12-31`, betrag: 0, text: '', quelle: 'manuell' };
   let splits = (b.splits || []).map(s => ({ ...s }));
+  // Steht die Buchung über eine Position („+ als Position“, Abgleich) oder einen Sponsor im Festkassabuch,
+  // zeigt die Auswahl dieses Fest – „nicht zugeordnet“ entfernt die Position bzw. löst den Sponsor.
+  const link = neu || b.veranstaltung ? null : (() => {
+    const s = sponsorZuBuchung(b.id);
+    if (s) return { typ: 'sponsor', v: s.v, e: s.e };
+    const p = postenZuBuchung(b.id)[0];
+    return p ? { typ: 'posten', v: p.v, p: p.p } : null;
+  })();
   const ro = !edit ? 'disabled' : '';
   const ohneKont = !!kontoById(b.konto)?.ohneKontierung;
   const html = `
@@ -736,7 +744,7 @@ function buchungDialog(b) {
       </div>
       <div class="infobox" style="margin-top:10px">
         <div class="row">
-          <label>Festkassabuch der Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '', '— nicht zugeordnet —')}</select></label>
+          <label>Festkassabuch der Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || link?.v.id || '', '— nicht zugeordnet —')}</select></label>
           <input type="hidden" id="bFestArt" value="${esc(b.festArt || festArtVorschlag(b))}">
         </div>
         <div class="small" id="bFestHint" style="margin-top:6px"></div>
@@ -758,10 +766,6 @@ function buchungDialog(b) {
     <div id="bBelege"></div>
     ${edit && imported && !ohneKont ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="bRegel"> Für künftige Importe merken, wenn der Text enthält:</label>
       <input id="bRegelText" style="width:100%;margin-top:4px" value="${esc(suchbegriff(b.text))}">` : ''}
-    ${sponsorZuBuchung(b.id) ? `<div class="okbox small">🤝 Zahlung von <b>${esc(sponsorZuBuchung(b.id).e.name)}</b> (Sponsoring ${esc(sponsorZuBuchung(b.id).v.name)}${sponsorZuBuchung(b.id).e.rechnungsNr ? ', Rechnung ' + esc(sponsorZuBuchung(b.id).e.rechnungsNr) : ''}) – steht schon im Festkassabuch, nicht zusätzlich zuordnen.
-      ${edit ? '<button type="button" class="btn small" id="bSpLoesen" style="margin-left:6px">Zuordnung lösen</button>' : ''}</div>` : ''}
-    ${postenZuBuchung(b.id).map(({ v, p }) => `<div class="okbox small">📒 Steht im Festkassabuch <b>${esc(v.name)}</b> als Position „${esc(p.text || p.bereich || '')}“ (${fmt(p.betrag)}).
-      ${edit && v.status === 'offen' ? `<button type="button" class="btn small" data-bpos="${esc(v.id)}|${esc(p.id)}" style="margin-left:6px">Aus dem Festkassabuch entfernen</button>` : ''}</div>`).join('')}
     ${b.geaendertVon ? `<p class="muted small">Zuletzt geändert von ${esc(userName(b.geaendertVon))}</p>` : ''}`;
 
   const extra = [];
@@ -805,10 +809,14 @@ function buchungDialog(b) {
         data.kategorie = ''; data.veranstaltung = ''; data.festArt = '';
       } else {
         data.kategorie = kontoById(data.konto)?.ohneKontierung ? '' : $('#bKat').value;
-        data.veranstaltung = $('#bVer').value;
+        const sel = $('#bVer').value;
+        // bleibt beim verknüpften Fest: nicht zusätzlich direkt zuordnen (sonst doppelt)
+        data.veranstaltung = link && sel === link.v.id ? '' : sel;
         data.festArt = data.veranstaltung ? $('#bFestArt').value : '';
         delete data.splits;
       }
+      const loesen = link && !data.splits && $('#bVer').value !== link.v.id;
+      if (loesen && link.typ === 'posten' && link.v.status !== 'offen') { toast(`Das Festkassabuch ${link.v.name} ist abgeschlossen – zuerst wieder öffnen.`, true); return false; }
       data.geaendertAm = serverTimestamp();
       data.geaendertVon = S.uid;
       const batch = writeBatch(db);
@@ -821,6 +829,14 @@ function buchungDialog(b) {
         batch.set(doc(db, 'buchungen', b.id), data.splits ? data : { ...data, splits: deleteField() }, { merge: true });
         const changed = imported ? `${deDate(b.datum)} ${fmt(b.betrag)}: ${data.splits ? 'aufgeteilt' : (katById(data.kategorie)?.name || 'unkontiert')}` : `${deDate(data.datum)} ${fmt(data.betrag)} ${data.text}`;
         logTo(batch, 'kontieren', changed);
+      }
+      if (loesen && link.typ === 'posten') {
+        batch.delete(doc(db, 'veranstaltungen', link.v.id, 'posten', link.p.id));
+        logTo(batch, 'festkassa', `${link.v.name}: Position ${link.p.text || ''} ${fmt(link.p.betrag)} entfernt (Bankbuchung ${deDate(b.datum)})`);
+      }
+      if (loesen && link.typ === 'sponsor') {
+        batch.update(spRef(link.v, link.e.id), { status: 'offen', bezahltAm: '', buchungId: '' });
+        logTo(batch, 'sponsoring', `${link.v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} vom Sponsor ${link.e.name} gelöst`);
       }
       if ($('#bRegel')?.checked && $('#bRegelText').value.trim() && !data.splits && (data.kategorie || data.festArt === 'kassa')) {
         const regel = { muster: $('#bRegelText').value.trim(), kategorie: data.kategorie, richtung: data.betrag < 0 ? '-' : '+', konto: data.konto,
@@ -865,6 +881,13 @@ function buchungDialog(b) {
   const festHint = () => {
     const betrag = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
     const v = $('#bVer').value, art = $('#bFestArt').value;
+    if (link && v === link.v.id) {
+      $('#bFestHint').innerHTML = link.typ === 'sponsor'
+        ? `🤝 Zahlung vom Sponsor <b>${esc(link.e.name)}</b> – steht über den Reiter Sponsoren im Festkassabuch und zählt dort einmal. „— nicht zugeordnet —“ löst die Zuordnung (der Sponsor wird wieder offen).`
+        : `📒 Steht im Festkassabuch als Position „${esc(link.p.text || link.p.bereich || '')}“ (${fmt(link.p.betrag)}). „— nicht zugeordnet —“ und Speichern entfernt sie aus dem Festkassabuch.`;
+      return;
+    }
+    if (link && v) { $('#bFestHint').innerHTML = `⚠ Steht schon im Festkassabuch <b>${esc(link.v.name)}</b> – beim Speichern wird es dort entfernt und diesem Fest zugeordnet.`; return; }
     const spz = imported && sponsorZuBuchung(b.id);
     if (v && spz) { $('#bFestHint').innerHTML = `⚠ Diese Zahlung gehört schon zum Sponsor <b>${esc(spz.e.name)}</b> und steht damit im Festkassabuch – sie zählt nicht noch einmal. Am besten „—“ (keine Veranstaltung) wählen.`; return; }
     $('#bFestHint').innerHTML = !v ? 'Wechselgeld-Abhebungen, Einzahlungen von Festerlösen oder Rechnungen eines Festes hier einer Veranstaltung zuordnen.'
@@ -877,24 +900,6 @@ function buchungDialog(b) {
   });
   $('#bBetrag')?.addEventListener('input', festHint);
   festHint();
-  // Verknüpfungen mit dem Festkassabuch wieder lösen
-  $('#bSpLoesen')?.addEventListener('click', async () => {
-    const { v, e } = sponsorZuBuchung(b.id);
-    if (!confirm(`Zahlung vom Sponsor „${e.name}“ lösen? Der Sponsor wird wieder „offen“.`)) return;
-    await updateDoc(spRef(v, e.id), { status: 'offen', bezahltAm: '', buchungId: '' }).catch(fail);
-    logTo(null, 'sponsoring', `${v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} vom Sponsor ${e.name} gelöst`);
-    $('#bSpLoesen').closest('.okbox').remove();
-    toast('Zuordnung gelöst.');
-  });
-  $$('#dlg [data-bpos]').forEach(btn => btn.addEventListener('click', async () => {
-    const [vid, pid] = btn.dataset.bpos.split('|');
-    const v = verById(vid), p = (S.posten[vid] || []).find(x => x.id === pid);
-    if (!confirm(`Position „${p.text || ''}“ (${fmt(p.betrag)}) aus dem Festkassabuch ${v.name} entfernen? Die Bankbuchung bleibt.`)) return;
-    await deleteDoc(doc(db, 'veranstaltungen', vid, 'posten', pid)).catch(fail);
-    logTo(null, 'festkassa', `${v.name}: Position ${p.text || ''} ${fmt(p.betrag)} entfernt (Bankbuchung ${deDate(b.datum)})`);
-    btn.closest('.okbox').remove();
-    toast('Aus dem Festkassabuch entfernt.');
-  }));
   // Kategorien passend zum Konto anbieten
   $('#bKonto')?.addEventListener('change', () => {
     const cur = $('#bKat').value;
@@ -948,9 +953,10 @@ function festVerweise() {
   return m;
 }
 function verweisLabel(x) {
-  return x.typ === 'sponsor'
-    ? `<span class="chip ok" title="Sponsor ${esc(x.name)} – steht über den Reiter Sponsoren im Festkassabuch">🤝 ${esc(x.v.name)}</span>`
-    : `<span class="chip" title="Festkassabuch-Position „${esc(x.name)}“${x.sicher ? '' : ' (nur über den Betrag gefunden)'}">📒 ${esc(x.v.name)}${x.sicher ? '' : ' ?'}</span>`;
+  // gleiches Kennzeichen wie bei direkt zugeordneten Buchungen; wie es zugeordnet ist, steht im Tooltip
+  const wie = x.typ === 'sponsor' ? `über den Sponsor ${x.name}` : `als Position „${x.name}“${x.sicher ? '' : ' – nur über den Betrag gefunden, bitte prüfen'}`;
+  const unsicher = x.typ !== 'sponsor' && !x.sicher;
+  return `<span class="chip ${unsicher ? '' : 'ok'}" title="Steht im Festkassabuch ${esc(wie)}">🏦 ${esc(x.v.name)}${unsicher ? ' ?' : ''}</span>`;
 }
 
 function festLabel(p) {
