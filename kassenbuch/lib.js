@@ -795,7 +795,8 @@ export function veranstaltungsAbrechnung(eigenePosten, alleBankTeile) {
 }
 
 /** Transparent-/Sponsor-Positionen des Festkassabuchs (Einnahme, Bereich „Transparente“ o. ä.) */
-export const istTransparentPosten = p => p.art === 'einnahme' && /transparent|sponsor/i.test(p.bereich || '');
+export const istTransparentPosten = p => p.art === 'einnahme'
+  && (/transparent|sponsor/i.test(p.bereich || '') || /transparent|trasparent|sponsor|werbebeitrag|werbung|banner/.test(norm(p.text || '')));
 
 /**
  * Ordnet eingetragene Transparent-Positionen bestehenden Sponsoren zu (ähnlicher Name, jeder Sponsor nur einmal;
@@ -807,11 +808,19 @@ export function transparentAbgleich(posten, sponsoren) {
   const name = e => e.name ?? e.text ?? '';
   const paare = [];
   tp.forEach((p, i) => sponsoren.forEach(e => {
-    const n = aehnlich(name(e), p.text || ''), gleich = e.betrag === p.betrag;
+    // beide mit Bankbuchung verknüpft: gleiche Buchung = sicher doppelt, verschiedene = zwei verschiedene Zahlungen
+    if (e.buchungId && p.buchungId) {
+      if (e.buchungId === p.buchungId) paare.push({ i, e, n: 99, gleich: true, g: 99 });
+      return;
+    }
+    const t = (p.text || '').split(' – ')[0];           // bei Positionen aus der Bank: Auftraggeber vor „ – “
+    const n = Math.max(aehnlich(name(e), t), aehnlich(name(e), p.text || '')), gleich = e.betrag === p.betrag;
+    const g = gemeinsam(name(e), t);
     // nur ein gemeinsames Wort (z. B. „Christian“ ↔ „Christopher“) reicht nur bei gleichem Betrag
-    if (n >= 2 || (n === 1 && gleich)) paare.push({ i, e, n, gleich });
+    // oder – bei Sponsoren ohne Betrag – bei einem längeren gemeinsamen Namensteil
+    if (n >= 2 || (n === 1 && (gleich || (!e.betrag && g >= 5)))) paare.push({ i, e, n, gleich, g });
   }));
-  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich));
+  paare.sort((a, b) => b.n - a.n || (b.gleich - a.gleich) || b.g - a.g);
   const wahl = new Map(), vergeben = new Set();
   for (const x of paare) {
     const key = x.e.id ?? x.e.sponsorId;
