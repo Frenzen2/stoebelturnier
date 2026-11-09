@@ -27,7 +27,7 @@ eigenen Server, nur statische Dateien.
   **Kontierungsregeln** (z. B. „Kontoführung“ → Bankspesen) wirken schon beim Import.
 - **Festkassabuch je Veranstaltung** (Zeltfest, Ball, Florianifeier …): Wechselgeld, Einnahmen je Stand,
   Einnahmen und Ausgaben mit Beleg-Nr., Ablieferung an die Bank,
-  laufender Kassabestand und Abrechnung nach Bereichen. Druckbar mit Unterschriftszeilen.
+  laufender Kassabestand (Summe der zählenden Zeilen) und Abrechnung nach Bereichen. Druckbar mit Unterschriftszeilen.
 - **Feuerwehr-Rechnungsabschluss für die Gemeinde**: alle V-P mit Summen, Summe der Einnahmen und Ausgaben,
   Kassastand 01.01. und 01.01. des Folgejahres, Unterschriften (Rechnungsprüfer, Kassier, Feuerwehrkommandant). Wie das Blatt „Abschluß Gde“.
 - **Kassabuch** je Konto zum Ausdrucken: Nr., Datum, Bezeichnung, Einnahme, Ausgabe, Kontierung, laufender Saldo.
@@ -208,11 +208,14 @@ Konto und Excel-Datei wählen (Blatt z. B. „FW Kassa“). Zugeordnet wird übe
 
 **Was zählt zum Ergebnis?** Wie im bisherigen Excel hat jede Zeile eine **Art**:
 
-| Art | Kassabestand | zählt zum Ergebnis |
-|---|---|---|
-| *bar in Geldtasche* / *bar aus Geldtasche* | ändert sich | **nein** – das Bargeld kommt mit der Bankeinzahlung ins Ergebnis |
-| *Überweisung* (eigene Position, Sponsor, zugeordnete Bankbuchung) | bleibt | **ja** (außer „zählt“ ausgeschaltet, z. B. Pfand, Kaution) |
-| *Bank* (Wechselgeld abheben −, Bankeinzahlung/Ablieferung +) | ändert sich | **ja** |
+| Art | zählt zum Ergebnis |
+|---|---|
+| *bar in Geldtasche* / *bar aus Geldtasche* | **nein** – das Bargeld kommt mit der Bankeinzahlung ins Ergebnis |
+| *Überweisung* (eigene Position, Sponsor, zugeordnete Bankbuchung) | **ja** (außer „zählt“ ausgeschaltet, z. B. Pfand, Kaution) |
+| *Bank* (Wechselgeld abheben −, Bankeinzahlung/Ablieferung +) | **ja** |
+
+Die Spalte **Kassabestand** ist – wie die Spalte „Betrag“ im Excel – die laufende Summe aller Zeilen, die zählen;
+in der letzten Zeile steht das Ergebnis.
 
 Ergebnis = Bankeinzahlungen − Wechselgeld + Überweisungs-Einnahmen − Überweisungs-Ausgaben. Bargeld, das noch in der
 Kassa liegt, zählt erst nach der Einzahlung.
@@ -223,17 +226,11 @@ Typischer Ablauf, z. B. beim Wiesnfest:
 2. **Wechselgeld** wird von der Feuerwehr- oder Mannschaftskassa abgehoben. Diese Bankbuchung wird dem Festkassabuch
    zugeordnet und erscheint dort automatisch als *Wechselgeld / Vorschuss* (🏦). Nichts doppelt eintragen.
 3. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
-   - **Art**: *bar in/aus Geldtasche* (ändert den Kassabestand, zählt nicht) oder *Überweisung* (steht im Festkassabuch,
-     ändert den Kassabestand nicht und zählt – z. B. die Getränkerechnung, die der Kassier überweist);
+   - **Art**: *bar in/aus Geldtasche* (zählt nicht) oder *Überweisung* (zählt – z. B. die Getränkerechnung, die der Kassier überweist);
    - **zählt (JA)** bei Überweisungen: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
 4. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
-   zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦). Danach ist der Kassabestand 0.
+   zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦).
 5. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Unterschriften.
-
-**Barumsatz errechnen:** Werden die Bareinnahmen nicht einzeln eingetragen, sondern nur der Erlös eingezahlt, fehlt der Barumsatz
-und der Kassabestand wird negativ. **🧮 Barumsatz errechnen** trägt ihn als *bar in Geldtasche* ein:
-Barumsatz = Ablieferungen + Barausgaben − Wechselgeld − sonstige Bareinnahmen. Das Ergebnis ändert sich dadurch nicht,
-nur der Kassabestand geht auf 0.
 
 **Bisheriges Festkassabuch aus Excel übernehmen** (⬆ Excel übernehmen): Aufbau *Datum | Text | Einnahmen | Ausgaben | Art | Betrag | Zählt*
 mit „Überweisung“, „bar in/aus Geldtasche“ oder „Bank“; „Zählt“ = 0 bei einer Überweisung wird übernommen.
@@ -264,7 +261,7 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
   beider Konten rund um das Fest vor, die wahrscheinlichsten sind schon angehakt.
 - Oder beim Kontieren einer Buchung im Feld **„Festkassabuch der Veranstaltung“**.
 - Eine Art muss man nicht wählen – eine Bankbuchung ist immer eine Überweisung und zählt zum Ergebnis. Die App erkennt
-  selbst, ob es Wechselgeld oder eine Bankeinzahlung ist (Art „Bank“ wie im Excel, ändert den Kassabestand) oder eine
+  selbst, ob es Wechselgeld oder eine Bankeinzahlung ist (Art „Bank“ wie im Excel) oder eine
   andere Einnahme/Ausgabe (Art „Überweisung“).
   - Eine Rechnung entweder als Position mit Art *Überweisung* eintragen **oder** die Bankbuchung dem Fest zuordnen –
     nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
@@ -277,7 +274,7 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
   (ELBA-Import – direkt zugeordnet, Sponsor-Zahlung oder per Abgleich gefunden; „?“ = nur über den Betrag),
   ✍ *manuell* oder 📄 *Excel*; dahinter der Bereich (z. B. Transparente).
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
-  Wechselgeld/Ablieferung ändern den Kassabestand, alle zählen zum Ergebnis; Rechnungen und Eingänge über die Bank ändern den Bestand nicht.
+  Alle zählen zum Ergebnis.
 - Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.
 
 ## Jahresabschluss
