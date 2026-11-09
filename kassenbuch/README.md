@@ -268,9 +268,10 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
     nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
 - In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
   Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
-- In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* das Fest: 🏦 direkt zugeordnet, 🤝 Zahlung eines
-  Sponsors, 📒 per Abgleich gefundene Festkassabuch-Position (mit „?“, wenn nur der Betrag passt). Der Filter
-  „Veranstaltung“ berücksichtigt alle drei.
+- In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* bei jeder Buchung, die im Festkassabuch steht,
+  **🏦 Fest** – egal ob direkt zugeordnet, als Sponsor-Zahlung oder als Position (Tooltip zeigt, wie; „?“ = nur über
+  den Betrag gefunden). Im Buchungsdialog steht dasselbe Fest in der Auswahl; „— nicht zugeordnet —“ und Speichern
+  nimmt die Buchung wieder heraus (Position wird entfernt, Sponsor wird wieder offen).
 - Die Spalte **Bereich** im Festkassabuch zeigt, woher eine Zeile kommt: 🏦 *Feuerwehrkassa* / *Mannschaftskassa*
   (ELBA-Import – direkt zugeordnet, Sponsor-Zahlung oder per Abgleich gefunden; „?“ = nur über den Betrag),
   ✍ *manuell* oder 📄 *Excel*; dahinter der Bereich (z. B. Transparente).
