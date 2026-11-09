@@ -112,6 +112,18 @@ dialog::backdrop { background: rgba(15, 23, 42, .45); }
 #toast.err { background: var(--danger); }
 
 /* Filter einklappbar (am Handy standardmäßig zu) */
+/* „Mehr“-Menü und einklappbare Karten */
+details.mehr { position: relative; }
+details.mehr > summary { list-style: none; }
+details.mehr > summary::-webkit-details-marker { display: none; }
+details.mehr .mehr-liste { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 260px; display: flex; flex-direction: column; gap: 4px;
+  background: var(--card, #fff); border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+details.mehr .mehr-liste .btn { text-align: left; justify-content: flex-start; border: 0; }
+details.abgleich > summary { cursor: pointer; list-style: none; }
+details.abgleich > summary::-webkit-details-marker { display: none; }
+details.abgleich > summary::before { content: "▸ "; }
+details.abgleich[open] > summary { margin-bottom: 8px; }
+details.abgleich[open] > summary::before { content: "▾ "; }
 details.filter > summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; list-style: none; }
 details.filter > summary::-webkit-details-marker { display: none; }
 details.filter > summary::before { content: "▸ "; }
@@ -255,6 +267,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-09i"></script>
+<script type="module" src="app.js?v=2026-11-10"></script>
 </body>
 </html>

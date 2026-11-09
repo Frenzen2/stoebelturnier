@@ -225,12 +225,12 @@ Typischer Ablauf, z. B. beim Wiesnfest:
 
 1. **Festkassa → + Veranstaltung** anlegen (Name, Datum, Verantwortlicher) – am besten **vor** dem Raika-Import.
 2. **Wechselgeld** wird von der Feuerwehr- oder Mannschaftskassa abgehoben. Diese Bankbuchung wird dem Festkassabuch
-   zugeordnet und erscheint dort automatisch als *Wechselgeld / Vorschuss* (🏦). Nichts doppelt eintragen.
+   zugeordnet und erscheint dort automatisch als *Wechselgeld* (Art „Bank“, 🏦). Nichts doppelt eintragen.
 3. **+ Ausgabe** / **+ Einnahme** für eigene Positionen (mit Beleg-Nr.). Bei jeder Position wählt man:
    - **Art**: *bar in/aus Geldtasche* (zählt nicht) oder *Überweisung* (zählt – z. B. die Getränkerechnung, die der Kassier überweist);
    - **zählt (JA)** bei Überweisungen: abschalten für Durchlaufposten wie Pfand, Kaution oder weitergeleitetes Geld.
 4. Das Geld wird auf ein Bankkonto eingezahlt (Erlös, Wechselgeld retour). Auch diese Bankbuchungen dem Festkassabuch
-   zuordnen; sie erscheinen als *Ablieferung an Bank* (🏦).
+   zuordnen; sie erscheinen als *Bankeinzahlung* (Art „Bank“, 🏦).
 5. **✓ Abschließen** sperrt das Festkassabuch, **🖨 Drucken** erzeugt das Festkassabuch mit Unterschriften.
 
 **Bisheriges Festkassabuch aus Excel übernehmen** (⬆ Excel übernehmen): Aufbau *Datum | Text | Einnahmen | Ausgaben | Art | Betrag | Zählt*
@@ -276,7 +276,7 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
   ✍ *manuell* oder 📄 *Excel*; dahinter der Bereich (z. B. Transparente).
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
   Alle zählen zum Ergebnis.
-- Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.
+- Unter **Mehr ▾** gibt es **+ Wechselgeld / + Bankeinzahlung (bar, ohne Bank)** – nur für Bargeld, das nicht über ein Bankkonto läuft – sowie Excel-Übernahme, CSV-Export und „Veranstaltung bearbeiten“.
 
 ## Jahresabschluss
 

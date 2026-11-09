@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseAmount, parseDate, parseCsv, detectColumns, applyMapping, importIds, matchRule,
-  jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, stueckelungSumme, parts, isKontiert,
+  jahresabschluss, festkassaBuch, veranstaltungsAbrechnung, parts, isKontiert,
   festArtVorschlag, veranstaltungImText, bankPosten,
   DEFAULT_KATEGORIEN, DEFAULT_REGELN, decodeText, ibanFromName, toCsv, splitBankText, suchbegriff,
   belegNummern, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung, postenInfo,
@@ -157,8 +157,7 @@ test('Jahresabschluss', () => {
   assert.equal(isKontiert({ konto: 'feuerwehr', betrag: -890 }, [{ id: 'mannschaft', ohneKontierung: true }]), false);
 });
 
-test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
-  assert.equal(stueckelungSumme({ 5000: 3, 200: 4, 10: 7 }), 15870);
+test('Festkassa: Kassabestand und Abrechnung', () => {
   const posten = [
     { art: 'wechselgeld', betrag: 50000, datum: '2026-06-12' },
     { art: 'einnahme', betrag: 820000, datum: '2026-06-13', bereich: 'Schank' },
@@ -187,7 +186,7 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   assert.equal(r.barEinnahmen, 820000 + 478050);
   assert.equal(r.buch.length, 7);   // 4 eigene Posten + Ablieferung + 2 Bankzeilen (Rechnung, Einnahme)
   const bankAusgabe = r.buch.find(p => p.bank && p.art === 'ausgabe');
-  assert.equal(bankAusgabe.betragVz, -421000);
+  assert.equal(bankAusgabe.betragErg, -421000);
   assert.equal(bankAusgabe.wirkung, -421000);    // zählt → ändert den Kassabestand
   assert.equal(bankAusgabe.ergebnis, true);
   assert.equal(r.bereiche.length, 0);           // keine zählenden Überweisungs-Positionen
@@ -197,7 +196,6 @@ test('Festkassa: Bestand, Zählprotokoll, Abrechnung', () => {
   assert.equal(bankZeile.text, 'Erlös Zeltfest');
   assert.equal(r.buch.at(-1).bestand, r.ergebnis);
   assert.equal(bankZeile.betragErg, 1248050);   // Bankeinzahlung: wie im Excel als Einnahme
-  assert.equal(bankZeile.betragVz, -1248050);   // … aus Sicht der Geldtasche ein Ausgang
   assert.equal(r.buch.find(p => p.art === 'wechselgeld').betragErg, -50000);   // Wechselgeld: Ausgabe
   // Abhebung (negativ) wird Wechselgeld in die Festkassa
   assert.equal(bankPosten([{ festArt: 'kassa', betrag: -50000, buchung: { id: 'x', datum: '2026-06-11', text: 'Wechselgeld' } }])[0].art, 'wechselgeld');
@@ -305,9 +303,9 @@ test('Festkassa: eigene Positionen bar/Überweisung, mit und ohne Ergebnis', () 
   assert.deepEqual(r.bereiche.map(b => b.bereich), ['Getränke']);
   assert.deepEqual(r.barBereiche.map(b => b.bereich), ['Musik', 'Pfand', 'Schank']);
   const ue = r.buch.find(p => p.bereich === 'Getränke');
-  assert.equal(ue.betragVz, -421000);
+  assert.equal(ue.betragErg, -421000);
   assert.equal(ue.wirkung, -421000);
-  assert.deepEqual(postenInfo({ art: 'wechselgeld' }), { fluss: false, zahlweg: 'bank', ergebnis: true, kassa: true, artName: 'Bank' });
+  assert.deepEqual(postenInfo({ art: 'wechselgeld' }), { fluss: false, zahlweg: 'bank', ergebnis: true, artName: 'Bank' });
   assert.equal(postenInfo({ art: 'einnahme', ergebnis: true }).ergebnis, false);   // bar zählt nie, auch alte Daten
   assert.equal(postenInfo({ art: 'ausgabe', zahlweg: 'ueberweisung' }).artName, 'Überweisung');
   // Überweisung im Festkassabuch UND gleiche Bankbuchung als Ausgabe zugeordnet → Hinweis auf Doppelerfassung

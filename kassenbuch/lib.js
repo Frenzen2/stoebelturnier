@@ -603,16 +603,16 @@ export function zuordnenKontierung(zeilen, buchungen, kategorien, konto) {
 // ── Festkassa ────────────────────────────────────────────────────────────────
 //
 // Posten einer Veranstaltung:
-//  art 'wechselgeld' – Wechselgeld/Vorschuss in die Festkassa (Bestand +, kein Ertrag)
-//  art 'einnahme'    – Einnahmen (Bestand +), optional mit Zählprotokoll (stueckelung)
-//  art 'ausgabe'     – Barausgaben aus der Festkassa (Bestand −)
-//  art 'ablieferung' – Bargeld auf ein Bankkonto eingezahlt/übergeben (Bestand −, kein Aufwand)
+//  art 'wechselgeld' – Wechselgeld von der Bank (Art „Bank“, Ausgabe wie im Excel)
+//  art 'einnahme'    – Einnahme (bar in Geldtasche oder Überweisung)
+//  art 'ausgabe'     – Ausgabe (bar aus Geldtasche oder Überweisung)
+//  art 'ablieferung' – Bankeinzahlung des Bargelds (Art „Bank“, Einnahme wie im Excel)
 
 export const POSTEN_ARTEN = {
-  wechselgeld: { name: 'Wechselgeld / Vorschuss', vz: +1 },
+  wechselgeld: { name: 'Wechselgeld', vz: -1 },
   einnahme: { name: 'Einnahme', vz: +1 },
   ausgabe: { name: 'Ausgabe', vz: -1 },
-  ablieferung: { name: 'Ablieferung an Bank', vz: -1 },
+  ablieferung: { name: 'Bankeinzahlung', vz: +1 },
 };
 
 // Art (Zahlweg) wie im bisherigen Excel-Festkassabuch:
@@ -622,8 +622,6 @@ export const POSTEN_ARTEN = {
 //        ändert den Kassabestand nicht
 //  „Bank“ – Wechselgeld abheben (−) und Bankeinzahlung/Ablieferung (+): zählt zum Ergebnis, ändert den Kassabestand
 // Ergebnis = Bankeinzahlungen − Wechselgeld + Überweisungen (Einnahmen − Ausgaben)
-export const ZAHLWEGE = { bar: 'bar in/aus Geldtasche', ueberweisung: 'Überweisung' };
-
 /** Bezeichnung der Art wie im Excel: „bar in Geldtasche“, „bar aus Geldtasche“, „Überweisung“, „Bank“. */
 export function zahlwegName(art, zahlweg) {
   if (art !== 'einnahme' && art !== 'ausgabe') return 'Bank';
@@ -636,28 +634,15 @@ export function postenInfo(p) {
   const fluss = p.art === 'einnahme' || p.art === 'ausgabe';
   const zahlweg = p.bank && fluss ? 'bank' : fluss ? (p.zahlweg === 'ueberweisung' ? 'ueberweisung' : 'bar') : 'bank';
   const ergebnis = !fluss || zahlweg === 'bank' || (zahlweg === 'ueberweisung' && p.ergebnis !== false);
-  return { fluss, zahlweg, ergebnis, kassa: !fluss || zahlweg === 'bar', artName: zahlwegName(p.art, zahlweg) };
-}
-
-export const STUECKELUNG = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
-
-export function stueckelungSumme(st) {
-  return STUECKELUNG.reduce((a, w) => a + w * (Number(st?.[w]) || 0), 0);
+  return { fluss, zahlweg, ergebnis, artName: zahlwegName(p.art, zahlweg) };
 }
 
 // ── Bankbuchungen und Festkassabuch ──────────────────────────────────────────
 //
 // Eine Bankbuchung (oder ein Teil davon) kann einer Veranstaltung zugeordnet werden:
-//  festArt 'kassa' – Geld zwischen Bank und Festkassa: eine Abhebung (z. B. Wechselgeld) bringt Geld IN die
-//                    Festkassa, eine Einzahlung (Erlös, Wechselgeld retour) ist eine Ablieferung AUS der Festkassa.
-//                    Erscheint automatisch als Zeile im Festkassabuch, zählt nicht zum Ergebnis.
-//  festArt 'bank'  – Einnahme/Ausgabe der Veranstaltung direkt über die Bank (Rechnung Getränke, SumUp …).
-//                    Zählt zum Ergebnis, ändert den Kassabestand nicht.
-
-export const FEST_ARTEN = {
-  kassa: 'Geld zwischen Bank und Festkassa (Wechselgeld / Ablieferung)',
-  bank: 'Einnahme/Ausgabe der Veranstaltung über die Bank',
-};
+//  festArt 'kassa' – Wechselgeld (Abhebung) bzw. Bankeinzahlung (Erlös, Wechselgeld retour): Art „Bank“
+//  festArt 'bank'  – andere Einnahme/Ausgabe der Veranstaltung über die Bank: Art „Überweisung“
+// Beides zählt zum Ergebnis; die Art wird automatisch aus dem Bank-Text erkannt (festArtVorschlag).
 
 const KASSA_WORT = /wechselgeld|erlos|bareinzahlung|einzahlung|ablieferung|festkassa|kassa retour/;
 
@@ -733,14 +718,12 @@ export function festkassaBuch(posten) {
   return sorted.map((p, i) => {
     const vz = POSTEN_ARTEN[p.art]?.vz || 0;
     const info = postenInfo(p);
-    const betrag = vz * Math.abs(p.betrag || 0);       // Eingang (+) / Ausgang (−)
-    // Vorzeichen wie im Excel (Sicht des Ergebnisses): Wechselgeld abheben = Ausgabe, Bankeinzahlung = Einnahme.
-    // betragVz bleibt die Sicht der Geldtasche (Wechselgeld kommt hinein, Einzahlung geht hinaus).
-    const betragErg = (p.art === 'wechselgeld' || p.art === 'ablieferung') ? -betrag : betrag;
+    // Vorzeichen wie im Excel: Einnahme/Bankeinzahlung +, Ausgabe/Wechselgeld −
+    const betragErg = vz * Math.abs(p.betrag || 0);
     // Kassabestand = laufende Summe aller Zeilen, die zählen (wie die Spalte „Betrag“ im Excel) – am Ende das Ergebnis
     const wirkung = info.ergebnis ? betragErg : 0;
     bestand += wirkung;
-    return { ...p, ...info, lfd: i + 1, betragVz: betrag, betragErg, wirkung, bestand };
+    return { ...p, ...info, lfd: i + 1, betragErg, wirkung, bestand };
   });
 }
 
