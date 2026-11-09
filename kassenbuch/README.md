@@ -271,6 +271,9 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
     nicht beides. Die App warnt, wenn beides mit demselben Betrag vorkommt.
 - In der **Feuerwehrkassa** bleibt die V-P-Kontierung davon unabhängig (Wechselgeld-Abhebung 729, Einzahlung 829 wie bisher).
   Die **Mannschaftskassa** hat keine Kontierung – dort gibt es nur die Zuordnung zum Festkassabuch.
+- In der Ansicht **Buchungen** zeigt die Spalte *Festkassabuch* das Fest: 💶/🧾 direkt zugeordnet, 🤝 Zahlung eines
+  Sponsors, 📒 per Abgleich gefundene Festkassabuch-Position (mit „?“, wenn nur der Betrag passt). Der Filter
+  „Veranstaltung“ berücksichtigt alle drei.
 - **Alle zugeordneten Bankbuchungen beider Konten stehen als eigene Zeilen (🏦 mit Kontoname) im Festkassabuch** –
   Wechselgeld/Ablieferung ändern den Kassabestand, alle zählen zum Ergebnis; Rechnungen und Eingänge über die Bank ändern den Bestand nicht.
 - Die Knöpfe **+ Wechselgeld (bar)** / **+ Ablieferung (bar)** sind nur für Bargeld, das nicht über ein Bankkonto läuft.

@@ -21,7 +21,7 @@ import {
   FEST_ARTEN, festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-08d';
+} from './lib.js?v=2026-11-09';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -461,7 +461,7 @@ async function initKonten() {
 
 // ── Buchungen ────────────────────────────────────────────────────────────────
 
-function gefiltert() {
+function gefiltert(verweise) {
   const f = S.filter;
   const q = norm(f.q);
   return S.buchungen.filter(b => {
@@ -471,8 +471,9 @@ function gefiltert() {
     const ps = parts(b);
     if (f.kat === '__none' && isKontiert(b, S.konten)) return false;
     if (f.kat && f.kat !== '__none' && !ps.some(p => p.kategorie === f.kat)) return false;
-    if (f.ver === '__any' && !ps.some(p => p.veranstaltung)) return false;
-    if (f.ver && f.ver !== '__any' && !ps.some(p => p.veranstaltung === f.ver)) return false;
+    const vw = verweise?.get(b.id) || [];
+    if (f.ver === '__any' && !ps.some(p => p.veranstaltung) && !vw.length) return false;
+    if (f.ver && f.ver !== '__any' && !ps.some(p => p.veranstaltung === f.ver) && !vw.some(x => x.v.id === f.ver)) return false;
     if (f.beleg === 'mit' && !b.belege?.length) return false;
     if (f.beleg === 'ohne' && b.belege?.length) return false;
     if (q && !norm(`${b.text} ${b.notiz || ''} ${b.beleg || ''} ${fmt(b.betrag)} ${deDate(b.datum)}`).includes(q)) return false;
@@ -490,7 +491,8 @@ function katLabel(b) {
 
 function viewBuchungen() {
   const f = S.filter;
-  const list = gefiltert();
+  const verweise = festVerweise();
+  const list = gefiltert(verweise);
   const sum = list.reduce((a, b) => a + b.betrag, 0);
   const edit = canBook() && !locked();
   const sel = [...S.sel].filter(id => list.some(b => b.id === id));
@@ -529,7 +531,7 @@ function viewBuchungen() {
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
           <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th><th>Kategorie</th><th>Festkassabuch</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
         <tbody>${list.map(b => {
-          const vs = parts(b).filter(p => p.veranstaltung).map(festLabel);
+          const vs = [...parts(b).filter(p => p.veranstaltung).map(festLabel), ...(verweise.get(b.id) || []).map(verweisLabel)];
           return `<tr class="click ${S.sel.has(b.id) ? 'sel' : ''}" data-id="${esc(b.id)}">
             ${edit ? `<td class="k-a"><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
             <td class="r small muted k-weg">${S.belegNr.get(b.id) || ''}</td>
@@ -914,6 +916,28 @@ function festVorschlag(b, regel) {
   const art = regel?.fest || festArtVorschlag(b, true);
   return art === 'kassa' ? { veranstaltung: v.id, festArt: 'kassa' } : null;
 }
+/**
+ * Bankbuchungen, die über das Festkassabuch zu einem Fest gehören, ohne direkt zugeordnet zu sein:
+ * Zahlung eines Sponsors (🤝) oder per Abgleich gefundene Überweisungs-Position (📒).
+ * Map buchungId → [{ v, typ, name }]
+ */
+function festVerweise() {
+  const m = new Map();
+  const add = (id, x) => { if (!m.has(id)) m.set(id, []); if (!m.get(id).some(y => y.v.id === x.v.id)) m.get(id).push(x); };
+  for (const v of S.veranstaltungen) {
+    for (const e of S.sponsoring[v.id] || []) if (e.status === 'bezahlt' && e.buchungId) add(e.buchungId, { v, typ: 'sponsor', name: e.name });
+    for (const z of bankAbgleich(eigenePosten(v), S.buchungen, v).zeilen) {
+      for (const b of z.buchungen) if (!b.veranstaltung) add(b.id, { v, typ: 'posten', name: z.posten.text || '', sicher: z.sicher });
+    }
+  }
+  return m;
+}
+function verweisLabel(x) {
+  return x.typ === 'sponsor'
+    ? `<span class="chip ok" title="Sponsor ${esc(x.name)} – steht über den Reiter Sponsoren im Festkassabuch">🤝 ${esc(x.v.name)}</span>`
+    : `<span class="chip" title="Festkassabuch-Position „${esc(x.name)}“${x.sicher ? '' : ' (nur über den Betrag gefunden)'}">📒 ${esc(x.v.name)}${x.sicher ? '' : ' ?'}</span>`;
+}
+
 function festLabel(p) {
   const v = verById(p.veranstaltung);
   if (!v) return '';
