@@ -18,10 +18,10 @@ import {
   ROLES, ibanFromName, cleanIban, importIds, matchRule, DEFAULT_KATEGORIEN, DEFAULT_KONTEN, DEFAULT_REGELN, parts,
   splitBankText, suchbegriff, belegNummern, chronoSort, gemeindeAbschluss, hatVp, excelKontierung, zuordnenKontierung,
   isKontiert, jahresabschluss, POSTEN_ARTEN, festkassaBuch,
-  FEST_ARTEN, festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
+  festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-09';
+} from './lib.js?v=2026-11-09b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -738,7 +738,7 @@ function buchungDialog(b) {
       <div class="infobox" style="margin-top:10px">
         <div class="row">
           <label>Festkassabuch der Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || '', '— nicht zugeordnet —')}</select></label>
-          <label>Art<select id="bFestArt" ${ro}>${Object.entries(FEST_ARTEN).map(([k, n]) => `<option value="${k}" ${(b.festArt || festArtVorschlag(b)) === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          <input type="hidden" id="bFestArt" value="${esc(b.festArt || festArtVorschlag(b))}">
         </div>
         <div class="small" id="bFestHint" style="margin-top:6px"></div>
       </div>
@@ -863,21 +863,16 @@ function buchungDialog(b) {
   const festHint = () => {
     const betrag = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
     const v = $('#bVer').value, art = $('#bFestArt').value;
-    $('#bFestArt').closest('label').classList.toggle('hidden', !v);
     const spz = imported && sponsorZuBuchung(b.id);
     if (v && spz) { $('#bFestHint').innerHTML = `⚠ Diese Zahlung gehört schon zum Sponsor <b>${esc(spz.e.name)}</b> und steht damit im Festkassabuch – sie zählt nicht noch einmal. Am besten „—“ (keine Veranstaltung) wählen.`; return; }
     $('#bFestHint').innerHTML = !v ? 'Wechselgeld-Abhebungen, Einzahlungen von Festerlösen oder Rechnungen eines Festes hier einer Veranstaltung zuordnen.'
-      : art === 'kassa'
-        ? (betrag < 0 ? '➜ Erscheint im Festkassabuch als <b>Wechselgeld / Vorschuss</b> (Eingang in die Festkassa).' : '➜ Erscheint im Festkassabuch als <b>Ablieferung an die Bank</b> (Ausgang aus der Festkassa).')
-          + ` Art „Bank“ – zählt zum Ergebnis (${betrag < 0 ? '−' : '+'}).`
-        : `➜ Zählt als <b>${betrag < 0 ? 'Ausgabe' : 'Einnahme'} per Überweisung</b> zum Ergebnis; der Kassabestand bleibt unverändert.`;
+      : `➜ Steht im Festkassabuch als <b>${betrag < 0 ? 'Ausgabe' : 'Einnahme'}</b> (Art „${art === 'kassa' ? 'Bank' : 'Überweisung'}“${art === 'kassa' ? (betrag < 0 ? ', Wechselgeld' : ', Bankeinzahlung') : ''}) und zählt zum Ergebnis.`;
   };
   $('#bVer').addEventListener('change', () => {
     const ver = verById($('#bVer').value);
     if (ver && !b.festArt) $('#bFestArt').value = festArtVorschlag({ ...b, betrag: imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0) }, !!veranstaltungImText(b.text, [ver]));
     festHint();
   });
-  $('#bFestArt').addEventListener('change', festHint);
   $('#bBetrag')?.addEventListener('input', festHint);
   festHint();
   // Kategorien passend zum Konto anbieten
@@ -941,7 +936,7 @@ function verweisLabel(x) {
 function festLabel(p) {
   const v = verById(p.veranstaltung);
   if (!v) return '';
-  return `<span class="chip ${p.festArt === 'kassa' ? 'ok' : ''}" title="${esc(FEST_ARTEN[p.festArt] || '')}">${p.festArt === 'kassa' ? '💶 ' : '🧾 '}${esc(v.name)}</span>`;
+  return `<span class="chip ok" title="Dem Fest zugeordnet – Art „${p.festArt === 'kassa' ? 'Bank' : 'Überweisung'}“">🏦 ${esc(v.name)}</span>`;
 }
 
 /** Bank-Text kompakt: Auftraggeber/Empfänger fett, dann Verwendungszweck. Voller Text als Tooltip. */
@@ -1306,7 +1301,7 @@ function viewVeranstaltung(v) {
         <div class="stat"><div class="lbl">bar in / aus Geldtasche</div><div class="val muted" style="font-size:1.2rem">${fmt(a.barEinnahmen)} / ${fmt(a.barAusgaben)}</div><div class="sub">zählt nicht – steckt in der Bankeinzahlung</div></div>
       </div>
       ${a.doppelt.length ? `<div class="warnbox">⚠ Möglicherweise doppelt erfasst: ${a.doppelt.map(p => `${esc(p.text || p.bereich || POSTEN_ARTEN[p.art].name)} ${fmt(p.betrag)}`).join(', ')} –
-        steht als Überweisung im Festkassabuch und ist zusätzlich als Bankbuchung (🧾) zugeordnet. Eines davon entfernen.</div>` : ''}
+        steht als Überweisung im Festkassabuch und ist zusätzlich als Bankbuchung (🏦) zugeordnet. Eines davon entfernen.</div>` : ''}
       ${a.doppeltSponsor.length ? `<div class="warnbox">⚠ Doppelt: ${a.doppeltSponsor.length} eingetragene Transparent-Positionen gibt es auch als Sponsor
         (${a.doppeltSponsor.slice(0, 5).map(p => esc(p.text)).join(', ')}${a.doppeltSponsor.length > 5 ? ' …' : ''}) – im Reiter <b>Sponsoren</b> mit „Abgleichen“ zusammenführen.</div>` : ''}
       ${a.verknuepft.length ? `<p class="muted small">ℹ ${a.verknuepft.length} Bankbuchung(en) sind dem Fest zugeordnet, gehören aber schon zu einem Sponsor
@@ -1344,10 +1339,10 @@ function viewVeranstaltung(v) {
 
     <div class="card"><h2>Zugeordnete Bankbuchungen</h2>
       <p class="muted small">Zuordnen über <b>🏦 Bankbuchung zuordnen</b> oben oder beim Kontieren einer Buchung (Feld „Festkassabuch der Veranstaltung“).
-        💶 = Geld zwischen Bank und Festkassa (steht im Festkassabuch), 🧾 = Einnahme/Ausgabe des Festes direkt über die Bank (z. B. Rechnung Getränke, SumUp).</p>
+        Sie zählen alle zum Ergebnis. Wechselgeld und Bankeinzahlungen heißen wie im Excel „Bank“, alles andere „Überweisung“.</p>
       <div class="tablewrap"><table class="t"><thead><tr><th>Datum</th><th>Konto</th><th>Text</th><th>Art</th><th>Kontierung</th><th class="r">Betrag</th></tr></thead><tbody>
       ${bank.map(t => `<tr class="click" data-bid="${esc(t.buchung.id)}"><td class="nowrap">${deDate(t.buchung.datum)}</td><td class="small">${esc(kontoById(t.buchung.konto)?.name || '')}</td>
-        <td class="small">${bankText(t.buchung.text)}</td><td class="small">${t.festArt === 'kassa' ? (t.betrag < 0 ? '💶 Wechselgeld' : '💶 Ablieferung') : (t.betrag < 0 ? '🧾 Ausgabe' : '🧾 Einnahme')}</td>
+        <td class="small">${bankText(t.buchung.text)}</td><td class="small">${t.festArt === 'kassa' ? (t.betrag < 0 ? 'Bank (Wechselgeld)' : 'Bank (Einzahlung)') : 'Überweisung'}</td>
         <td class="small">${esc(katById(t.kategorie)?.nr || '')}</td><td class="r">${money(t.betrag)}</td></tr>`).join('')
         || '<tr><td colspan="6" class="muted">Keine.</td></tr>'}</tbody></table></div>
     </div>`;
@@ -1409,16 +1404,17 @@ function bankZuordnenDialog(v) {
   };
   const liste = offen.map(info).sort((x, y) => x.sc - y.sc || tage(x.b.datum) - tage(y.b.datum));
   const zeige = alle => (alle ? liste : liste.filter(x => x.sc <= 2)).slice(0, 150);
-  const artText = b => ({ kassa: b.betrag < 0 ? '💶 Wechselgeld in die Festkassa' : '💶 Ablieferung aus der Festkassa', bank: b.betrag < 0 ? '🧾 Ausgabe über Bank' : '🧾 Einnahme über Bank' });
+  const artText = (b, art) => art === 'kassa' ? (b.betrag < 0 ? 'Bank (Wechselgeld)' : 'Bank (Einzahlung)') : 'Überweisung';
+  const artVon = new Map(liste.map(x => [x.b.id, x.art]));
   const draw = alle => {
     $('#zuoRows').innerHTML = zeige(alle).map(({ b, sc, art }) => `<tr><td><input type="checkbox" data-zb="${esc(b.id)}" ${sc === 0 ? 'checked' : ''}></td>
       <td class="nowrap small">${deDate(b.datum)}</td><td class="small">${esc(kontoById(b.konto)?.name || '')}</td><td class="small">${bankText(b.text)}</td>
-      <td><select data-za="${esc(b.id)}">${Object.entries(artText(b)).map(([k, n]) => `<option value="${k}" ${art === k ? 'selected' : ''}>${n}</option>`).join('')}</select></td>
+      <td class="small">${artText(b, art)}</td>
       <td class="r">${money(b.betrag)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Keine passenden offenen Bankbuchungen.</td></tr>';
   };
   modal(`Bankbuchungen „${v.name}“ zuordnen`, `
     <p class="muted small">Vorausgewählt sind Festkassa-Bewegungen beider Konten rund um das Fest (Wechselgeld, Erlös, Einzahlung).
-      Darunter weitere Buchungen, die das Fest erwähnen oder zeitlich nah sind – z. B. Rechnungen, die man als „Ausgabe über Bank“ zuordnen kann.
+      Darunter weitere Buchungen, die das Fest erwähnen oder zeitlich nah sind – z. B. Rechnungen, die man ebenfalls zuordnen kann (Art „Überweisung“).
       Die Kontierung (V-P) der Feuerwehrkassa bleibt unverändert. Zahlungen von Sponsoren fehlen hier absichtlich –
       sie stehen schon über den Reiter Sponsoren im Festkassabuch.</p>
     <label class="check"><input type="checkbox" id="zuoAlle"> alle offenen Bankbuchungen ${S.jahr} anzeigen</label>
@@ -1429,7 +1425,7 @@ function bankZuordnenDialog(v) {
       if (!ids.length) { toast('Bitte mindestens eine Buchung auswählen.', true); return false; }
       const batch = writeBatch(db);
       for (const id of ids) {
-        batch.update(doc(db, 'buchungen', id), { veranstaltung: v.id, festArt: $(`#zuoRows [data-za="${CSS.escape(id)}"]`).value, geaendertAm: serverTimestamp(), geaendertVon: S.uid });
+        batch.update(doc(db, 'buchungen', id), { veranstaltung: v.id, festArt: artVon.get(id) || 'bank', geaendertAm: serverTimestamp(), geaendertVon: S.uid });
       }
       logTo(batch, 'festkassa', `${v.name}: ${ids.length} Bankbuchung(en) zugeordnet`);
       await batch.commit();
@@ -1630,7 +1626,7 @@ function postenDialog(v, p) {
         $('#pErgLbl').classList.toggle('hidden', !ue);
         $('#pHint').innerHTML = !fluss ? '➜ Art „Bank“: ändert den Kassabestand und zählt zum Ergebnis.' : ue
           ? '➜ Läuft über ein Bankkonto: <b>ändert den Kassabestand nicht</b>. '
-            + (erg ? `Zählt als ${art === 'einnahme' ? 'Einnahme' : 'Ausgabe'} zum Ergebnis. Die zugehörige Bankbuchung dann nicht zusätzlich als Einnahme/Ausgabe (🧾) zuordnen.`
+            + (erg ? `Zählt als ${art === 'einnahme' ? 'Einnahme' : 'Ausgabe'} zum Ergebnis. Die zugehörige Bankbuchung dann nicht zusätzlich dem Fest (🏦) zuordnen.`
               : 'Zählt <b>nicht</b> (Durchlaufposten, z. B. Pfand, Kaution, weitergeleitetes Geld).')
           : `➜ ${art === 'einnahme' ? 'Geld kommt in' : 'Geld geht aus'} die Geldtasche: <b>ändert den Kassabestand</b>, zählt aber <b>nicht</b> zum Ergebnis – das Bargeld kommt mit der Bankeinzahlung ins Ergebnis.`;
       };
