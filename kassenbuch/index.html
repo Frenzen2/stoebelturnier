@@ -190,6 +190,10 @@ details.filter[open] > summary::before { content: "▾ "; }
   #print table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
   #print th, #print td { border-bottom: .5pt solid #999; padding: 3pt 4pt; text-align: left; vertical-align: top; }
   #print td.r, #print th.r { text-align: right; white-space: nowrap; }
+  #print .nowrap { white-space: nowrap; }
+  #print table.fkb th.text { width: 45%; }
+  #print table.fkb small { color: #555; }
+  #print table.fkb tr.grau td { color: #777; }
   #print tr.sum td { font-weight: 700; border-top: 1pt solid #000; }
   #print tr.sub td { font-weight: 600; }
   #print .sig { display: flex; gap: 24pt; margin-top: 40pt; }
@@ -273,6 +277,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-12d"></script>
+<script type="module" src="app.js?v=2026-11-12e"></script>
 </body>
 </html>
