@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-10b';
+} from './lib.js?v=2026-11-12';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -100,7 +100,8 @@ function logTo(batch, aktion, text) {
 function modal(title, html, { ok = 'Speichern', onOk, wide = false, extra = [], cancel = 'Abbrechen', onOpen } = {}) {
   const dlg = $('#dlg');
   dlg.classList.toggle('wide', wide);
-  $('#dlgBody').innerHTML = `<h2>${esc(title)}</h2><form id="dlgForm" novalidate>${html}
+  // Fokus auf die Überschrift statt aufs erste Feld – sonst springt am Handy sofort Tastatur/Auswahlliste auf
+  $('#dlgBody').innerHTML = `<h2 tabindex="-1" autofocus>${esc(title)}</h2><form id="dlgForm" novalidate>${html}
     <div class="actions">
       ${extra.map((x, i) => `<button type="button" class="btn ${x.cls || ''} ${i === 0 ? 'left' : ''}" data-extra="${i}">${esc(x.label)}</button>`).join('')}
       ${cancel ? `<button type="button" class="btn" data-close>${esc(cancel)}</button>` : ''}
