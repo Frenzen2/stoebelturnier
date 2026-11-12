@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-12';
+} from './lib.js?v=2026-11-12c';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -490,6 +490,9 @@ function katLabel(b) {
   return kontoById(b.konto)?.ohneKontierung ? '' : '<span class="chip warn">unkontiert</span>';
 }
 
+/** am Handy „Feuerwehr“ statt „Feuerwehrkassa“ – die Endung „kassa“ nur auf großen Bildschirmen */
+const kurzName = n => { const m = String(n).match(/^(.+?)(s?kassa)$/i); return m ? `${esc(m[1])}<span class="nur-gross">${esc(m[2])}</span>` : esc(n); };
+
 function viewBuchungen() {
   const f = S.filter;
   const verweise = festVerweise();
@@ -498,14 +501,19 @@ function viewBuchungen() {
   const sum = list.reduce((a, b) => a + b.betrag, 0);
   const edit = canBook() && !locked();
   const sel = [...S.sel].filter(id => list.some(b => b.id === id));
-  const aktiv = [f.konto && kontoById(f.konto)?.name, f.kat && (f.kat === '__none' ? 'unkontiert' : katById(f.kat)?.name), f.ver && (f.ver === '__any' ? 'mit Fest' : verById(f.ver)?.name),
+  const aktiv = [f.kat && (f.kat === '__none' ? 'unkontiert' : katById(f.kat)?.name), f.ver && (f.ver === '__any' ? 'mit Fest' : verById(f.ver)?.name),
     f.richtung && (f.richtung === '+' ? 'Einnahmen' : 'Ausgaben'), f.beleg && (f.beleg === 'ohne' ? 'ohne Beleg' : 'mit Beleg'), f.q && `„${f.q}“`].filter(Boolean);
   const filterOffen = S.filterOffen ?? window.innerWidth > 700;
   $('#view').innerHTML = `
     <div class="card">
+      <div class="segment" id="kontoTabs" role="tablist">
+        ${[{ id: '', name: 'Alle' }, ...S.konten].map(k => {
+          const n = S.buchungen.filter(b => !k.id || b.konto === k.id).length;
+          return `<button type="button" class="${(f.konto || '') === k.id ? 'aktiv' : ''}" data-konto-tab="${esc(k.id)}">${kurzName(k.name)}<span class="muted small nur-gross"> ${n}</span></button>`;
+        }).join('')}
+      </div>
       <details class="filter" id="filterBox" ${filterOffen ? 'open' : ''}><summary>Filter${aktiv.length ? `: <span class="muted" style="font-weight:400">${esc(aktiv.join(' · '))}</span>` : ''}</summary>
       <div class="toolbar">
-        <label>Konto<select id="fKonto">${kontoOptions(f.konto, 'alle Konten')}</select></label>
         <label>Kategorie<select id="fKat"><option value="">alle</option><option value="__none" ${f.kat === '__none' ? 'selected' : ''}>⚠ nur unkontierte</option>
           ${S.kategorien.filter(k => !f.konto || !k.konto || k.konto === f.konto).map(k => `<option value="${esc(k.id)}" ${k.id === f.kat ? 'selected' : ''}>${esc(k.nr ? k.nr + ' ' : '')}${esc(k.name)}</option>`).join('')}</select></label>
         <label>Veranstaltung<select id="fVer"><option value="">alle</option><option value="__any" ${f.ver === '__any' ? 'selected' : ''}>nur mit Veranstaltung</option>
@@ -549,7 +557,7 @@ function viewBuchungen() {
 
   const setF = (k, v) => { S.filter[k] = v; S.sel.clear(); render(true); };
   $('#filterBox').addEventListener('toggle', e => { S.filterOffen = e.target.open; });
-  $('#fKonto').addEventListener('change', e => setF('konto', e.target.value));
+  $$('#kontoTabs [data-konto-tab]').forEach(btn => btn.addEventListener('click', () => setF('konto', btn.dataset.kontoTab)));
   $('#fKat').addEventListener('change', e => setF('kat', e.target.value));
   $('#fVer').addEventListener('change', e => setF('ver', e.target.value));
   $('#fRicht').addEventListener('change', e => setF('richtung', e.target.value));
