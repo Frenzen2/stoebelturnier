@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-12d';
+} from './lib.js?v=2026-11-12e';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2618,17 +2618,32 @@ function druckAbschluss() {
     ${sig(['Kassier', 'Kommandant', 'Kassaprüfer', 'Kassaprüfer'])}`);
 }
 
+// Abkürzungen für den Ausdruck des Festkassabuchs (damit der Text Platz hat)
+const kontoKurz = name => {
+  const unsicher = /\s\?$/.test(name), n = name.replace(/\s\?$/, '');
+  const k = /^feuerwehr/i.test(n) ? 'FW' : /^mannschaft/i.test(n) ? 'MS' : n === 'manuell' ? 'man.' : n === 'Excel' ? 'XL' : n.slice(0, 4);
+  return k + (unsicher ? '?' : '');
+};
+const artKurz = p => p.fluss
+  ? (p.zahlweg === 'bar' ? 'bar' : 'Überw.')
+  : (p.art === 'wechselgeld' ? 'Bank WG' : 'Bank Einz.');
+
 function druckVeranstaltung(v) {
   const a = abrechnungVon(v);
   const buch = a.buch;
   const herkunft = herkunftVon(v);
+  const mitBeleg = buch.some(p => p.beleg);
   printOut(`<h1>Festkassabuch – ${esc(v.name)}</h1>
     <p class="meta">${deDate(v.von)}${v.bis && v.bis !== v.von ? ' – ' + deDate(v.bis) : ''}${v.ort ? ' · ' + esc(v.ort) : ''}${v.verantwortlich ? ' · Verantwortlich: ' + esc(v.verantwortlich) : ''}</p>
-    <section><h2>Festkassabuch</h2><table><thead><tr><th>Nr.</th><th>Datum</th><th>Bereich</th><th>Text</th><th>Beleg</th><th>Art</th><th>Zählt</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Kassa&shy;bestand</th></tr></thead><tbody>
-      ${buch.map(p => `<tr><td>${p.lfd}</td><td>${deDate(p.datum)} ${esc(p.zeit || '')}</td><td>${esc(herkunft(p).text)}${p.bereich ? ' · ' + esc(p.bereich) : ''}</td><td>${esc(p.text || '')}</td><td>${esc(p.beleg || '')}</td>
-        <td>${zahlwegLabel(p)}</td><td>${p.ergebnis ? 'ja' : 'nein'}</td>
+    <section><h2>Festkassabuch</h2><table class="fkb"><thead><tr><th>Nr.</th><th>Datum</th><th class="text">Text</th>${mitBeleg ? '<th>Beleg</th>' : ''}<th>Kto.</th><th>Art</th><th>✓</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Saldo</th></tr></thead><tbody>
+      ${buch.map(p => `<tr class="${p.ergebnis ? '' : 'grau'}"><td>${p.lfd}</td><td class="nowrap">${deDate(p.datum)}${p.zeit ? ' ' + esc(p.zeit) : ''}</td>
+        <td class="text">${esc(p.text || '')}${p.bereich ? ` <small>· ${esc(p.bereich)}</small>` : ''}</td>${mitBeleg ? `<td>${esc(p.beleg || '')}</td>` : ''}
+        <td class="nowrap">${kontoKurz(herkunft(p).text)}</td><td class="nowrap">${artKurz(p)}</td><td>${p.ergebnis ? '✓' : '–'}</td>
         <td class="r">${p.betragErg > 0 ? fmt(p.betragErg) : ''}</td><td class="r">${p.betragErg < 0 ? fmt(-p.betragErg) : ''}</td><td class="r">${fmt(p.bestand)}</td></tr>`).join('')}
-      <tr class="sum"><td colspan="9">Ergebnis (Kassabestand)</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table></section>
+      <tr class="sum"><td colspan="${mitBeleg ? 9 : 8}">Ergebnis</td><td class="r">${fmt(a.bestand)}</td></tr></tbody></table>
+      <p class="meta">Kto.: FW = Feuerwehrkassa, MS = Mannschaftskassa, man. = selbst eingetragen${buch.some(p => p.quelle === 'excel') ? ', XL = aus dem Excel übernommen' : ''} ·
+        Art: Überw. = Überweisung, bar = bar in/aus Geldtasche, Bank WG = Wechselgeld, Bank Einz. = Bankeinzahlung ·
+        ✓ = zählt zum Ergebnis (graue Zeilen zählen nicht) · Saldo = laufende Summe der zählenden Zeilen</p></section>
     <section><h2>Abrechnung</h2><table><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
       ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${fmt(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
       ${a.bereiche.map(x => `<tr><td>Überweisung: ${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
