@@ -141,7 +141,10 @@ Den Steuerhinweis bitte mit der Gemeinde bzw. Steuerberatung abklären.
 ## Belege (PDF und Fotos)
 
 An jede Bankbuchung und jede Festkassa-Position lassen sich Belege hängen: **📄 Datei wählen** (PDF oder Bild) oder am Handy
-**📷 Foto** direkt mit der Kamera. Fotos werden vor dem Hochladen verkleinert (max. 2000 px), höchstens 15 MB pro Datei.
+**📷 Foto** direkt mit der Kamera. Fotos werden vor dem Hochladen verkleinert (max. 2000 px, JPEG), höchstens 15 MB pro Datei.
+PDFs bleiben PDFs: Rechnungen mit Text (aus einem Programm, per E-Mail) werden nie verändert. **Gescannte PDFs** (nur Bilder, kein
+Text) über 1,5 MB werden beim Hochladen Seite für Seite mit etwa 150 dpi neu gespeichert – meist 80–90 % kleiner, gut lesbar.
+Gescannte PDFs dürfen dafür bis 40 MB groß sein. Wird die Datei nicht deutlich kleiner, bleibt das Original.
 
 - In der Buchungsliste zeigt **📎** die Anzahl der Belege; der Filter **Beleg → ohne Beleg** zeigt, wo noch einer fehlt.
 - Antippen öffnet den Beleg. Lesen dürfen alle mit Profil (auch Kassaprüfer); hochladen und löschen Kassier/Admin,
