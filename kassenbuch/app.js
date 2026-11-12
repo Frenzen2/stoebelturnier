@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-12e';
+} from './lib.js?v=2026-11-12g';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2582,8 +2582,58 @@ async function belegeZip() {
 
 // ── Druckansichten ───────────────────────────────────────────────────────────
 
+// Handy/Tablet: window.print() funktioniert dort oft nicht (z. B. iPhone-App vom Home-Bildschirm) → Druckansicht
+const istMobil = () => matchMedia('(pointer: coarse)').matches || navigator.standalone === true;
+
+/** Eigenständiges HTML-Dokument mit den Druck-Stilen (für Vorschau und „in neuem Tab öffnen“) */
+function druckDokument(html) {
+  const css = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n').replace(/@media print\s*\{/g, '@media all {');
+  const titel = (new DOMParser().parseFromString(html, 'text/html').querySelector('h1')?.textContent || 'Kassenbuch FF Pichl').trim();
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <base href="${esc(location.href)}"><title>${esc(titel)}</title>
+    <style>${css}
+      html, body { background: #fff; } body { margin: 0; padding: 10mm; }
+      @media screen { body { width: 210mm; box-sizing: border-box; margin: 0 auto; } }
+      @media print { body { padding: 0; } }
+    </style></head><body><div id="print">${html}</div></body></html>`;
+}
+
+function druckVorschau(html) {
+  $('#druckVorschau')?.remove();
+  const doc = druckDokument(html);
+  const box = document.createElement('div');
+  box.id = 'druckVorschau';
+  box.innerHTML = `<div class="dv-leiste">
+      <button class="btn primary" data-dv="drucken">🖨 Drucken</button>
+      <button class="btn" data-dv="tab" title="Öffnet die Seite im Browser – dort über Teilen drucken oder als PDF sichern">↗ Teilen / PDF</button>
+      <span style="flex:1"></span><button class="btn" data-dv="zu">Schließen</button></div>
+    <iframe title="Druckvorschau"></iframe>`;
+  document.body.appendChild(box);
+  const frame = box.querySelector('iframe');
+  // wie eine Seitenvorschau: A4-Breite, auf die Bildschirmbreite verkleinert (nur Bildschirm, nicht beim Drucken)
+  frame.addEventListener('load', () => {
+    const d = frame.contentDocument, z = Math.min(1, frame.clientWidth / d.body.offsetWidth);
+    const st = d.createElement('style');
+    st.textContent = `@media screen { html { zoom: ${z.toFixed(3)}; } }`;
+    d.head.appendChild(st);
+  });
+  frame.srcdoc = doc;
+  box.querySelector('[data-dv=zu]').addEventListener('click', () => box.remove());
+  box.querySelector('[data-dv=drucken]').addEventListener('click', () => {
+    try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+    catch { toast('Drucken ist hier nicht möglich – bitte „Teilen / PDF“ verwenden.', true); }
+  });
+  box.querySelector('[data-dv=tab]').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([doc], { type: 'text/html' }));
+    if (!window.open(url, '_blank')) location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  });
+}
+
 async function printOut(html, { fuss = true } = {}) {
-  $('#print').innerHTML = html + (fuss ? `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>` : '');
+  html += fuss ? `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>` : '';
+  if (istMobil()) { druckVorschau(html); return; }
+  $('#print').innerHTML = html;
   // Fotos erst fertig laden, sonst fehlen sie im Ausdruck
   await Promise.all([...$('#print').querySelectorAll('img')].map(img => img.complete ? null
     : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));

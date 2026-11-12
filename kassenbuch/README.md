@@ -42,6 +42,11 @@ eigenen Server, nur statische Dateien.
 
 Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, mit demselben Login.
 
+**Drucken am Handy/Tablet:** Statt des Druckdialogs öffnet sich eine **Druckansicht** (Seitenvorschau in A4) mit
+**🖨 Drucken** und **↗ Teilen / PDF** – letzteres öffnet die Seite im Browser, dort über *Teilen → Drucken* bzw.
+*Als PDF sichern*. (In einer App, die vom Home-Bildschirm des iPhones gestartet wird, geht direktes Drucken nicht –
+dann „Teilen / PDF“ verwenden.)
+
 - **Computer**: am bequemsten für Import, Kontieren, Jahresabschluss und Ausdrucke (PDF).
 - **Handy**: Listen werden als Karten angezeigt (Datum, Betrag, Text, Kategorie), die Filter bei den Buchungen sind
   eingeklappt. Gut geeignet zum Nachschauen, Kontieren einzelner Buchungen und für die **Festkassa direkt beim Fest**

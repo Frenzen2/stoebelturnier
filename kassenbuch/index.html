@@ -181,6 +181,10 @@ details.filter[open] > summary::before { content: "▾ "; }
 .row > label.btn.upl, label.btn.upl { display: inline-block; flex: 0 0 auto; margin: 0; color: var(--text); font-size: .85rem; }
 
 #print { display: none; }
+/* Druckansicht am Handy */
+#druckVorschau { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; flex-direction: column; }
+#druckVorschau .dv-leiste { display: flex; gap: 8px; padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top)); background: var(--card); border-bottom: 1px solid var(--line); }
+#druckVorschau iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 @media print {
   body { background: #fff; font-size: 11pt; }
   #app, #login, #noAccess, #setup, #toast, dialog { display: none !important; }
@@ -277,6 +281,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-12e"></script>
+<script type="module" src="app.js?v=2026-11-12g"></script>
 </body>
 </html>
