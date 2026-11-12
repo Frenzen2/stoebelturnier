@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-12c';
+} from './lib.js?v=2026-11-12d';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -629,7 +629,63 @@ const lesbar = t => String(t || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').
 const groesse = n => n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 
 /** Fotos vom Handy verkleinern (max. 2000 px, JPEG) – spart Speicher und Zeit beim Hochladen. */
-async function verkleinern(file) {
+// Gescannte PDFs (ohne Text) über dieser Größe werden verkleinert; PDFs mit Text (Rechnungen) bleiben unverändert.
+const PDF_VERKLEINERN_AB = 1.5 * 1024 * 1024;
+const PDF_MAX_ORIGINAL = 40 * 1024 * 1024;   // größere Scans werden nach dem Verkleinern meist kleiner als 15 MB
+const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+
+/** Skript nur bei Bedarf laden (pdf.js und pdf-lib sind groß) */
+const ladeSkript = src => new Promise((res, rej) => {
+  if (document.querySelector(`script[src="${src}"]`)?.dataset.geladen) return res();
+  const s = document.createElement('script');
+  s.src = src;
+  s.onload = () => { s.dataset.geladen = '1'; res(); };
+  s.onerror = () => rej(new Error('Laden fehlgeschlagen: ' + src));
+  document.head.appendChild(s);
+});
+
+/**
+ * Gescanntes PDF verkleinern: jede Seite mit etwa 150 dpi als JPEG (Qualität 75 %) in ein neues PDF,
+ * Seitengröße bleibt gleich. Hat das PDF Text (Rechnung aus einem Programm, OCR-Scan), bleibt es unverändert.
+ * Ist das Ergebnis nicht deutlich kleiner, ebenfalls das Original.
+ */
+async function pdfVerkleinern(file, fortschritt) {
+  await Promise.all([ladeSkript(PDFJS), ladeSkript(PDFLIB)]);
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  try {
+    for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+      const t = await (await pdf.getPage(i)).getTextContent();
+      if (t.items.some(x => (x.str || '').trim())) return file;
+    }
+    const neu = await window.PDFLib.PDFDocument.create();
+    for (let i = 1; i <= pdf.numPages; i++) {
+      fortschritt?.(`PDF wird verkleinert … Seite ${i}/${pdf.numPages}`);
+      const page = await pdf.getPage(i);
+      const vp1 = page.getViewport({ scale: 1 });                         // Punkte (1/72 Zoll)
+      const vp = page.getViewport({ scale: Math.min(150 / 72, 1754 / Math.max(vp1.width, vp1.height)) });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const jpg = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.75));
+      const img = await neu.embedJpg(await jpg.arrayBuffer());
+      neu.addPage([vp1.width, vp1.height]).drawImage(img, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+      c.width = c.height = 0;                                              // Speicher am Handy freigeben
+    }
+    const bytes = await neu.save();
+    return bytes.length < file.size * 0.8 ? new File([bytes], file.name, { type: 'application/pdf' }) : file;
+  } finally { pdf.destroy(); }
+}
+
+async function verkleinern(file, fortschritt) {
+  if (file.type === 'application/pdf') {
+    if (file.size < PDF_VERKLEINERN_AB) return file;
+    try { return await pdfVerkleinern(file, fortschritt); } catch (e) { console.warn('PDF nicht verkleinert', e); return file; }
+  }
   if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 700 * 1024) return file;
   try {
     const bmp = await createImageBitmap(file);
@@ -684,11 +740,14 @@ function belegeBox(sel, opts) {
       const files = [...inp.files];
       const status = box.querySelector('[data-bs]');
       for (const [n, orig] of files.entries()) {
-        if (orig.size > MAX_BELEG) { toast(`${orig.name}: größer als 15 MB.`, true); continue; }
+        if (orig.size > (orig.type === 'application/pdf' ? PDF_MAX_ORIGINAL : MAX_BELEG)) { toast(`${orig.name}: zu groß (höchstens 15 MB, gescannte PDFs bis 40 MB).`, true); continue; }
         if (!/^application\/pdf$|^image\//.test(orig.type)) { toast(`${orig.name}: nur PDF oder Bilder.`, true); continue; }
         status.textContent = `Lade hoch … (${n + 1}/${files.length})`;
         try {
-          const f = await verkleinern(orig);
+          const f = await verkleinern(orig, t => { status.textContent = `${t} (${n + 1}/${files.length})`; });
+          status.textContent = `Lade hoch … (${n + 1}/${files.length})`;
+          if (f.size > MAX_BELEG) { toast(`${orig.name}: auch verkleinert noch größer als 15 MB.`, true); continue; }
+          if (f !== orig && f.size < orig.size) toast(`${orig.name}: ${(orig.size / 1048576).toFixed(1).replace('.', ',')} MB → ${(f.size / 1048576).toFixed(1).replace('.', ',')} MB`);
           const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
           const pfad = `${opts.basis}/${id}-${dateiName(f.name)}`;
           await uploadBytes(sRef(storage, pfad), f, {
