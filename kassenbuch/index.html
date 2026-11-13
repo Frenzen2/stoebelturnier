@@ -181,6 +181,9 @@ details.filter[open] > summary::before { content: "▾ "; }
 .row > label.btn.upl, label.btn.upl { display: inline-block; flex: 0 0 auto; margin: 0; color: var(--text); font-size: .85rem; }
 
 #print { display: none; }
+.jahrwahl { display: flex; align-items: center; gap: 4px; }
+.jahrwahl .btn { padding: 4px 10px; font-size: 1.1rem; line-height: 1; }
+.jahrwahl .btn:disabled { opacity: .35; }
 /* Druckansicht am Handy */
 #druckVorschau { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; flex-direction: column; }
 #druckVorschau .dv-leiste { display: flex; gap: 8px; padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top)); background: var(--card); border-bottom: 1px solid var(--line); }
@@ -252,9 +255,11 @@ details.filter[open] > summary::before { content: "▾ "; }
   <header>
     <div class="bar">
       <div class="brand"><img src="icon.svg" alt=""><span class="brand-lang">Kassenbuch FF Pichl</span><span class="brand-kurz">Kassenbuch</span></div>
-      <label style="margin:0">
+      <div class="jahrwahl" title="Jahr wechseln (auch mit den Tasten ← →)">
+        <button type="button" class="btn small" id="yearPrev" aria-label="Vorjahr">‹</button>
         <select id="yearSel" aria-label="Jahr"></select>
-      </label>
+        <button type="button" class="btn small" id="yearNext" aria-label="Nächstes Jahr">›</button>
+      </div>
       <span id="lockChip"></span>
       <span class="spacer"></span>
       <span class="muted" id="whoami"></span>
@@ -281,6 +286,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-12g"></script>
+<script type="module" src="app.js?v=2026-11-13"></script>
 </body>
 </html>

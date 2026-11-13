@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-12g';
+} from './lib.js?v=2026-11-13';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -52,7 +52,7 @@ if (USE_EMULATOR) connectStorageEmulator(storage, '127.0.0.1', 9199);
 
 const S = {
   uid: null, me: null, unsub: [], yearUnsub: [], postenUnsub: {}, sponsoring: {}, sponsorUnsub: {},
-  tab: localStorage.getItem('kb.tab') || 'uebersicht',
+  tab: 'uebersicht',   // beim Öffnen immer die Übersicht
   jahr: Number(localStorage.getItem('kb.jahr')) || new Date().getFullYear(),
   users: [], konten: [], kategorien: DEFAULT_KATEGORIEN, kategorienGeladen: false, regeln: [],
   buchungen: [], jahrDoc: null, vorjahrDoc: null, veranstaltungen: [], posten: {},
@@ -307,25 +307,36 @@ function startYear() {
 function renderHeader() {
   const now = new Date().getFullYear();
   const years = [];
-  for (let y = now + 1; y >= Math.min(now - 6, S.jahr); y--) years.push(y);
+  for (let y = Math.max(now + 1, S.jahr); y >= Math.min(now - 6, S.jahr); y--) years.push(y);
   $('#yearSel').innerHTML = years.map(y => `<option ${y === S.jahr ? 'selected' : ''}>${y}</option>`).join('');
+  $('#yearNext').disabled = S.jahr >= now + 1;
   $('#lockChip').innerHTML = locked() ? '<span class="chip lock">🔒 abgeschlossen</span>' : '';
   const unk = S.buchungen.filter(b => !isKontiert(b, S.konten)).length;
   $('#badgeUnk').innerHTML = unk ? `<span class="badge">${unk}</span>` : '';
   $$('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === S.tab));
 }
-$('#yearSel').addEventListener('change', e => {
-  S.jahr = Number(e.target.value);
+function setJahr(y) {
+  if (!y || y === S.jahr || y > new Date().getFullYear() + 1 || y < 2000) return;
+  S.jahr = y;
   localStorage.setItem('kb.jahr', S.jahr);
   S.festSel = null;
   startYear();
   render();
+}
+$('#yearSel').addEventListener('change', e => setJahr(Number(e.target.value)));
+$('#yearPrev').addEventListener('click', () => setJahr(S.jahr - 1));
+$('#yearNext').addEventListener('click', () => setJahr(S.jahr + 1));
+// Tasten ← / → wechseln das Jahr – nicht beim Tippen in einem Feld und nicht in einem offenen Dialog
+document.addEventListener('keydown', e => {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !S.uid) return;
+  if (e.target.closest?.('input, select, textarea, [contenteditable]') || $('#dlg').open || $('#druckVorschau')) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); setJahr(S.jahr - 1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); setJahr(S.jahr + 1); }
 });
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button[data-tab]');
   if (!b) return;
   S.tab = b.dataset.tab;
-  localStorage.setItem('kb.tab', S.tab);
   if (S.tab !== 'festkassa') S.festSel = null;
   render(true);
 });
@@ -448,7 +459,7 @@ function viewUebersicht() {
   $('#view [data-goto="buchungen-unk"]').addEventListener('click', () => { S.filter = { konto: '', kat: '__none', ver: '', q: '', richtung: '' }; goTab('buchungen'); });
   $$('#view [data-ver]').forEach(el => el.addEventListener('click', () => { S.festSel = el.dataset.ver; goTab('festkassa'); }));
 }
-function goTab(t) { S.tab = t; localStorage.setItem('kb.tab', t); render(true); }
+function goTab(t) { S.tab = t; render(true); }
 
 async function initKonten() {
   const batch = writeBatch(db);
