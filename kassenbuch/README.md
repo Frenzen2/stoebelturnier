@@ -194,6 +194,11 @@ Steht die IBAN im Dateinamen, wird das Konto automatisch gewählt.
 **Doppelte Umsätze:** Jeder Umsatz bekommt eine Kennung aus Datum, Valuta, Betrag, Text und Zeitstempel.
 Wird er erneut importiert, wird er übersprungen. Zwei gleiche Umsätze am selben Tag in derselben Datei bleiben getrennt.
 
+**Falschen Import löschen (nur Admin):** Unter *Raika-Import → Bisherige Importe* steht jeder Import des Jahres (Zeitpunkt,
+Konto, Datei, Zeitraum, Anzahl) mit **Import löschen**. Alternativ in *Buchungen* Zeilen anhaken (oben „alle anhaken“) und
+**🗑 Löschen**. Vor dem Löschen zeigt die App, was mitbetroffen ist: Sponsoren mit diesen Zahlungen werden wieder „offen“,
+Festkassa-Positionen aus diesen Buchungen und ihre Belege werden entfernt. Danach einfach die richtige Datei importieren.
+
 ## Kontieren
 
 **Kontenplan:** Für die Feuerwehrkassa sind die Voranschlagsposten des Feuerwehr-Rechnungsabschlusses angelegt
