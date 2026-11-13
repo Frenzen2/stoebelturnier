@@ -42,6 +42,9 @@ eigenen Server, nur statische Dateien.
 
 Die App läuft im Browser auf Computer, Tablet und Handy – ohne Installation, mit demselben Login.
 
+Beim Öffnen startet die App immer in der **Übersicht**. Das **Jahr** wechselt man oben mit **‹ ›** neben der Jahresauswahl
+oder am Computer mit den Tasten **← →** (nicht während man in einem Feld tippt).
+
 **Drucken am Handy/Tablet:** Statt des Druckdialogs öffnet sich eine **Druckansicht** (Seitenvorschau in A4) mit
 **🖨 Drucken** und **↗ Teilen / PDF** – letzteres öffnet die Seite im Browser, dort über *Teilen → Drucken* bzw.
 *Als PDF sichern*. (In einer App, die vom Home-Bildschirm des iPhones gestartet wird, geht direktes Drucken nicht –
