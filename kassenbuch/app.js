@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-13';
+} from './lib.js?v=2026-11-13b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -545,7 +545,8 @@ function viewBuchungen() {
         <select id="bulkKat" style="flex:1 1 220px"><option value="__keep">Kategorie: unverändert</option>${katOptions('', list.find(b => b.id === sel[0])?.betrag, list.find(b => b.id === sel[0])?.konto).replace('<option value="">', '<option value="__none">')}</select>
         <select id="bulkVer" style="flex:1 1 160px">${verOptions('', 'Festkassabuch: unverändert')}<option value="__clear">Zuordnung entfernen</option></select>
         <button class="btn primary small" id="bulkApply">Zuweisen</button>
-        <button class="btn small" id="bulkClear">Auswahl aufheben</button></div>` : ''}
+        <button class="btn small" id="bulkClear">Auswahl aufheben</button>
+        ${isAdmin() ? '<button class="btn small danger" id="bulkDel" title="Nur für Admins">🗑 Löschen</button>' : ''}</div>` : ''}
       ${locked() ? `<div class="infobox">🔒 Das Jahr ${S.jahr} ist abgeschlossen – Buchungen können nur noch angesehen werden.</div>` : ''}
       <div class="tablewrap"><table class="t karten">
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
@@ -591,6 +592,7 @@ function viewBuchungen() {
     buchungDialog(S.buchungen.find(b => b.id === id));
   }));
   $('#bulkClear')?.addEventListener('click', () => { S.sel.clear(); render(true); });
+  $('#bulkDel')?.addEventListener('click', () => buchungenLoeschen(S.buchungen.filter(b => S.sel.has(b.id))).catch(fail));
   $('#bulkApply')?.addEventListener('click', async () => {
     const kat = $('#bulkKat').value, ver = $('#bulkVer').value;
     const ids = sel;
@@ -786,6 +788,50 @@ function belegeBox(sel, opts) {
 
 async function belegeLoeschen(liste) {
   for (const x of liste || []) await deleteObject(sRef(storage, x.pfad)).catch(() => {});
+}
+
+/**
+ * Mehrere Bankbuchungen löschen (z. B. einen falschen Import). Verknüpfungen werden mit aufgeräumt:
+ * Sponsoren mit dieser Zahlung werden wieder „offen“, Festkassa-Positionen aus diesen Buchungen („+ als Position“)
+ * werden entfernt, Belege (PDF/Fotos) gelöscht. Liefert true, wenn gelöscht wurde.
+ */
+async function buchungenLoeschen(liste, was) {
+  if (!liste.length || !isAdmin()) return false;
+  const ids = new Set(liste.map(b => b.id));
+  const sponsoren = [], posten = [];
+  for (const v of S.veranstaltungen) {
+    for (const e of S.sponsoring[v.id] || []) if (e.buchungId && ids.has(e.buchungId)) sponsoren.push({ v, e });
+    for (const p of S.posten[v.id] || []) if (p.buchungId && ids.has(p.buchungId)) posten.push({ v, p });
+  }
+  const belege = liste.flatMap(b => b.belege || []);
+  const kontiert = liste.filter(b => b.kategorie || b.veranstaltung || b.splits?.length).length;
+  const summe = liste.reduce((x, b) => x + b.betrag, 0);
+  const hinweise = [
+    kontiert && `${kontiert} davon sind schon kontiert oder einem Fest zugeordnet`,
+    sponsoren.length && `${sponsoren.length} Sponsor(en) werden wieder „offen“ (${sponsoren.slice(0, 3).map(x => esc(x.e.name)).join(', ')}${sponsoren.length > 3 ? ' …' : ''})`,
+    posten.length && `${posten.length} Position(en) im Festkassabuch werden entfernt`,
+    belege.length && `${belege.length} Beleg(e) werden gelöscht`,
+  ].filter(Boolean);
+  if (!await confirmDlg(`${liste.length} Buchung(en) löschen?`, `${was ? esc(was) + '<br>' : ''}
+    <b>${liste.length}</b> Buchung(en), Summe <b>${money(summe)}</b> (${deDate(liste.map(b => b.datum).sort()[0])} – ${deDate(liste.map(b => b.datum).sort().at(-1))}).
+    ${hinweise.length ? `<ul class="small">${hinweise.map(h => `<li>${h}</li>`).join('')}</ul>` : ''}
+    <p class="muted small">Das lässt sich nicht rückgängig machen – die richtige Datei kann danach einfach neu importiert werden.</p>`, 'Löschen')) return false;
+  const ops = [
+    ...liste.map(b => bt => bt.delete(doc(db, 'buchungen', b.id))),
+    ...sponsoren.map(({ v, e }) => bt => bt.update(spRef(v, e.id), { status: 'offen', bezahltAm: '', buchungId: '' })),
+    ...posten.filter(({ v }) => v.status === 'offen').map(({ v, p }) => bt => bt.delete(doc(db, 'veranstaltungen', v.id, 'posten', p.id))),
+  ];
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + 400).forEach(f => f(batch));
+    if (i === 0) logTo(batch, 'löschen', `${liste.length} Buchungen gelöscht${was ? ' – ' + was : ''} (Summe ${fmt(summe)})`);
+    await batch.commit();
+  }
+  await belegeLoeschen(belege);
+  S.sel.clear();
+  const zu = posten.filter(({ v }) => v.status !== 'offen').length;
+  toast(`${liste.length} Buchung(en) gelöscht.${zu ? ` ${zu} Position(en) in abgeschlossenen Festen bitte dort prüfen.` : ''}`);
+  return true;
 }
 
 function buchungDialog(b) {
@@ -1078,6 +1124,36 @@ async function regelnAnwenden() {
 
 // ── Raika-Import ─────────────────────────────────────────────────────────────
 
+/** Bisherige Importe des Jahres: je Datei, Konto und Importzeitpunkt (auf die Minute) */
+function bisherigeImporte() {
+  const m = new Map();
+  for (const b of S.buchungen) {
+    if (b.quelle !== 'import') continue;
+    const t = b.importiertAm?.toMillis?.() || 0;
+    const key = `${b.konto}|${b.datei || ''}|${Math.floor(t / 60000)}`;
+    if (!m.has(key)) m.set(key, { konto: b.konto, datei: b.datei || '(ohne Dateiname)', am: t, von: b.importiertVon, liste: [] });
+    m.get(key).liste.push(b);
+  }
+  return [...m.values()].sort((x, y) => y.am - x.am);
+}
+
+function importListe() {
+  const imp = bisherigeImporte();
+  if (!imp.length) return '';
+  const edit = isAdmin() && !locked();
+  return `<div class="card"><h2>Bisherige Importe ${S.jahr}</h2>
+    <p class="muted small">Falsche Datei erwischt? ${isAdmin() ? 'Hier den ganzen Import löschen und danach die richtige Datei importieren.' : 'Einen falschen Import kann ein Admin hier löschen.'}</p>
+    <div class="tablewrap"><table class="t karten"><thead><tr><th>Importiert</th><th>Konto</th><th>Datei</th><th>Zeitraum</th><th class="r">Buchungen</th><th></th></tr></thead><tbody>
+    ${imp.map((x, i) => {
+      const d = x.liste.map(b => b.datum).sort();
+      return `<tr><td class="small nowrap k-a">${x.am ? new Date(x.am).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' }) : '–'}${x.von ? `<br><span class="muted">${esc(userName(x.von))}</span>` : ''}</td>
+        <td class="small k-b">${esc(kontoById(x.konto)?.name || x.konto)}</td><td class="small k-voll">${esc(x.datei)}</td>
+        <td class="small nowrap k-zeile">${deDate(d[0])} – ${deDate(d.at(-1))}</td><td class="r k-c">${x.liste.length}</td>
+        <td class="r k-zeile">${edit ? `<button class="btn small danger" data-impdel="${i}">Import löschen</button>` : ''}</td></tr>`;
+    }).join('')}</tbody></table></div>
+    ${locked() ? '<p class="muted small">Das Jahr ist abgeschlossen – Löschen nicht möglich.</p>' : ''}</div>`;
+}
+
 function viewImport() {
   const I = S.imp;
   let html = `<div class="card"><h2>Kontoumsätze von der Raika importieren</h2>
@@ -1114,6 +1190,12 @@ function viewImport() {
     }
   }
   $('#view').innerHTML = html;
+  $('#view').insertAdjacentHTML('beforeend', importListe());
+  const importe = bisherigeImporte();
+  $$('#view [data-impdel]').forEach(btn => btn.addEventListener('click', () => {
+    const x = importe[+btn.dataset.impdel];
+    buchungenLoeschen(x.liste, `Import „${x.datei}“ (${kontoById(x.konto)?.name || x.konto})`).catch(fail);
+  }));
   $('#view').insertAdjacentHTML('beforeend', excelKarte());
   $('#xlKonto').addEventListener('change', e => { S.xl = { ...(S.xl || {}), konto: e.target.value }; pruefeExcel(); });
   $('#xlFile').addEventListener('change', leseExcel);
