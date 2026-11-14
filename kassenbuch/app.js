@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-14b';
+} from './lib.js?v=2026-11-14c';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -871,6 +871,7 @@ function buchungDialog(b) {
         <div class="row">
           <label>Festkassabuch der Veranstaltung<select id="bVer" ${ro}>${verOptions(b.veranstaltung || link?.v.id || '', '— nicht zugeordnet —')}</select></label>
           <input type="hidden" id="bFestArt" value="${esc(b.festArt || festArtVorschlag(b))}">
+          <label id="bFestBerLbl" style="flex:0 1 200px">Bereich im Festkassabuch<input id="bFestBereich" list="bereiche" maxlength="60" value="${esc(b.festBereich || '')}" placeholder="z. B. Transparente" ${ro}></label>
         </div>
         <div class="small" id="bFestHint" style="margin-top:6px"></div>
       </div>
@@ -938,6 +939,7 @@ function buchungDialog(b) {
         // bleibt beim verknüpften Fest: nicht zusätzlich direkt zuordnen (sonst doppelt)
         data.veranstaltung = link && sel === link.v.id ? '' : sel;
         data.festArt = data.veranstaltung ? $('#bFestArt').value : '';
+        data.festBereich = data.veranstaltung ? $('#bFestBereich').value.trim().slice(0, 60) : '';
         delete data.splits;
       }
       const loesen = link && !data.splits && $('#bVer').value !== link.v.id;
@@ -1006,6 +1008,8 @@ function buchungDialog(b) {
   const festHint = () => {
     const betrag = imported ? b.betrag : (parseAmount($('#bBetrag')?.value) || 0);
     const v = $('#bVer').value, art = $('#bFestArt').value;
+    $('#bFestBerLbl').classList.toggle('hidden', !v || (link && v === link.v.id));
+    if (v && !$('#bereiche')) $('#bFestBerLbl').insertAdjacentHTML('beforeend', bereichListe(verById(v)));
     if (link && v === link.v.id) {
       $('#bFestHint').innerHTML = link.typ === 'sponsor'
         ? `🤝 Zahlung vom Sponsor <b>${esc(link.e.name)}</b> – steht über den Reiter Sponsoren im Festkassabuch und zählt dort einmal. „— nicht zugeordnet —“ löst die Zuordnung (der Sponsor wird wieder offen).`
@@ -1512,7 +1516,7 @@ function viewVeranstaltung(v) {
       <div class="tablewrap"><table class="t"><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
       ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${money(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
       ${a.bereiche.map(x => `<tr><td>Überweisung: ${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
-      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>Überweisung: Bankbuchungen (siehe unten)</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${money(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
+      ${a.bankRestEin || a.bankRestAus ? `<tr><td>Überweisung: Bankbuchungen ohne Bereich</td><td class="r">${fmt(a.bankRestEin)}</td><td class="r">${fmt(a.bankRestAus)}</td><td class="r">${money(a.bankRestEin - a.bankRestAus)}</td></tr>` : ''}
       <tr class="sum"><td>Ergebnis</td><td class="r">${fmt(a.einnahmen)}</td><td class="r">${fmt(a.ausgaben)}</td><td class="r">${money(a.ergebnis)}</td></tr>
       ${a.neutralEin || a.neutralAus ? `<tr><td class="muted">Überweisung, zählt nicht (Durchlaufposten)</td><td class="r muted">${fmt(a.neutralEin)}</td><td class="r muted">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}
       ${a.barBereiche.map(x => `<tr><td class="muted">bar: ${esc(x.bereich)} <span class="small">(zählt nicht)</span></td><td class="r muted">${fmt(x.einnahmen)}</td><td class="r muted">${fmt(x.ausgaben)}</td><td class="r muted">${money(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}</tbody></table></div>
@@ -2800,7 +2804,7 @@ function druckVeranstaltung(v) {
     <section><h2>Abrechnung</h2><table><thead><tr><th>Bereich</th><th class="r">Einnahmen</th><th class="r">Ausgaben</th><th class="r">Ergebnis</th></tr></thead><tbody>
       ${a.ablieferung || a.wechselgeld ? `<tr><td>Bank: Einzahlung / Wechselgeld</td><td class="r">${fmt(a.ablieferung)}</td><td class="r">${fmt(a.wechselgeld)}</td><td class="r">${fmt(a.ablieferung - a.wechselgeld)}</td></tr>` : ''}
       ${a.bereiche.map(x => `<tr><td>Überweisung: ${esc(x.bereich)}</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}
-      ${a.bankEinnahmen || a.bankAusgaben ? `<tr><td>Überweisung: Bankbuchungen</td><td class="r">${fmt(a.bankEinnahmen)}</td><td class="r">${fmt(a.bankAusgaben)}</td><td class="r">${fmt(a.bankEinnahmen - a.bankAusgaben)}</td></tr>` : ''}
+      ${a.bankRestEin || a.bankRestAus ? `<tr><td>Überweisung: Bankbuchungen</td><td class="r">${fmt(a.bankRestEin)}</td><td class="r">${fmt(a.bankRestAus)}</td><td class="r">${fmt(a.bankRestEin - a.bankRestAus)}</td></tr>` : ''}
       <tr class="sum"><td>Ergebnis</td><td class="r">${fmt(a.einnahmen)}</td><td class="r">${fmt(a.ausgaben)}</td><td class="r">${fmt(a.ergebnis)}</td></tr>
       ${a.neutralEin || a.neutralAus ? `<tr><td>Überweisung, zählt nicht (Durchlaufposten)</td><td class="r">${fmt(a.neutralEin)}</td><td class="r">${fmt(a.neutralAus)}</td><td></td></tr>` : ''}
       ${a.barBereiche.map(x => `<tr><td>bar: ${esc(x.bereich)} (zählt nicht)</td><td class="r">${fmt(x.einnahmen)}</td><td class="r">${fmt(x.ausgaben)}</td><td class="r">${fmt(x.einnahmen - x.ausgaben)}</td></tr>`).join('')}</tbody></table>
