@@ -206,6 +206,12 @@ details.filter[open] > summary::before { content: "▾ "; }
   #print .sig { display: flex; gap: 24pt; margin-top: 40pt; }
   #print .sig div { flex: 1; border-top: .5pt solid #000; padding-top: 3pt; font-size: 9pt; text-align: center; }
   #print .meta { color: #444; font-size: 9pt; }
+  /* Gemeinde-Rechnungsabschluss: eine A4-Seite */
+  #print .gde-seite { break-inside: avoid; }
+  #print table.gde { font-size: 9pt; }
+  #print table.gde th, #print table.gde td { padding: 1.6pt 4pt; }
+  #print .gde-seite .sig { margin-top: 26pt; }
+  #print .gde-seite + .meta { margin-top: 4pt; font-size: 8pt; }
   #print section { break-inside: avoid; }
   #print .seite { break-after: page; break-inside: auto; font-size: 11pt; line-height: 1.45; }
   #print .seite:last-child { break-after: auto; }
@@ -286,6 +292,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-13b"></script>
+<script type="module" src="app.js?v=2026-11-14"></script>
 </body>
 </html>
