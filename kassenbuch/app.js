@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-13b';
+} from './lib.js?v=2026-11-14b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1984,19 +1984,20 @@ function gemeindeTabelle(k) {
 function druckGemeinde(k) {
   const g = gemeindeDaten(k);
   const A = S.allgemein;
-  printOut(`<div style="font-size:11pt;line-height:1.6">Freiwillige Feuerwehr&nbsp;&nbsp;&nbsp;<b>${esc(A.ffName.toUpperCase())}</b><br>
+  // kompakt, damit der Abschluss samt Unterschriften auf eine A4-Seite passt
+  printOut(`<div class="gde-seite"><div style="font-size:10.5pt;line-height:1.5">Freiwillige Feuerwehr&nbsp;&nbsp;&nbsp;<b>${esc(A.ffName.toUpperCase())}</b><br>
       Gemeinde&nbsp;&nbsp;&nbsp;<b>${esc(A.gemeinde.toUpperCase())}</b></div>
-    <h1 style="text-align:center;margin-top:18pt">FEUERWEHR-RECHNUNGSABSCHLUSS</h1>
-    <p style="text-align:center;margin:0 0 14pt">für das Finanzjahr ${S.jahr}</p>
-    <table><thead><tr><th colspan="3">Einnahmen</th><th colspan="3">Ausgaben</th></tr>
+    <h1 style="text-align:center;margin-top:10pt">FEUERWEHR-RECHNUNGSABSCHLUSS</h1>
+    <p style="text-align:center;margin:0 0 8pt">für das Finanzjahr ${S.jahr}</p>
+    <table class="gde"><thead><tr><th colspan="3">Einnahmen</th><th colspan="3">Ausgaben</th></tr>
       <tr><th>V-P</th><th>Gegenstand</th><th class="r">Euro</th><th>V-P</th><th>Gegenstand</th><th class="r">Euro</th></tr></thead><tbody>
       ${gemeindeZeilen(g)}
       <tr class="sum"><td colspan="2">Summe der Einnahmen</td><td class="r">${fmt(g.summeE)}</td><td colspan="2">Summe der Ausgaben</td><td class="r">${fmt(g.summeA)}</td></tr>
       <tr><td colspan="2">Kassastand 01.01.${S.jahr}</td><td class="r">${fmt(g.anfang)}</td><td colspan="2">Kassastand 01.01.${S.jahr + 1}</td><td class="r"><b>${fmt(g.ende)}</b></td></tr>
     </tbody></table>
     ${g.ohne.length ? `<p><b>Achtung: ${g.ohne.length} Buchung(en) ohne Voranschlagsposten – Abschluss unvollständig.</b></p>` : ''}
-    <p style="margin-top:24pt">${esc(A.ort)}, am ____________________</p>
-    ${sig(['Rechnungsprüfer', 'Kassier'])}${sig(['Rechnungsprüfer', 'Feuerwehrkommandant'])}`);
+    <p style="margin-top:14pt">${esc(A.ort)}, am ____________________</p>
+    ${sig(['Rechnungsprüfer', 'Kassier'])}${sig(['Rechnungsprüfer', 'Feuerwehrkommandant'])}</div>`);
 }
 function csvGemeinde(k) {
   const g = gemeindeDaten(k);
@@ -2726,7 +2727,16 @@ function druckVorschau(html) {
 async function printOut(html, { fuss = true } = {}) {
   html += fuss ? `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>` : '';
   if (istMobil()) { druckVorschau(html); return; }
-  $('#print').innerHTML = html;
+  // Chrome/Edge drucken Datum, Titel, Adresse (Link) und Seitenzahl in den Seitenrand. Ohne Seitenrand (@page margin 0)
+  // entfallen sie – den Abstand gibt dann ein Rahmen, dessen Kopf/Fuß sich auf jeder Seite wiederholt.
+  const chromium = !!window.chrome && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+  document.body.classList.toggle('druck-ohne-kopf', chromium);
+  let rand = $('#druckRand');
+  if (!rand) { rand = document.createElement('style'); rand.id = 'druckRand'; document.head.appendChild(rand); }
+  rand.textContent = chromium ? '@media print { @page { margin: 0; } }' : '';
+  $('#print').innerHTML = chromium
+    ? `<table class="rahmen"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td>${html}</td></tr></tbody></table>`
+    : html;
   // Fotos erst fertig laden, sonst fehlen sie im Ausdruck
   await Promise.all([...$('#print').querySelectorAll('img')].map(img => img.complete ? null
     : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
