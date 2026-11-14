@@ -223,6 +223,15 @@ details.filter[open] > summary::before { content: "▾ "; }
   #print .foto { display: block; max-width: 100%; max-height: 9cm; margin: 14pt auto; border-radius: 4pt; }
   @page { margin: 18mm 18mm 16mm; }
 }
+/* Chrome/Edge: ohne Seitenrand → keine Kopf-/Fußzeile des Browsers (Datum, Link, Seitenzahl); Rand über den Rahmen */
+@media print {
+  @page { size: A4; }
+  body.druck-ohne-kopf { margin: 0; }
+  #print table.rahmen { width: 100%; border-collapse: collapse; font-size: inherit; }
+  #print table.rahmen > thead > tr > td { height: 16mm; padding: 0; border: 0; }
+  #print table.rahmen > tfoot > tr > td { height: 14mm; padding: 0; border: 0; }
+  #print table.rahmen > tbody > tr > td { padding: 0 18mm; border: 0; }
+}
 </style>
 </head>
 <body>
@@ -292,6 +301,6 @@ details.filter[open] > summary::before { content: "▾ "; }
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-<script type="module" src="app.js?v=2026-11-14"></script>
+<script type="module" src="app.js?v=2026-11-14b"></script>
 </body>
 </html>

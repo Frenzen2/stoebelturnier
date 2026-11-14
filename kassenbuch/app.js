@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-14';
+} from './lib.js?v=2026-11-14b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2727,7 +2727,16 @@ function druckVorschau(html) {
 async function printOut(html, { fuss = true } = {}) {
   html += fuss ? `<p class="meta">Erstellt am ${new Date().toLocaleString('de-AT')} von ${esc(S.me.name)} · Kassenbuch FF Pichl</p>` : '';
   if (istMobil()) { druckVorschau(html); return; }
-  $('#print').innerHTML = html;
+  // Chrome/Edge drucken Datum, Titel, Adresse (Link) und Seitenzahl in den Seitenrand. Ohne Seitenrand (@page margin 0)
+  // entfallen sie – den Abstand gibt dann ein Rahmen, dessen Kopf/Fuß sich auf jeder Seite wiederholt.
+  const chromium = !!window.chrome && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+  document.body.classList.toggle('druck-ohne-kopf', chromium);
+  let rand = $('#druckRand');
+  if (!rand) { rand = document.createElement('style'); rand.id = 'druckRand'; document.head.appendChild(rand); }
+  rand.textContent = chromium ? '@media print { @page { margin: 0; } }' : '';
+  $('#print').innerHTML = chromium
+    ? `<table class="rahmen"><thead><tr><td></td></tr></thead><tfoot><tr><td></td></tr></tfoot><tbody><tr><td>${html}</td></tr></tbody></table>`
+    : html;
   // Fotos erst fertig laden, sonst fehlen sie im Ausdruck
   await Promise.all([...$('#print').querySelectorAll('img')].map(img => img.complete ? null
     : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
