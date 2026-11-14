@@ -288,6 +288,8 @@ zugeordnet. Der Dialog zeigt beim Eingeben, wie viele Bankbuchungen des Jahres g
   **🏦 Fest** – egal ob direkt zugeordnet, als Sponsor-Zahlung oder als Position (Tooltip zeigt, wie; „?“ = nur über
   den Betrag gefunden). Im Buchungsdialog steht dasselbe Fest in der Auswahl; „— nicht zugeordnet —“ und Speichern
   nimmt die Buchung wieder heraus (Position wird entfernt, Sponsor wird wieder offen).
+- Auch einer **direkt zugeordneten Bankbuchung** kann man einen Bereich geben (z. B. *Transparente*, *Getränke*): Zeile im
+  Festkassabuch antippen → **Bereich im Festkassabuch**. In der Abrechnung steht sie dann unter diesem Bereich.
 - Die Spalte **Bereich** im Festkassabuch zeigt, woher eine Zeile kommt: 🏦 *Feuerwehrkassa* / *Mannschaftskassa*
   (ELBA-Import – direkt zugeordnet, Sponsor-Zahlung oder per Abgleich gefunden; „?“ = nur über den Betrag),
   ✍ *manuell* oder 📄 *Excel*; dahinter der Bereich (z. B. Transparente).

@@ -392,11 +392,11 @@ export const DEFAULT_KONTEN = [
 export function parts(b) {
   if (Array.isArray(b.splits) && b.splits.length) {
     const sum = b.splits.reduce((a, s) => a + (s.betrag || 0), 0);
-    const out = b.splits.map(s => ({ kategorie: s.kategorie || '', veranstaltung: s.veranstaltung || '', festArt: s.veranstaltung ? (s.festArt || 'bank') : '', betrag: s.betrag || 0, notiz: s.notiz || '' }));
+    const out = b.splits.map(s => ({ kategorie: s.kategorie || '', veranstaltung: s.veranstaltung || '', festArt: s.veranstaltung ? (s.festArt || 'bank') : '', festBereich: s.veranstaltung ? (s.festBereich || '') : '', betrag: s.betrag || 0, notiz: s.notiz || '' }));
     if (sum !== b.betrag) out.push({ kategorie: '', veranstaltung: '', festArt: '', betrag: b.betrag - sum, notiz: 'Rest (nicht aufgeteilt)' });
     return out;
   }
-  return [{ kategorie: b.kategorie || '', veranstaltung: b.veranstaltung || '', festArt: b.veranstaltung ? (b.festArt || (b.kategorie === 'festkassa' ? 'kassa' : 'bank')) : '', betrag: b.betrag, notiz: '' }];
+  return [{ kategorie: b.kategorie || '', veranstaltung: b.veranstaltung || '', festArt: b.veranstaltung ? (b.festArt || (b.kategorie === 'festkassa' ? 'kassa' : 'bank')) : '', festBereich: b.veranstaltung ? (b.festBereich || '') : '', betrag: b.betrag, notiz: '' }];
 }
 
 /** Konten mit ohneKontierung (z. B. Mannschaftskassa) gelten immer als kontiert. */
@@ -700,7 +700,7 @@ export function bankPosten(bankTeile) {
       ? splitBankText(t.buchung?.text).zweck
       : [splitBankText(t.buchung?.text).partner, splitBankText(t.buchung?.text).zweck].filter(Boolean).join(' – ')
     ) .slice(0, 120) || (t.buchung?.text || '').slice(0, 120),
-    bereich: '',
+    bereich: t.festBereich || '',     // z. B. „Transparente“ – beim Zuordnen der Bankbuchung gewählt
     bank: true,
     buchung: t.buchung,
   }));
@@ -765,8 +765,11 @@ export function veranstaltungsAbrechnung(eigenePosten, alleBankTeile) {
     neutralAus: pick('ausgabe', i => !i.ergebnis && i.zahlweg === 'ueberweisung'),
     bankEinnahmen: sum(bankRelevant.filter(t => t.betrag > 0), t => t.betrag),
     bankAusgaben: -sum(bankRelevant.filter(t => t.betrag < 0), t => t.betrag),
+    // Bankbuchungen ohne Bereich (eigene Zeile in der Abrechnung)
+    bankRestEin: sum(bankRelevant.filter(t => t.betrag > 0 && !t.festBereich), t => t.betrag),
+    bankRestAus: -sum(bankRelevant.filter(t => t.betrag < 0 && !t.festBereich), t => t.betrag),
     // zählende Überweisungs-Positionen nach Bereich; Bar nach Bereich nur zur Information (Umsatz je Stand)
-    bereiche: gruppe((p, i) => i.ergebnis && i.zahlweg === 'ueberweisung'),
+    bereiche: gruppe((p, i) => i.ergebnis && (i.zahlweg === 'ueberweisung' || (i.zahlweg === 'bank' && p.bereich))),
     barBereiche: gruppe((p, i) => i.zahlweg === 'bar'),
   };
   r.einnahmen = r.ablieferung + r.ueberwEinnahmen + r.bankEinnahmen;

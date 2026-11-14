@@ -543,3 +543,16 @@ test('Sponsoren ohne Betrag: Zuordnung über den Namen', async () => {
   assert.equal(m['3']?.[0], 'c');           // bleibt übrig für den zweiten Baldinger
   assert.equal(m['4']?.[1], false);         // Name passt, aber kein Sponsoring-Text → nur Vorschlag
 });
+
+test('Bankbuchung mit Bereich (z. B. Transparente) in der Abrechnung', async () => {
+  const { veranstaltungsAbrechnung, parts } = await import('../lib.js');
+  const b1 = { id: 'r', betrag: 20000, datum: '2021-09-24', text: 'Auftraggeber: RAG Austria AG Verwendungszweck: 18092021', veranstaltung: 'v', festArt: 'bank', festBereich: 'Transparente' };
+  const b2 = { id: 'w', betrag: -5000, datum: '2021-09-21', text: 'Empfänger: Zweimüller Würste', veranstaltung: 'v', festArt: 'bank' };
+  const teile = [b1, b2].flatMap(b => parts(b).map(p => ({ ...p, buchung: b })));
+  const r = veranstaltungsAbrechnung([], teile);
+  assert.deepEqual(r.bereiche.map(x => [x.bereich, x.einnahmen]), [['Transparente', 20000]]);
+  assert.equal(r.bankRestAus, 5000);
+  assert.equal(r.bankRestEin, 0);
+  assert.equal(r.ergebnis, 15000);
+  assert.equal(r.buch.find(p => p.buchung?.id === 'r').bereich, 'Transparente');
+});
