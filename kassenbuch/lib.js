@@ -1241,3 +1241,71 @@ export function toCsv(rows) {
   // BOM, damit Excel Umlaute richtig anzeigt
   return '﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n');
 }
+
+// ── Belege per Dateiname zuordnen ────────────────────────────────────────────
+// Dateinamen wie „2026-04-21_Brandschutz-Attergau_RE-20260445_3474,36EUR.pdf“ oder „Rechnung 12.03.2026 89,90 €.pdf“:
+// Datum, Betrag und ein Text (Partner) werden herausgelesen und mit Bankbuchungen bzw. Festkassa-Positionen abgeglichen.
+
+const BETRAG_RE = /(?:€|eur)?\s*(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?!\d)\s*(?:€|eur)?/gi;
+
+/** Datum, Betrag (Cent, ohne Vorzeichen) und Text aus einem Dateinamen. Fehlendes ist null. */
+export function belegAusDateiname(name) {
+  let s = String(name || '').replace(/\.[a-z0-9]{2,4}$/i, '');
+  let datum = null, monat = null;
+  let m = s.match(/(?:^|[^\d])(20\d{2})-(\d{2})-(\d{2})(?!\d)/);
+  if (m) { datum = parseDate(`${m[1]}-${m[2]}-${m[3]}`); s = s.replace(m[0], m[0][0] === m[1][0] ? ' ' : m[0][0] + ' '); }
+  if (!datum && (m = s.match(/(?:^|[^\d])(\d{1,2})\.(\d{1,2})\.(20\d{2})(?!\d)/))) { datum = parseDate(`${m[1]}.${m[2]}.${m[3]}`); s = s.replace(`${m[1]}.${m[2]}.${m[3]}`, ' '); }
+  if (!datum && (m = s.match(/(?:^|[^\d])(20\d{2})-(\d{2})(?![\d-])/)) && +m[2] >= 1 && +m[2] <= 12) { monat = `${m[1]}-${m[2]}`; s = s.replace(`${m[1]}-${m[2]}`, ' '); }
+  if (datum) monat = datum.slice(0, 7);
+  // Betrag: der letzte Wert mit Komma und zwei Nachkommastellen (bei „3x_79,50EUR“ der Gesamtbetrag)
+  let betrag = null, letzter = null;
+  for (const x of s.matchAll(BETRAG_RE)) letzter = x;
+  if (letzter) { betrag = Number(letzter[1].replace(/\./g, '')) * 100 + Number(letzter[2]); s = s.replace(letzter[0], ' '); }
+  const text = s.replace(/_+/g, ' ')
+    .replace(/\b(RE|Re|Rechnung|Rg|Nr|AZ)\b[-. ]*(?:Nr\.?\s*)?[\w/-]*\d[\w/-]*/g, ' ')   // Rechnungsnummern
+    .replace(/\b(Rechnung|Beleg|Quittung|Scan)\b/gi, ' ').replace(/\b\d+x\b/g, ' ')
+    .replace(/(?<=\w)-(?=\w)/g, ' ').replace(/\s+/g, ' ').trim();
+  return { datum, monat, betrag, text };
+}
+
+/**
+ * Vorschläge für Belege. belege: [{ key, datum, monat, betrag, text, name }],
+ * ziele: [{ id, datum, betrag (Cent, ohne Vorzeichen), text, belege: [{name}] }] – Bankbuchungen und Festkassa-Positionen.
+ * Passend ist ein Ziel mit gleichem Betrag, dessen Datum 15 Tage vor bis 120 Tage nach dem Belegdatum liegt
+ * (Rechnung kommt vor der Zahlung). Ohne Tagesdatum zählt der Monat (± 1 Monat). Jedes Ziel wird höchstens einmal vergeben;
+ * hat ein Ziel schon eine Datei mit gleichem Namen, gilt der Beleg als „schon vorhanden“.
+ * Ergebnis je Beleg: { key, kandidaten: [{ id, tage, name }], wahl: id|null, sicher, vorhanden: id|null }
+ */
+export function belegVorschlaege(belege, ziele) {
+  const tage = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+  const passt = (x, z) => {
+    if (x.betrag == null || Math.abs(z.betrag) !== x.betrag) return null;
+    if (x.datum) { const t = tage(x.datum, z.datum); return t >= -15 && t <= 120 ? t : null; }
+    if (x.monat) { const t = tage(`${x.monat}-15`, z.datum); return Math.abs(t) <= 46 ? t : null; }
+    return 0;
+  };
+  const erg = belege.map(x => {
+    const vorhanden = ziele.find(z => (z.belege || []).some(y => y.name === x.name))?.id || null;
+    const kandidaten = ziele.map(z => {
+      const t = passt(x, z);
+      if (t == null) return null;
+      // Dateinamen schreiben Umlaute oft aus (Voecklabruck) – beide Schreibweisen probieren
+      const name = x.text ? Math.max(aehnlich(x.text, z.text || ''), aehnlich(x.text.replace(/([aou])e/gi, '$1'), z.text || '')) : 0;
+      return { id: z.id, tage: t, name, hatBeleg: !!(z.belege || []).length };
+    }).filter(Boolean)
+      // Name passt vor Belegfreiheit vor Nähe des Datums (Zahlung kurz nach der Rechnung bevorzugt)
+      .sort((a, b) => b.name - a.name || a.hatBeleg - b.hatBeleg || Math.abs(a.tage) - Math.abs(b.tage));
+    return { key: x.key, kandidaten, wahl: null, sicher: false, vorhanden };
+  });
+  // Eindeutige zuerst vergeben: sichere (nur ein Kandidat oder klar bester Name) vor unsicheren
+  const vergeben = new Set();
+  const rang = e => e.kandidaten.length === 1 ? 0 : (e.kandidaten[0]?.name > (e.kandidaten[1]?.name ?? 0) ? 1 : 2);
+  for (const e of [...erg].filter(e => !e.vorhanden).sort((a, b) => rang(a) - rang(b))) {
+    const frei = e.kandidaten.filter(k => !vergeben.has(k.id));
+    if (!frei.length) continue;
+    e.wahl = frei[0].id;
+    e.sicher = frei.length === 1 ? (e.kandidaten.length === 1 || frei[0].name > 0) : frei[0].name > (frei[1].name || 0);
+    vergeben.add(e.wahl);
+  }
+  return erg;
+}

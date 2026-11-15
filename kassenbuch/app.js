@@ -20,8 +20,8 @@ import {
   isKontiert, jahresabschluss, POSTEN_ARTEN,
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
-  veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-14c';
+  veranstaltungsAbrechnung, toCsv, belegAusDateiname, belegVorschlaege,
+} from './lib.js?v=2026-11-15a';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -535,6 +535,7 @@ function viewBuchungen() {
       </div></details>
       <div class="toolbar">
         ${edit ? `<button class="btn" id="applyRules" title="Regeln aus der Verwaltung auf alle unkontierten Buchungen anwenden">⚙ Regeln anwenden</button>` : ''}
+        ${edit ? `<button class="btn" id="belegeZuordnen" title="Viele Belege (PDF, Fotos oder ZIP) auf einmal hochladen – Datum und Betrag im Dateinamen finden die Buchung">📎 Belege zuordnen</button>` : ''}
         <button class="btn" id="exportBuch">⬇ CSV</button>
         <button class="btn" id="printKassabuch" title="Kassabuch des gewählten Kontos mit Belegnummern und laufendem Saldo">🖨 Kassabuch</button>
         <span class="spacer" style="flex:1"></span>
@@ -580,6 +581,7 @@ function viewBuchungen() {
     viewBuchungen.t = setTimeout(() => { S.dirty = false; render(true); }, 250);
   });
   $('#applyRules')?.addEventListener('click', regelnAnwenden);
+  $('#belegeZuordnen')?.addEventListener('click', belegeZuordnen);
   $('#exportBuch').addEventListener('click', () => exportBuchungen(list));
   $('#printKassabuch').addEventListener('click', () => {
     if (!f.konto) { toast('Bitte zuerst oben ein Konto wählen.', true); return; }
@@ -711,6 +713,26 @@ async function verkleinern(file, fortschritt) {
   } catch { return file; }
 }
 
+/**
+ * Eine Datei als Beleg hochladen (verkleinern, prüfen, nach Storage). Liefert den Eintrag für die Liste belege
+ * oder null (zu groß, falscher Typ – mit Hinweis). status(text) zeigt den Fortschritt.
+ */
+async function belegHochladen(basis, orig, status = () => {}) {
+  if (orig.size > (orig.type === 'application/pdf' ? PDF_MAX_ORIGINAL : MAX_BELEG)) { toast(`${orig.name}: zu groß (höchstens 15 MB, gescannte PDFs bis 40 MB).`, true); return null; }
+  if (!/^application\/pdf$|^image\//.test(orig.type)) { toast(`${orig.name}: nur PDF oder Bilder.`, true); return null; }
+  const f = await verkleinern(orig, status);
+  if (f.size > MAX_BELEG) { toast(`${orig.name}: auch verkleinert noch größer als 15 MB.`, true); return null; }
+  if (f !== orig && f.size < orig.size) toast(`${orig.name}: ${(orig.size / 1048576).toFixed(1).replace('.', ',')} MB → ${(f.size / 1048576).toFixed(1).replace('.', ',')} MB`);
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const pfad = `${basis}/${id}-${dateiName(f.name)}`;
+  await uploadBytes(sRef(storage, pfad), f, {
+    contentType: f.type || 'application/pdf',
+    // beim Öffnen/Speichern den ursprünglichen Dateinamen verwenden
+    contentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(f.name.slice(0, 120))}`,
+  });
+  return { id, name: f.name.slice(0, 120), pfad, typ: f.type || 'application/pdf', groesse: f.size, am: Date.now(), von: S.uid };
+}
+
 async function belegOeffnen(x) {
   const w = window.open('', '_blank');   // sofort öffnen, sonst blockiert der Browser das Fenster
   try {
@@ -753,25 +775,14 @@ function belegeBox(sel, opts) {
       const files = [...inp.files];
       const status = box.querySelector('[data-bs]');
       for (const [n, orig] of files.entries()) {
-        if (orig.size > (orig.type === 'application/pdf' ? PDF_MAX_ORIGINAL : MAX_BELEG)) { toast(`${orig.name}: zu groß (höchstens 15 MB, gescannte PDFs bis 40 MB).`, true); continue; }
-        if (!/^application\/pdf$|^image\//.test(orig.type)) { toast(`${orig.name}: nur PDF oder Bilder.`, true); continue; }
         status.textContent = `Lade hoch … (${n + 1}/${files.length})`;
         try {
-          const f = await verkleinern(orig, t => { status.textContent = `${t} (${n + 1}/${files.length})`; });
-          status.textContent = `Lade hoch … (${n + 1}/${files.length})`;
-          if (f.size > MAX_BELEG) { toast(`${orig.name}: auch verkleinert noch größer als 15 MB.`, true); continue; }
-          if (f !== orig && f.size < orig.size) toast(`${orig.name}: ${(orig.size / 1048576).toFixed(1).replace('.', ',')} MB → ${(f.size / 1048576).toFixed(1).replace('.', ',')} MB`);
-          const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-          const pfad = `${opts.basis}/${id}-${dateiName(f.name)}`;
-          await uploadBytes(sRef(storage, pfad), f, {
-            contentType: f.type || 'application/pdf',
-            // beim Öffnen/Speichern den ursprünglichen Dateinamen verwenden
-            contentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(f.name.slice(0, 120))}`,
-          });
-          liste.push({ id, name: f.name.slice(0, 120), pfad, typ: f.type || 'application/pdf', groesse: f.size, am: Date.now(), von: S.uid });
-          neu.push(pfad);
+          const x = await belegHochladen(opts.basis, orig, t => { status.textContent = `${t} (${n + 1}/${files.length})`; });
+          if (!x) continue;
+          liste.push(x);
+          neu.push(x.pfad);
           if (opts.speichern) await opts.speichern(liste);
-          logTo(null, 'beleg', `Hochgeladen: ${f.name}`);
+          logTo(null, 'beleg', `Hochgeladen: ${x.name}`);
         } catch (e) { fail(e); }
       }
       status.textContent = '';
@@ -784,6 +795,141 @@ function belegeBox(sel, opts) {
     if (!fertig && !opts.speichern) neu.forEach(p => deleteObject(sRef(storage, p)).catch(() => {}));
   }, { once: true });
   return { liste: () => liste, gespeichert: () => { fertig = true; } };
+}
+
+/**
+ * Viele Belege auf einmal: Dateien (PDF, Bilder oder ein ZIP, z. B. ein heruntergeladener Drive-Ordner) wählen,
+ * Datum und Betrag aus dem Dateinamen lesen und passende Bankbuchungen bzw. Festkassa-Positionen vorschlagen.
+ * Nach dem Prüfen werden die Dateien hochgeladen und an die gewählte Buchung gehängt.
+ */
+async function belegeZuordnen() {
+  if (!canBook() || locked()) return;
+  const kurz = t => { t = String(t || '').trim(); return t.length > 48 ? t.slice(0, 47) + '…' : t; };
+  // mögliche Ziele: Bankbuchungen des Jahres und eigene Positionen offener Festkassabücher
+  const ziele = [
+    ...S.buchungen.map(b => ({ id: 'b:' + b.id, datum: b.datum, betrag: b.betrag, text: b.text, belege: b.belege,
+      label: `${deDate(b.datum)} · ${fmt(b.betrag)} · ${kurz(splitBankText(b.text).partner || splitBankText(b.text).zweck || b.text)} (${kontoById(b.konto)?.name || b.konto})` })),
+    ...S.veranstaltungen.filter(v => v.status === 'offen').flatMap(v => (S.posten[v.id] || []).filter(p => !p.buchungId)
+      .map(p => ({ id: `p:${v.id}:${p.id}`, datum: p.datum, betrag: p.art === 'ausgabe' || p.art === 'wechselgeld' ? -p.betrag : p.betrag,
+        text: `${p.text || ''} ${p.bereich || ''}`, belege: p.belege,
+        label: `${deDate(p.datum)} · ${fmt(p.betrag)} · ${kurz(p.text || p.bereich || POSTEN_ARTEN[p.art]?.name)} (Festkassa ${v.name})` }))),
+  ].sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+  const zielById = new Map(ziele.map(z => [z.id, z]));
+  let eintraege = [];
+
+  const leseDateien = async files => {
+    const out = [];
+    for (const f of files) {
+      if (/\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed') {
+        if (!window.JSZip) { toast('ZIP-Bibliothek nicht geladen – bitte Seite neu laden.', true); continue; }
+        const zip = await window.JSZip.loadAsync(f);
+        for (const z of Object.values(zip.files)) {
+          const name = z.name.split('/').pop();
+          if (z.dir || !name || name.startsWith('.') || z.name.includes('__MACOSX')) continue;
+          const typ = /\.pdf$/i.test(name) ? 'application/pdf' : /\.jpe?g$/i.test(name) ? 'image/jpeg' : /\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : /\.hei[cf]$/i.test(name) ? 'image/heic' : '';
+          if (!typ) continue;
+          out.push(new File([await z.async('blob')], name, { type: typ }));
+        }
+      } else out.push(f);
+    }
+    return out;
+  };
+
+  const zeichne = () => {
+    const box = $('#bzListe');
+    if (!eintraege.length) { box.innerHTML = ''; return; }
+    const v = belegVorschlaege(eintraege, ziele);
+    v.forEach((x, i) => { const e = eintraege[i]; if (e.ziel === undefined) { e.ziel = x.wahl || ''; e.sicher = x.sicher; } e.vorschlag = x; });
+    const n = { ok: 0, pruefen: 0, ohne: 0, da: 0 };
+    const zeilen = eintraege.map((e, i) => {
+      const x = e.vorschlag;
+      const kand = new Set(x.kandidaten.map(k => k.id));
+      // Auswahl: Kandidaten zuerst, darunter alle Buchungen/Positionen mit gleichem Betrag bzw. (ohne Betrag) ohne Beleg
+      const weitere = ziele.filter(z => !kand.has(z.id) && (e.betrag != null ? Math.abs(z.betrag) === e.betrag : !(z.belege || []).length));
+      const opt = z => `<option value="${esc(z.id)}" ${z.id === e.ziel ? 'selected' : ''}>${esc(z.label)}${(z.belege || []).length ? ` 📎${z.belege.length}` : ''}</option>`;
+      const status = x.vorhanden && !e.ziel ? (n.da++, '<span class="chip" title="Datei mit gleichem Namen hängt schon an dieser Buchung">schon da</span>')
+        : !e.ziel ? (n.ohne++, '<span class="chip">–</span>')
+        : e.sicher ? (n.ok++, '<span class="chip plus">✓</span>') : (n.pruefen++, '<span class="chip minus" title="Mehrere Buchungen passen – bitte prüfen">? prüfen</span>');
+      return `<tr><td class="small k-voll">${esc(e.name)}<div class="muted small">${e.datum ? deDate(e.datum) : e.monat ? e.monat.split('-').reverse().join('/') : 'kein Datum'} · ${e.betrag != null ? fmt(e.betrag) + ' €' : 'kein Betrag'}</div></td>
+        <td class="k-zeile"><select data-bz="${i}" style="width:100%"><option value="">— nicht zuordnen —</option>
+          ${x.kandidaten.length ? `<optgroup label="Vorschläge">${x.kandidaten.map(k => opt(zielById.get(k.id))).join('')}</optgroup>` : ''}
+          ${weitere.length ? `<optgroup label="${e.betrag != null ? 'gleicher Betrag, anderes Datum' : 'Buchungen ohne Beleg'}">${weitere.map(opt).join('')}</optgroup>` : ''}
+        </select></td><td class="k-c">${status}</td></tr>`;
+    }).join('');
+    box.innerHTML = `<p class="small"><b>${eintraege.length} Dateien:</b> ${n.ok} sicher zugeordnet · ${n.pruefen} bitte prüfen · ${n.ohne} ohne Zuordnung${n.da ? ` · ${n.da} schon vorhanden` : ''}</p>
+      <div class="tablewrap"><table class="t karten"><thead><tr><th>Datei</th><th>Buchung / Position</th><th></th></tr></thead><tbody>${zeilen}</tbody></table></div>`;
+    box.querySelectorAll('[data-bz]').forEach(sel => sel.addEventListener('change', () => {
+      const e = eintraege[+sel.dataset.bz];
+      e.ziel = sel.value; e.sicher = !!sel.value;   // selbst gewählt = bestätigt
+      zeichne();
+    }));
+  };
+
+  const dateienDazu = async files => {
+    const st = $('#bzStatus');
+    st.textContent = 'Dateien werden gelesen …';
+    try {
+      for (const f of await leseDateien(files)) {
+        if (eintraege.some(e => e.name === f.name && e.file.size === f.size)) continue;
+        eintraege.push({ key: eintraege.length, file: f, name: f.name, ...belegAusDateiname(f.name) });
+      }
+    } catch (e) { fail(e); }
+    st.textContent = '';
+    zeichne();
+  };
+
+  modal('📎 Belege zuordnen', `
+    <p class="muted small">PDFs oder Fotos auswählen – oder ein <b>ZIP</b> (z. B. einen ganzen Google-Drive-Ordner über „Herunterladen“).
+      Datum und Betrag werden aus dem <b>Dateinamen</b> gelesen, z. B. <code>2026-04-21_Brandschutz-Attergau_3474,36EUR.pdf</code>.
+      Gesucht wird in den Bankbuchungen ${S.jahr} (Zahlung bis 120 Tage nach dem Belegdatum) und in offenen Festkassabüchern.
+      Vor dem Hochladen kannst du jede Zuordnung ändern.</p>
+    <div id="bzDrop" class="infobox" style="text-align:center;border-style:dashed">
+      <label class="btn primary upl">📄 Dateien oder ZIP wählen<input type="file" id="bzFiles" multiple accept="application/pdf,image/*,.zip,application/zip" style="display:none"></label>
+      <div class="muted small" style="margin-top:4px">… oder hierher ziehen</div><div class="small" id="bzStatus"></div></div>
+    <div id="bzListe"></div>`, {
+    wide: true, ok: 'Hochladen und zuordnen',
+    onOk: async () => {
+      const auftrag = eintraege.filter(e => e.ziel);
+      if (!auftrag.length) { toast('Keine Datei ist einer Buchung zugeordnet.', true); return false; }
+      const unsicher = auftrag.filter(e => !e.sicher).length;
+      if (unsicher && !confirm(`${unsicher} Zuordnung(en) sind nicht eindeutig (mehrere Buchungen mit gleichem Betrag). Trotzdem so hochladen?`)) return false;
+      const doppelt = auftrag.filter((e, i) => auftrag.findIndex(x => x.ziel === e.ziel) !== i).length;
+      if (doppelt && !confirm(`${doppelt} Buchung(en) bekommen mehrere Belege. Ist das richtig?`)) return false;
+      const st = $('#bzStatus');
+      let ok = 0;
+      for (const [i, e] of auftrag.entries()) {
+        const [typ, a, b] = e.ziel.split(':');
+        const fortschritt = t => { st.textContent = `${t || 'Lade hoch …'} (${i + 1}/${auftrag.length}) ${e.name}`; };
+        fortschritt();
+        try {
+          if (typ === 'b') {
+            const buch = S.buchungen.find(x => x.id === a);
+            const x = await belegHochladen(`belege/${buch.jahr || S.jahr}/buchung/${a}`, e.file, fortschritt);
+            if (!x) continue;
+            const aktuell = S.buchungen.find(y => y.id === a)?.belege || [];
+            await updateDoc(doc(db, 'buchungen', a), { belege: [...aktuell, x] });
+            buch.belege = [...aktuell, x];
+          } else {
+            const v = verById(a), p = (S.posten[a] || []).find(y => y.id === b);
+            const x = await belegHochladen(`belege/${v.jahr}/posten/${a}/${b}`, e.file, fortschritt);
+            if (!x) continue;
+            const aktuell = (S.posten[a] || []).find(y => y.id === b)?.belege || [];
+            await updateDoc(doc(db, 'veranstaltungen', a, 'posten', b), { belege: [...aktuell, x] });
+            p.belege = [...aktuell, x];
+          }
+          logTo(null, 'beleg', `Hochgeladen und zugeordnet: ${e.name} → ${zielById.get(e.ziel)?.label || e.ziel}`);
+          ok++;
+        } catch (err) { fail(err); }
+      }
+      toast(`${ok} von ${auftrag.length} Belegen hochgeladen und zugeordnet.`, ok < auftrag.length);
+      render(true);
+    },
+  });
+  $('#bzFiles').addEventListener('change', e => { dateienDazu([...e.target.files]); e.target.value = ''; });
+  const drop = $('#bzDrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.background = 'var(--hover, #eef)'; });
+  drop.addEventListener('dragleave', () => { drop.style.background = ''; });
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.style.background = ''; dateienDazu([...e.dataTransfer.files]); });
 }
 
 async function belegeLoeschen(liste) {
