@@ -157,6 +157,13 @@ Gescannte PDFs dürfen dafür bis 40 MB groß sein. Wird die Datei nicht deutlic
 - In der Buchungsliste zeigt **📎** die Anzahl der Belege; der Filter **Beleg → ohne Beleg** zeigt, wo noch einer fehlt.
 - Antippen öffnet den Beleg. Lesen dürfen alle mit Profil (auch Kassaprüfer); hochladen und löschen Kassier/Admin,
   bei der Festkassa auch die Rolle Festkassa. In abgeschlossenen Jahren lassen sich Belege nicht mehr löschen oder ergänzen.
+- **📎 Belege zuordnen** (Reiter *Buchungen*, Kassier/Admin): viele Belege auf einmal – PDFs, Fotos oder ein **ZIP**
+  (z. B. ein ganzer Google-Drive-Ordner über *Herunterladen*). Datum und Betrag werden aus dem **Dateinamen** gelesen,
+  z. B. `2026-04-21_Brandschutz-Attergau_RE-20260445_3474,36EUR.pdf` (auch `12.03.2026` oder nur `2026-06` geht).
+  Vorgeschlagen werden Bankbuchungen mit gleichem Betrag, deren Datum 15 Tage vor bis 120 Tage nach dem Beleg liegt,
+  sowie eigene Positionen offener Festkassabücher; passt der Name im Dateinamen zum Bank-Text, ist der Vorschlag „✓ sicher“,
+  bei mehreren gleichen Beträgen „? prüfen“. Jede Zuordnung lässt sich vor dem Hochladen ändern; Dateien, die schon an
+  der Buchung hängen (gleicher Name), werden erkannt.
 - **Jahresabschluss → 📎 Belege als ZIP** lädt alle Belege des Jahres herunter – geordnet nach Konto bzw. Fest,
   benannt nach Belegnummer, Datum und Text, mit einer **Belegliste.csv**.
 
