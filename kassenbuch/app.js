@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-14c';
+} from './lib.js?v=2026-11-17';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -83,6 +83,27 @@ function fail(e) {
   console.error(e);
   toast(e?.code === 'permission-denied' ? 'Keine Berechtigung (oder Jahr ist abgeschlossen).' : (e?.message || String(e)), true);
 }
+
+// ── Ausführliche Protokolltexte: immer mit Datum, Konto, Betrag, Text und Weg ─────────────
+const kontoKz = id => { const n = kontoById(id)?.name || id || ''; return /^feuerwehr/i.test(n) ? 'FW' : /^mannschaft/i.test(n) ? 'MS' : n; };
+const kurzBank = t => { const { partner, zweck } = splitBankText(t || ''); return ([partner, zweck].filter(Boolean).join(' – ') || t || '').slice(0, 70); };
+/** Bankbuchung: „23.06.2026 MS -3.055,00 „Wechselgeld für Sonnwendfeuer““ */
+const logB = b => `${deDate(b.datum)} ${kontoKz(b.konto)} ${fmt(b.betrag)} „${kurzBank(b.text)}“`;
+/** Festkassa-Position mit Herkunft */
+const logP = p => `${POSTEN_ARTEN[p.art]?.name || p.art} ${fmt(p.betrag)} vom ${deDate(p.datum)}${p.text ? ` „${String(p.text).slice(0, 70)}“` : ''}`
+  + `${p.bereich ? ' · ' + p.bereich : ''} (${zahlwegName(p.art, p.zahlweg)}${p.ergebnis === false && p.zahlweg === 'ueberweisung' ? ', zählt nicht' : ''})`
+  + ` – ${p.quelle === 'excel' ? 'aus Excel übernommen' : p.buchungId ? 'aus Bankbuchung' : p.weg ? `erfasst über „${p.weg}“` : 'von Hand erfasst'}`
+  + `${p.erfasstVon ? `, ursprünglich von ${userName(p.erfasstVon)}${p.erfasstAm?.toDate ? ' am ' + p.erfasstAm.toDate().toLocaleString('de-AT') : ''}` : ''}`;
+/** Liste mit Zeilenumbrüchen, passend auf die 2000 Zeichen eines Protokolleintrags gekürzt */
+const logListe = (kopf, zeilen) => {
+  let t = kopf;
+  for (const [i, z] of zeilen.entries()) {
+    if ((t + '\n• ' + z).length > 1900) { t += `\n… und ${zeilen.length - i} weitere`; break; }
+    t += '\n• ' + z;
+  }
+  return t;
+};
+const katKz = id => { const k = katById(id); return k ? `${k.nr ? k.nr + ' ' : ''}${k.name}` : 'unkontiert'; };
 
 /** Protokolleintrag in einen Batch (oder einzeln) schreiben. */
 function logTo(batch, aktion, text) {
@@ -606,7 +627,8 @@ function viewBuchungen() {
       else if (ver) { upd.veranstaltung = ver; upd.festArt = festArtVorschlag(b); upd.splits = deleteField(); }
       batch.update(doc(db, 'buchungen', id), upd);
     }
-    logTo(batch, 'kontieren', `${ids.length} Buchungen${kat !== '__keep' ? ' → ' + (katById(kat)?.name || 'unkontiert') : ''}${ver && ver !== '__clear' ? ' / Festkassabuch ' + (verById(ver)?.name || '') : ''}`);
+    logTo(batch, 'kontieren', logListe(`${ids.length} Buchungen (Auswahl in „Buchungen“)${kat !== '__keep' ? ' → ' + (kat === '__none' ? 'unkontiert' : katKz(kat)) : ''}${ver === '__clear' ? ' · Festkassabuch-Zuordnung entfernt' : ver ? ' · Festkassabuch ' + (verById(ver)?.name || '') : ''}:`,
+      ids.map(id => S.buchungen.find(x => x.id === id)).filter(Boolean).map(logB)));
     try { await batch.commit(); S.sel.clear(); toast(`${ids.length} Buchungen kontiert.`); } catch (e) { fail(e); }
   });
 }
@@ -824,7 +846,8 @@ async function buchungenLoeschen(liste, was) {
   for (let i = 0; i < ops.length; i += 400) {
     const batch = writeBatch(db);
     ops.slice(i, i + 400).forEach(f => f(batch));
-    if (i === 0) logTo(batch, 'löschen', `${liste.length} Buchungen gelöscht${was ? ' – ' + was : ''} (Summe ${fmt(summe)})`);
+    if (i === 0) logTo(batch, 'löschen', logListe(`${liste.length} Buchungen gelöscht${was ? ' – ' + was : ' (Auswahl in „Buchungen“)'}, Summe ${fmt(summe)}`
+      + `${sponsoren.length ? `; Sponsoren wieder offen: ${sponsoren.map(x => x.e.name).join(', ')}` : ''}${posten.length ? `; Positionen entfernt: ${posten.map(x => `${x.v.name} ${fmt(x.p.betrag)}`).join(', ')}` : ''}:`, liste.map(logB)));
     await batch.commit();
   }
   await belegeLoeschen(belege);
@@ -901,7 +924,7 @@ function buchungDialog(b) {
       if (!imported && !confirm('Buchung löschen?')) return false;
       const batch = writeBatch(db);
       batch.delete(doc(db, 'buchungen', b.id));
-      logTo(batch, 'löschen', `${deDate(b.datum)} ${fmt(b.betrag)} ${b.text}`);
+      logTo(batch, 'löschen', `Buchung gelöscht (Buchungsdialog): ${logB(b)}${b.kategorie ? ' · ' + katKz(b.kategorie) : ''}${b.veranstaltung ? ' · Festkassabuch ' + (verById(b.veranstaltung)?.name || '') : ''}${b.datei ? ' · Import ' + b.datei : ''}`);
       await batch.commit();
       await belegeLoeschen(b.belege);
       toast('Gelöscht.');
@@ -950,20 +973,28 @@ function buchungDialog(b) {
       if (neu) {
         data.erstelltAm = serverTimestamp(); data.erstelltVon = S.uid;
         batch.set(neuRef, data);
-        logTo(batch, 'buchung', `Neu: ${deDate(data.datum)} ${fmt(data.betrag)} ${data.text}`);
+        logTo(batch, 'buchung', `Neu (von Hand): ${logB(data)}${data.kategorie ? ' → ' + katKz(data.kategorie) : ''}`);
       } else {
         // splits entfernen, falls es vorher welche gab
         batch.set(doc(db, 'buchungen', b.id), data.splits ? data : { ...data, splits: deleteField() }, { merge: true });
-        const changed = imported ? `${deDate(b.datum)} ${fmt(b.betrag)}: ${data.splits ? 'aufgeteilt' : (katById(data.kategorie)?.name || 'unkontiert')}` : `${deDate(data.datum)} ${fmt(data.betrag)} ${data.text}`;
-        logTo(batch, 'kontieren', changed);
+        const aend = [];
+        if (data.splits) aend.push(`aufgeteilt: ${data.splits.map(s => `${fmt(s.betrag)} ${katKz(s.kategorie)}${s.veranstaltung ? ' / ' + (verById(s.veranstaltung)?.name || '') : ''}`).join('; ')}`);
+        else {
+          if ((b.kategorie || '') !== (data.kategorie || '')) aend.push(`Kategorie ${katKz(b.kategorie)} → ${katKz(data.kategorie)}`);
+          if ((b.veranstaltung || '') !== (data.veranstaltung || '')) aend.push(`Festkassabuch ${verById(b.veranstaltung)?.name || '–'} → ${verById(data.veranstaltung)?.name || '–'}`);
+          if ((b.festBereich || '') !== (data.festBereich || '')) aend.push(`Bereich ${b.festBereich || '–'} → ${data.festBereich || '–'}`);
+        }
+        if ((b.beleg || '') !== (data.beleg || '')) aend.push(`Beleg-Nr. ${data.beleg || '–'}`);
+        if ((b.notiz || '') !== (data.notiz || '')) aend.push('Notiz geändert');
+        logTo(batch, 'kontieren', `${logB(imported ? b : data)} (Buchungsdialog): ${aend.join(' · ') || 'gespeichert, ohne Änderung'}`);
       }
       if (loesen && link.typ === 'posten') {
         batch.delete(doc(db, 'veranstaltungen', link.v.id, 'posten', link.p.id));
-        logTo(batch, 'festkassa', `${link.v.name}: Position ${link.p.text || ''} ${fmt(link.p.betrag)} entfernt (Bankbuchung ${deDate(b.datum)})`);
+        logTo(batch, 'festkassa', `${link.v.name}: Position entfernt (Buchungsdialog „nicht zugeordnet“): ${logP(link.p)} · Bankbuchung ${logB(b)}`);
       }
       if (loesen && link.typ === 'sponsor') {
         batch.update(spRef(link.v, link.e.id), { status: 'offen', bezahltAm: '', buchungId: '' });
-        logTo(batch, 'sponsoring', `${link.v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} vom Sponsor ${link.e.name} gelöst`);
+        logTo(batch, 'sponsoring', `${link.v.name}: Zahlung ${logB(b)} vom Sponsor ${link.e.name} gelöst (Buchungsdialog)`);
       }
       if ($('#bRegel')?.checked && $('#bRegelText').value.trim() && !data.splits && (data.kategorie || data.festArt === 'kassa')) {
         const regel = { muster: $('#bRegelText').value.trim(), kategorie: data.kategorie, richtung: data.betrag < 0 ? '-' : '+', konto: data.konto,
@@ -1120,7 +1151,8 @@ async function regelnAnwenden() {
     for (const [b, upd] of treffer.slice(i, i + 200)) {
       batch.update(doc(db, 'buchungen', b.id), { ...upd, geaendertAm: serverTimestamp(), geaendertVon: S.uid });
     }
-    if (i === 0) logTo(batch, 'kontieren', `${treffer.length} Buchungen per Regel kontiert`);
+    if (i === 0) logTo(batch, 'kontieren', logListe(`${treffer.length} Buchungen per „Regeln anwenden“ kontiert/zugeordnet:`,
+      treffer.map(([b, u]) => `${logB(b)}${u.kategorie ? ' → ' + katKz(u.kategorie) : ''}${u.veranstaltung ? ' · Festkassabuch ' + (verById(u.veranstaltung)?.name || '') + (u.festArt === 'kassa' ? ' (Bank)' : '') : ''}`)));
     await batch.commit().catch(fail);
   }
   toast(`${treffer.length} Buchungen aktualisiert.`);
@@ -1351,7 +1383,12 @@ async function importieren() {
           importiertAm: serverTimestamp(), importiertVon: S.uid,
         });
       }
-      if (i === 0) logTo(batch, 'import', `${neu.length} Umsätze aus ${I.datei} in ${kontoById(I.konto)?.name}`);
+      if (i === 0) {
+        const fest = neu.filter(r => r.veranstaltung);
+        logTo(batch, 'import', logListe(`${neu.length} Umsätze aus ${I.datei} in ${kontoById(I.konto)?.name} importiert (Summe ${fmt(neu.reduce((x, r) => x + r.betrag, 0))}), `
+          + `${neu.filter(r => r.kategorie).length} per Regel kontiert, ${fest.length} automatisch einem Festkassabuch zugeordnet${fest.length ? ':' : '.'}`,
+          fest.map(r => `${logB({ ...r, konto: I.konto })} → ${verById(r.veranstaltung)?.name || ''}${r.festArt === 'kassa' ? ' (Bank)' : ''}`)));
+      }
       await batch.commit();
     }
     toast(`${neu.length} Umsätze importiert.`);
@@ -1596,7 +1633,8 @@ function bankZuordnenDialog(v) {
       for (const id of ids) {
         batch.update(doc(db, 'buchungen', id), { veranstaltung: v.id, festArt: artVon.get(id) || 'bank', geaendertAm: serverTimestamp(), geaendertVon: S.uid });
       }
-      logTo(batch, 'festkassa', `${v.name}: ${ids.length} Bankbuchung(en) zugeordnet`);
+      logTo(batch, 'festkassa', logListe(`${v.name}: ${ids.length} Bankbuchung(en) zugeordnet („🏦 Bankbuchung zuordnen“):`,
+        ids.map(id => S.buchungen.find(x => x.id === id)).filter(Boolean).map(b => `${logB(b)}${artVon.get(b.id) === 'kassa' ? ' (Bank)' : ' (Überweisung)'}`)));
       await batch.commit();
       toast(`${ids.length} Bankbuchung(en) zugeordnet.`);
     },
@@ -1666,7 +1704,7 @@ function bindAbgleich(v) {
     const neu = Number(btn.dataset.abgWert);
     if (!confirm(`„${p.text}“ von ${fmt(p.betrag)} auf ${fmt(neu)} (Betrag laut Bank) ändern?`)) return;
     await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { betrag: neu, geaendertVon: S.uid }).catch(fail);
-    logTo(null, 'festkassa', `${v.name}: ${p.text} ${fmt(p.betrag)} → ${fmt(neu)} (lt. Bank)`);
+    logTo(null, 'festkassa', `${v.name}: Betrag ${fmt(p.betrag)} → ${fmt(neu)} lt. Bank („Bankbetrag übernehmen“): ${logP(p)}`);
   }));
   // Transparent-/Sponsoring-Eingang: einem offenen Sponsor zuordnen (Name) oder neuen Sponsor anlegen – nicht als Position
   $$('#view [data-abg-sp]').forEach(btn => btn.addEventListener('click', async () => {
@@ -1686,7 +1724,7 @@ function bindAbgleich(v) {
       }).catch(fail);
       toast(`Neuer Sponsor „${name}“ angelegt.`);
     }
-    logTo(null, 'sponsoring', `${v.name}: Zahlung ${deDate(b.datum)} ${fmt(b.betrag)} → Sponsor ${e ? e.name : name}`);
+    logTo(null, 'sponsoring', `${v.name}: Zahlung ${logB(b)} → ${e ? 'Sponsor ' + e.name : 'neuer Sponsor ' + name} („+ als Sponsor“ im Abgleich)`);
   }));
   $$('#view [data-abg-neu]').forEach(btn => btn.addEventListener('click', async () => {
     const b = S.buchungen.find(x => x.id === btn.dataset.abgNeu);
@@ -1695,7 +1733,7 @@ function bindAbgleich(v) {
       art: b.betrag < 0 ? 'ausgabe' : 'einnahme', betrag: Math.abs(b.betrag), datum: b.datum, zeit: '', zahlweg: 'ueberweisung', ergebnis: true, buchungId: b.id,
       text: [partner, zweck].filter(Boolean).join(' – ').slice(0, 300), bereich: '', beleg: '', erfasstAm: serverTimestamp(), erfasstVon: S.uid,
     }).catch(fail);
-    logTo(null, 'festkassa', `${v.name}: Position aus Bankbuchung ${deDate(b.datum)} ${fmt(b.betrag)} angelegt`);
+    logTo(null, 'festkassa', `${v.name}: Position angelegt über „+ als Position“ (Abgleich mit der Bank) aus ${logB(b)}`);
   }));
 }
 
@@ -1744,7 +1782,8 @@ function festkassaExcelDialog(v) {
       for (let i = 0; i < ops.length; i += 200) {
         const batch = writeBatch(db);
         ops.slice(i, i + 200).forEach(f => f(batch));
-        if (i === 0) logTo(batch, 'festkassa', `${v.name}: ${neu.length} Positionen aus ${X.datei} übernommen`);
+        if (i === 0) logTo(batch, 'festkassa', logListe(`${v.name}: ${neu.length} Positionen aus Excel ${X.datei} übernommen („⬆ Excel-Festkassabuch übernehmen“):`,
+          neu.map(r => logP({ ...r, quelle: 'excel' }))));
         await batch.commit();
       }
       toast(`${neu.length} Positionen übernommen.`);
@@ -1805,7 +1844,7 @@ function postenDialog(v, p) {
         if (!confirm('Eintrag löschen?')) return false;
         await deleteDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id));
         await belegeLoeschen(p.belege);
-        logTo(null, 'festkassa', `${v.name}: gelöscht ${POSTEN_ARTEN[p.art].name} ${fmt(p.betrag)}`);
+        logTo(null, 'festkassa', `${v.name}: Position gelöscht: ${logP(p)}`);
       },
     }] : [],
     onOk: edit ? async () => {
@@ -1821,12 +1860,19 @@ function postenDialog(v, p) {
       if (!parseDate(data.datum)) { toast('Bitte ein Datum angeben.', true); return false; }
       data.belege = postenBelege.liste();
       if (neu) {
+        // über welchen Knopf die Position entstanden ist – fürs Protokoll und zur Nachverfolgung
+        data.weg = ({ einnahme: '+ Einnahme', ausgabe: '+ Ausgabe', wechselgeld: '+ Wechselgeld (bar)', ablieferung: '+ Bankeinzahlung (bar)' })[art] || '';
         await setDoc(neuPosten, { ...data, erfasstAm: serverTimestamp(), erfasstVon: S.uid });
       } else {
         await updateDoc(doc(db, 'veranstaltungen', v.id, 'posten', p.id), { ...data, geaendertVon: S.uid });
       }
       postenBelege.gespeichert();
-      logTo(null, 'festkassa', `${v.name}: ${POSTEN_ARTEN[data.art].name} ${fmt(betrag)} ${data.bereich} (${zahlwegName(data.art, data.zahlweg)}${fluss && data.zahlweg === 'ueberweisung' && !data.ergebnis ? ', zählt nicht' : ''})`);
+      if (neu) logTo(null, 'festkassa', `${v.name}: Position angelegt: ${logP({ ...data, weg: data.weg })}`);
+      else {
+        const aend = ['art', 'betrag', 'datum', 'text', 'bereich', 'zahlweg', 'ergebnis', 'beleg'].filter(k => String(p[k] ?? '') !== String(data[k] ?? ''))
+          .map(k => k === 'betrag' ? `Betrag ${fmt(p.betrag)} → ${fmt(data.betrag)}` : k === 'art' ? `${POSTEN_ARTEN[p.art]?.name} → ${POSTEN_ARTEN[data.art]?.name}` : `${k} „${p[k] ?? ''}“ → „${data[k] ?? ''}“`);
+        logTo(null, 'festkassa', `${v.name}: Position geändert (${aend.join(' · ') || 'ohne Änderung'}): ${logP({ ...p, ...data })}`);
+      }
     } : null,
     onOpen: () => {
       const upd = () => {
@@ -2416,7 +2462,8 @@ function zahlungenDialog(v) {
       const batch = writeBatch(db);
       // bei abweichendem Betrag gilt, was tatsächlich überwiesen wurde
       sel.forEach(m => batch.update(spRef(v, m.eintrag.id), { status: 'bezahlt', bezahltAm: m.buchung.datum, buchungId: m.buchung.id, betrag: m.buchung.betrag }));
-      logTo(batch, 'sponsoring', `${v.name}: ${sel.length} Zahlung(en) zugeordnet`);
+      logTo(batch, 'sponsoring', logListe(`${v.name}: ${sel.length} Zahlung(en) zugeordnet („⇄ Zahlungen zuordnen“):`,
+        sel.map(m => `${m.eintrag.name} ← ${logB(m.buchung)} (${m.grund})`)));
       await batch.commit();
       toast(`${sel.length} Sponsor(en) als bezahlt markiert.`);
     },
@@ -2492,7 +2539,8 @@ function kandidatenDialog(v) {
           batch.update(spRef(v, a), { status: 'bezahlt', bezahltAm: k.buchung.datum, buchungId: k.buchung.id, betrag: k.betrag });
         }
       }
-      logTo(batch, 'sponsoring', `${v.name}: ${zu} Überweisungen bestehenden Sponsoren zugeordnet, ${neu} neue Sponsoren angelegt`);
+      logTo(batch, 'sponsoring', logListe(`${v.name}: ${zu} Überweisungen bestehenden Sponsoren zugeordnet, ${neu} neue Sponsoren angelegt („🔗 weitere Überweisungen“):`,
+        wahl.map(({ k, i, a: w }) => `${logB(k.buchung)} → ${w === 'neu' ? 'neu: ' + ($(`#dlg [data-kn="${i}"]`).value.trim() || k.name) : (offen.find(e => e.id === w)?.name || '')}`)));
       await batch.commit();
       toast(`${zu} zugeordnet, ${neu} neu angelegt.`);
     },
@@ -3080,14 +3128,23 @@ function regelDialog(idx) {
 function viewProtokoll() {
   if (!S.log) {
     S.log = [];
-    S.unsub.push(onSnapshot(query(collection(db, 'log'), orderBy('wann', 'desc'), limit(300)), snap => {
+    S.unsub.push(onSnapshot(query(collection(db, 'log'), orderBy('wann', 'desc'), limit(1000)), snap => {
       S.log = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       render();
     }, fail));
   }
+  const q = norm(S.logQ || '');
+  const liste = S.log.filter(l => !q || norm(`${l.aktion} ${l.name} ${l.text}`).includes(q));
   $('#view').innerHTML = `<div class="card"><h2>Änderungsprotokoll</h2>
-    <p class="muted small">Jede Änderung wird hier festgehalten und kann nicht gelöscht werden – für die Kassaprüfung. Angezeigt werden die letzten 300 Einträge.</p>
-    <div class="tablewrap"><table class="t"><thead><tr><th>Zeitpunkt</th><th>Wer</th><th>Aktion</th><th>Details</th></tr></thead><tbody>
-    ${S.log.map(l => `<tr><td class="nowrap small">${l.wann?.toDate ? l.wann.toDate().toLocaleString('de-AT') : '…'}</td><td class="small">${esc(l.name || userName(l.uid))}</td><td class="small">${esc(l.aktion)}</td><td class="small">${esc(l.text)}</td></tr>`).join('')
-    || '<tr><td colspan="4" class="muted">Noch keine Einträge.</td></tr>'}</tbody></table></div></div>`;
+    <p class="muted small">Jede Änderung wird hier festgehalten und kann nicht gelöscht werden – für die Kassaprüfung. Angezeigt werden die letzten 1000 Einträge.</p>
+    <div class="toolbar"><label class="grow">Suche<input id="logQ" value="${esc(S.logQ || '')}" placeholder="z. B. Sonnwendfeuer, Wechselgeld, 3.055,00, Name …"></label>
+      <span class="muted small" style="align-self:end">${liste.length} von ${S.log.length} Einträgen</span></div>
+    <div class="tablewrap"><table class="t protokoll"><thead><tr><th>Zeitpunkt</th><th>Wer</th><th>Aktion</th><th>Details</th></tr></thead><tbody>
+    ${liste.map(l => `<tr><td class="nowrap small">${l.wann?.toDate ? l.wann.toDate().toLocaleString('de-AT') : '…'}</td><td class="small">${esc(l.name || userName(l.uid))}</td><td class="small">${esc(l.aktion)}</td><td class="small">${esc(l.text)}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div></div>`;
+  $('#logQ').addEventListener('input', e => {
+    S.logQ = e.target.value;
+    clearTimeout(viewProtokoll.t);
+    viewProtokoll.t = setTimeout(() => { S.dirty = false; render(true); }, 250);
+  });
 }
