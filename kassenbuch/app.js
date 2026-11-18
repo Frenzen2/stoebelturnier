@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-17';
+} from './lib.js?v=2026-11-18';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -573,7 +573,13 @@ function viewBuchungen() {
         <thead><tr>${edit ? `<th><input type="checkbox" id="selAll" ${sel.length && sel.length === list.length ? 'checked' : ''}></th>` : ''}
           <th class="r">Nr.</th><th>Datum</th><th>Konto</th><th>Buchungstext</th>${ohneKatSpalte ? '' : '<th>Kategorie</th>'}<th>Festkassabuch</th><th>Beleg</th><th class="r">Betrag</th></tr></thead>
         <tbody>${list.map(b => {
-          const vs = [...parts(b).filter(p => p.veranstaltung).map(festLabel), ...(verweise.get(b.id) || []).map(verweisLabel)];
+          // je Fest nur ein Kennzeichen – auch wenn die Buchung direkt zugeordnet UND z. B. Zahlung eines Sponsors ist
+          const direkt = parts(b).filter(p => p.veranstaltung);
+          const vw = verweise.get(b.id) || [];
+          const vs = [...new Set(direkt.map(p => p.veranstaltung))].map(vid => {
+            const p = direkt.find(x => x.veranstaltung === vid), auch = vw.find(x => x.v.id === vid);
+            return auch ? festLabel(p).replace('title="', `title="Zählt einmal – ${auch.typ === 'sponsor' ? 'über den Sponsor ' + esc(auch.name) : 'als Position ' + esc(auch.name)}. Zusätzlich direkt zugeordnet. `) : festLabel(p);
+          }).concat(vw.filter(x => !direkt.some(p => p.veranstaltung === x.v.id)).map(verweisLabel));
           return `<tr class="click ${S.sel.has(b.id) ? 'sel' : ''}" data-id="${esc(b.id)}">
             ${edit ? `<td class="k-a"><input type="checkbox" class="selOne" ${S.sel.has(b.id) ? 'checked' : ''}></td>` : ''}
             <td class="r small muted k-weg">${S.belegNr.get(b.id) || ''}</td>
