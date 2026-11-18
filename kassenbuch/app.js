@@ -21,7 +21,7 @@ import {
   festArtVorschlag, veranstaltungImText, zahlwegName, festkassaExcel, bankAbgleich,
   sponsorPosten, sponsorZahlungen, sponsorKandidaten, fuelleVorlage, rechnungsNummer, sponsorTabelle, ueberweisungVorschlaege, aehnlich, transparentAbgleich, istTransparentPosten,
   veranstaltungsAbrechnung, toCsv,
-} from './lib.js?v=2026-11-18';
+} from './lib.js?v=2026-11-18b';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2280,6 +2280,29 @@ function sponsorImportDialog(v) {
   });
 }
 
+// Sortierung der Sponsorenliste (Auswahl bleibt während der Sitzung erhalten)
+const deCmp = (x, y) => String(x || '').localeCompare(String(y || ''), 'de', { numeric: true, sensitivity: 'base' });
+const SP_SORT = {
+  'name': { name: 'Name A–Z', f: (a, b) => deCmp(a.name, b.name) },
+  'name-': { name: 'Name Z–A', f: (a, b) => deCmp(b.name, a.name) },
+  'status': { name: 'Status: offen zuerst', f: (a, b) => (a.status === 'bezahlt') - (b.status === 'bezahlt') || deCmp(a.name, b.name) },
+  'status-': { name: 'Status: bezahlt zuerst', f: (a, b) => (b.status === 'bezahlt') - (a.status === 'bezahlt') || deCmp(b.bezahltAm, a.bezahltAm) || deCmp(a.name, b.name) },
+  'betrag-': { name: 'Betrag: höchster zuerst', f: (a, b) => (b.betrag || 0) - (a.betrag || 0) || deCmp(a.name, b.name) },
+  'betrag': { name: 'Betrag: niedrigster zuerst', f: (a, b) => (a.betrag || 0) - (b.betrag || 0) || deCmp(a.name, b.name) },
+  'zahlweg': { name: 'Zahlweg: Überweisung zuerst', f: (a, b) => (a.zahlweg === 'bar') - (b.zahlweg === 'bar') || deCmp(a.name, b.name) },
+  'zahlweg-': { name: 'Zahlweg: bar zuerst', f: (a, b) => (b.zahlweg === 'bar') - (a.zahlweg === 'bar') || deCmp(a.name, b.name) },
+  'rechnung': { name: 'Rechnungsnummer', f: (a, b) => (!a.rechnungsNr) - (!b.rechnungsNr) || deCmp(a.rechnungsNr, b.rechnungsNr) || deCmp(a.name, b.name) },
+  'rechnung-': { name: 'Rechnungsnummer absteigend', f: (a, b) => (!a.rechnungsNr) - (!b.rechnungsNr) || deCmp(b.rechnungsNr, a.rechnungsNr) || deCmp(a.name, b.name) },
+  'bezahlt-': { name: 'Bezahlt am: neueste zuerst', f: (a, b) => (!a.bezahltAm) - (!b.bezahltAm) || deCmp(b.bezahltAm, a.bezahltAm) || deCmp(a.name, b.name) },
+};
+const spSortKey = () => (SP_SORT[S.spSort] ? S.spSort : 'name');
+const spSortiert = liste => [...liste].sort(SP_SORT[spSortKey()].f);
+/** Spaltenkopf zum Anklicken (▲/▼ zeigt die aktuelle Sortierung) */
+const spTh = (k, label, cls = '') => {
+  const akt = spSortKey(), pfeil = akt === k ? ' ▲' : akt === k + '-' ? ' ▼' : '';
+  return `<th class="${cls} sortierbar" data-spsort="${k}" title="Sortieren">${label}${pfeil}</th>`;
+};
+
 function sponsorKarte(v) {
   const liste = S.sponsoring[v.id] || [];
   const kassier = canBook() && !locked();
@@ -2306,8 +2329,10 @@ function sponsorKarte(v) {
       (${eur(transparentPosten.reduce((a, p) => a + p.betrag, 0))})${tpDoppelt ? `, davon <b>${tpDoppelt} doppelt</b> – die gibt es auch als Sponsor` : ''}.
       <button class="btn small" id="spAusPosten">${liste.length ? 'Abgleichen' : 'In Sponsoren umwandeln'}</button>
       ${liste.length ? '– doppelte Positionen werden entfernt, die übrigen als Sponsoren angelegt.' : '– sonst zählen sie doppelt, sobald Sponsoren erfasst sind.'}</div>` : ''}
-    ${liste.length ? `<div class="tablewrap"><table class="t karten"><thead><tr>${mitRe ? '<th>Rechnung</th>' : ''}<th>Sponsor</th><th>Zahlweg</th><th>Status</th><th class="r">Betrag</th></tr></thead><tbody>
-      ${liste.map(e => `<tr class="click" data-sp="${esc(e.id)}">${mitRe ? `<td class="small k-a muted">${esc(e.rechnungsNr || '–')}</td>` : ''}
+    ${liste.length ? `<div class="toolbar" style="margin:4px 0"><label style="margin:0">Sortieren<select id="spSort">
+        ${Object.entries(SP_SORT).map(([k, x]) => `<option value="${k}" ${k === spSortKey() ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label></div>
+      <div class="tablewrap"><table class="t karten"><thead><tr>${mitRe ? spTh('rechnung', 'Rechnung') : ''}${spTh('name', 'Sponsor')}${spTh('zahlweg', 'Zahlweg')}${spTh('status', 'Status')}${spTh('betrag', 'Betrag', 'r')}</tr></thead><tbody>
+      ${spSortiert(liste).map(e => `<tr class="click" data-sp="${esc(e.id)}">${mitRe ? `<td class="small k-a muted">${esc(e.rechnungsNr || '–')}</td>` : ''}
         <td class="k-b">${esc(e.name)}${e.belege?.length ? ` <span class="chip">📷 ${e.belege.length}</span>` : ''}${e.dankGedruckt ? ' <span class="chip">✉ Dank</span>' : ''}</td>
         <td class="small k-zeile">${e.zahlweg === 'bar' ? 'bar' : 'Überweisung'}</td>
         <td class="small k-zeile">${e.status === 'bezahlt' ? `<span class="chip ok">bezahlt ${deDate(e.bezahltAm)}${e.buchungId ? ' 🏦' : ''}</span>` : '<span class="chip warn">offen</span>'}</td>
@@ -2316,6 +2341,13 @@ function sponsorKarte(v) {
 }
 
 function bindSponsoren(v) {
+  $('#spSort')?.addEventListener('change', e => { S.spSort = e.target.value; render(true); });
+  $$('#view [data-spsort]').forEach(th => th.addEventListener('click', () => {
+    // erster Klick: Name/Status/Zahlweg/Rechnung aufsteigend, Betrag höchster zuerst; nochmal klicken → umgekehrt
+    const k = th.dataset.spsort, erst = k === 'betrag' ? 'betrag-' : k, zweit = erst === k ? k + '-' : k;
+    S.spSort = spSortKey() === erst ? zweit : erst;
+    render(true);
+  }));
   $('#spNeu')?.addEventListener('click', () => sponsorDialog(v, null));
   $$('#view [data-sp]').forEach(tr => tr.addEventListener('click', () => sponsorDialog(v, (S.sponsoring[v.id] || []).find(e => e.id === tr.dataset.sp))));
   $('#spZahl')?.addEventListener('click', () => zahlungenDialog(v));
