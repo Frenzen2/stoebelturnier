@@ -324,20 +324,51 @@ Die Rechen- und Importlogik (`lib.js`) hat eigene Tests: `npm test` (Node 20 ode
 
 ## Datenmodell (Firestore)
 
-| Sammlung | Inhalt |
+```
+Firestore (ffpkassa)
+├── users/{uid}                  Benutzer und Rolle
+├── config/allgemein             Briefkopf, Texte für Rechnung/Dankesschreiben
+├── config/kategorien            V-P-Kontenplan
+├── config/regeln                Kontierungsregeln
+├── konten/{id}                  feuerwehr, mannschaft, …
+├── jahre/{jahr}                 Anfangsbestände, Kontoauszug, Sperre, Rechnungsnummern
+├── buchungen/{id}               Raika-Umsätze beider Konten (alle Jahre)
+├── veranstaltungen/{vid}        Feste
+│   ├── posten/{pid}             eigene Festkassabuch-Zeilen
+│   └── sponsoring/{sid}         Sponsoren / Transparente
+└── log/{id}                     Änderungsprotokoll (nur anhängen)
+
+Storage
+└── belege/{jahr}/buchung/{buchungId}/{datei}
+    belege/{jahr}/posten/{vid}/{pid | sp_sid}/{datei}
+```
+
+| Sammlung | Felder |
 |---|---|
-| `users/{uid}` | name, email, role, active |
+| `users/{uid}` | name, email, role (`admin` / `kassier` / `fest` / `pruefer`), active |
+| `config/allgemein` | ffName, gemeinde, ort, strasse, plzOrt, email, kommandant, kassier, rechnungKonto, steuerhinweis, rechnungText, dankText |
+| `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/U, konto, vp, inaktiv}] |
+| `config/regeln` | `list`: Kontierungsregeln [{muster (mit `\|` getrennt), richtung `+`/`-`, konto, kategorie, fest}] |
 | `konten/{id}` | name, iban, order, ohneKontierung (Standard: `feuerwehr`, `mannschaft` mit ohneKontierung) |
-| `config/kategorien` | `list`: Kontenplan [{id, nr, name, art: E/A/F/U, konto, vp, vpE, vpA, inaktiv}] |
-| `config/allgemein` | ffName, gemeinde, ort (Kopf der Ausdrucke) |
-| `config/regeln` | `list`: Kontierungsregeln [{muster, richtung, konto, kategorie}] |
-| `buchungen/{id}` | konto, datum, valuta, jahr, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), festArt (kassa/bank), kategorie, veranstaltung, splits, beleg, notiz, quelle (import/manuell) |
-| `veranstaltungen/{id}` | name, jahr, von, bis, ort, konto, verantwortlich, status (offen/abgeschlossen) |
-| `veranstaltungen/{id}/posten/{id}` | art (wechselgeld/einnahme/ausgabe/ablieferung), datum, zeit, betrag (Cent), bereich, text, beleg, zahlweg (bar/ueberweisung), ergebnis (true/false) |
-| `veranstaltungen/{id}/sponsoring/{id}` | name, zusatz, strasse, plzOrt, email, leistung, betrag (Cent), zahlweg, status (offen/bezahlt), bezahltAm, buchungId, rechnungsNr, rechnungsDatum, belege (Fotos), dankGedruckt |
-| `jahre/{jahr}` | anfang, bankEnde, gesperrt, endsalden, rechnungNr (Zähler für Rechnungsnummern) |
-| Storage `belege/{jahr}/buchung/{id}/…`, `belege/{jahr}/posten/{fest}/{id}/…` | Belege; am Dokument steht `belege: [{id, name, pfad, typ, groesse, am, von}]` |
+| `jahre/{jahr}` | anfang {konto: Cent}, bankEnde {konto: Cent}, gesperrt, gesperrtAm, gesperrtVon, endsalden, rechnungNr (Zähler) |
+| `buchungen/{id}` | konto, jahr, datum, valuta, betrag (Cent), text, zeitstempel, seq (Zeile im ELBA-Export), quelle (`import`/`manuell`), datei, importiertAm, importiertVon · kategorie → `config/kategorien` · veranstaltung → `veranstaltungen` (direkt zugeordnet), festArt (`kassa` = Art „Bank“ / `bank` = „Überweisung“), festBereich · splits [{betrag, kategorie, veranstaltung, festArt, festBereich, notiz}] · beleg, notiz, belege · geaendertAm, geaendertVon |
+| `veranstaltungen/{vid}` | name, jahr, von, bis, ort, verantwortlich, suchbegriffe, status (`offen`/`abgeschlossen`), abgeschlossenAm, abgeschlossenVon |
+| `veranstaltungen/{vid}/posten/{pid}` | art (`einnahme`/`ausgabe`/`wechselgeld`/`ablieferung`), datum, zeit, betrag (Cent), text, bereich, beleg, zahlweg (`bar`/`ueberweisung`), ergebnis (zählt ja/nein), quelle (`excel`), weg (Knopf, über den die Position angelegt wurde), buchungId → `buchungen` („+ als Position“), belege, erfasstAm, erfasstVon |
+| `veranstaltungen/{vid}/sponsoring/{sid}` | name, zusatz, strasse, plzOrt, email, leistung, betrag (Cent), zahlweg (`ueberweisung`/`bar`), status (`offen`/`bezahlt`), bezahltAm, buchungId → `buchungen`, rechnungsNr, rechnungsDatum, bereich, belege (Fotos), dankGedruckt |
 | `log/{id}` | Änderungsprotokoll: uid, name, wann, aktion, text |
+
+Am Dokument stehen Belege als `belege: [{id, name, pfad, typ, groesse, am, von}]`, die Dateien selbst in Storage.
+
+**Zusammenhänge**
+
+- Eine Bankbuchung kommt auf drei Wegen ins Festkassabuch: **direkt** (`buchungen.veranstaltung`), als **Sponsor-Zahlung**
+  (`sponsoring.buchungId`) oder als **Position** (`posten.buchungId`). Sie zählt immer nur einmal – gehört sie zu einem Sponsor
+  oder einer Position, über diese.
+- Festkassabuch, Kassabestand und Ergebnis werden nicht gespeichert, sondern beim Anzeigen aus Posten, bezahlten Sponsoren
+  und zugeordneten Bankbuchungen berechnet.
+- Konten mit `ohneKontierung` (Mannschaftskassa) gelten immer als kontiert.
+- Ist `jahre/{jahr}.gesperrt` gesetzt, verhindern die Firestore-/Storage-Regeln Änderungen an diesem Jahr.
+- Was jemand darf, prüfen die Regeln anhand von `users.role` – nicht nur die App.
 
 Alle Beträge werden als ganze **Cent** gespeichert (12,50 € = 1250), damit keine Rundungsfehler entstehen.
 
